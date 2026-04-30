@@ -5,6 +5,7 @@ import {
   browserLocalPersistence,
   Auth 
 } from "firebase/auth";
+import { getFirestore, Firestore } from "firebase/firestore";
 import { env } from "./env";
 
 const firebaseConfig = {
@@ -23,6 +24,9 @@ const app: FirebaseApp = !getApps().length ? initializeApp(firebaseConfig) : get
 // Initialize Auth
 const auth: Auth = getAuth(app);
 
+// Initialize Firestore
+const db: Firestore = getFirestore(app);
+
 // Initialize explicit browser local persistence 
 // We only do this on the client side (window check) to prevent SSR errors
 if (typeof window !== "undefined") {
@@ -32,4 +36,4 @@ if (typeof window !== "undefined") {
     });
 }
 
-export { app, auth };
+export { app, auth, db };
