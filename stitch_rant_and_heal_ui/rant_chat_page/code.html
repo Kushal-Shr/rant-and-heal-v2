@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Rant &amp; Heal - Chat</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;500;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "tertiary-fixed-dim": "#ffb59d",
+                        "surface-container-highest": "#ffdcbf",
+                        "secondary-container": "#fed1b4",
+                        "inverse-on-surface": "#ffeee1",
+                        "on-tertiary-fixed": "#390b00",
+                        "on-primary-fixed": "#002117",
+                        "background": "#fff8f5",
+                        "primary": "#325347",
+                        "inverse-primary": "#abcebf",
+                        "surface-container-high": "#ffe3cd",
+                        "outline-variant": "#c1c8c3",
+                        "on-primary-fixed-variant": "#2d4d41",
+                        "surface": "#fff8f5",
+                        "surface-container-low": "#fff1e8",
+                        "on-secondary-fixed-variant": "#5e402b",
+                        "on-error-container": "#93000a",
+                        "on-primary": "#ffffff",
+                        "secondary-fixed": "#ffdcc6",
+                        "secondary-fixed-dim": "#e9bea2",
+                        "on-surface": "#2c1601",
+                        "tertiary-fixed": "#ffdbd0",
+                        "surface-tint": "#446558",
+                        "on-tertiary-fixed-variant": "#723521",
+                        "primary-fixed": "#c6ebda",
+                        "on-secondary": "#ffffff",
+                        "outline": "#717974",
+                        "surface-container-lowest": "#ffffff",
+                        "on-tertiary": "#ffffff",
+                        "on-surface-variant": "#414845",
+                        "error": "#ba1a1a",
+                        "primary-fixed-dim": "#abcebf",
+                        "primary-container": "#4a6b5e",
+                        "surface-bright": "#fff8f5",
+                        "tertiary-container": "#96523b",
+                        "on-tertiary-container": "#ffdacf",
+                        "on-primary-container": "#c6eada",
+                        "tertiary": "#793b26",
+                        "secondary": "#785741",
+                        "surface-variant": "#ffdcbf",
+                        "on-secondary-container": "#795841",
+                        "inverse-surface": "#442b10",
+                        "on-background": "#2c1601",
+                        "error-container": "#ffdad6",
+                        "surface-container": "#ffeada",
+                        "surface-dim": "#fed2ab",
+                        "on-secondary-fixed": "#2d1605",
+                        "on-error": "#ffffff"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "1rem",
+                        "lg": "2rem",
+                        "xl": "3rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "xs": "0.5rem",
+                        "margin_safe": "2rem",
+                        "gutter": "1.5rem",
+                        "md": "1.5rem",
+                        "lg": "2.5rem",
+                        "sm": "1rem",
+                        "xl": "4rem"
+                    },
+                    "fontFamily": {
+                        "display": ["Plus Jakarta Sans"],
+                        "label-sm": ["Plus Jakarta Sans"],
+                        "label-md": ["Plus Jakarta Sans"],
+                        "h1": ["Plus Jakarta Sans"],
+                        "body-lg": ["Plus Jakarta Sans"],
+                        "body-md": ["Plus Jakarta Sans"],
+                        "h2": ["Plus Jakarta Sans"]
+                    },
+                    "fontSize": {
+                        "display": ["48px", { "lineHeight": "1.2", "letterSpacing": "-0.02em", "fontWeight": "500" }],
+                        "label-sm": ["12px", { "lineHeight": "1.2", "fontWeight": "500" }],
+                        "label-md": ["14px", { "lineHeight": "1.2", "letterSpacing": "0.01em", "fontWeight": "500" }],
+                        "h1": ["32px", { "lineHeight": "1.3", "fontWeight": "500" }],
+                        "body-lg": ["18px", { "lineHeight": "1.6", "fontWeight": "300" }],
+                        "body-md": ["16px", { "lineHeight": "1.6", "fontWeight": "300" }],
+                        "h2": ["24px", { "lineHeight": "1.4", "fontWeight": "500" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+        .fill-icon { font-variation-settings: 'FILL' 1; }
+        
+        /* Soft Clay Realism Custom Shadows */
+        .shadow-clay-card { box-shadow: 0 20px 40px -15px rgba(121, 88, 65, 0.15), 0 10px 20px -10px rgba(121, 88, 65, 0.1); }
+        .shadow-clay-button { box-shadow: 0 8px 16px -4px rgba(50, 83, 71, 0.2), 0 4px 8px -4px rgba(50, 83, 71, 0.1); }
+        .shadow-clay-inner { box-shadow: inset 0 2px 6px rgba(44, 22, 1, 0.08); }
+        .shadow-clay-highlight { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4); }
+        
+        /* Floating animations */
+        @keyframes idleFloat {
+            0% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+            100% { transform: translateY(0px); }
+        }
+        .animate-float { animation: idleFloat 3s ease-in-out infinite; }
+        
+        /* Squish Interaction */
+        .squish:active { transform: scale(0.96); transition: transform 0.15s cubic-bezier(0.4, 0, 0.2, 1); box-shadow: 0 2px 4px -2px rgba(50, 83, 71, 0.2); }
+    </style>
+</head>
+<body class="bg-background text-on-background font-body-md min-h-screen overflow-x-hidden flex selection:bg-primary-fixed selection:text-on-primary-fixed">
+<!-- Ambient Background Blobs -->
+<div class="fixed top-0 left-0 w-full h-full pointer-events-none -z-10 overflow-hidden">
+<div class="absolute -top-[10%] -right-[5%] w-[50vw] h-[50vw] rounded-full bg-primary-fixed opacity-30 blur-[100px]"></div>
+<div class="absolute top-[40%] -left-[10%] w-[40vw] h-[40vw] rounded-full bg-tertiary-fixed opacity-20 blur-[80px]"></div>
+<div class="absolute -bottom-[20%] right-[10%] w-[60vw] h-[60vw] rounded-full bg-surface-variant opacity-40 blur-[120px]"></div>
+</div>
+<!-- Crisis Banner -->
+<div class="fixed top-0 left-0 w-full z-50 bg-tertiary-fixed text-on-tertiary-fixed px-6 py-3 flex justify-center items-center shadow-sm">
+<p class="font-label-md">In crisis? Text <span class="font-bold">HOME</span> to <span class="font-bold">741741</span> or call <span class="font-bold">988</span> for immediate, confidential support.</p>
+</div>
+<!-- Top App Bar (Mobile) -->
+<nav class="lg:hidden flex justify-between items-center w-full px-6 py-3 bg-surface/80 backdrop-blur-md font-['Plus_Jakarta_Sans'] font-bold text-on-background shadow-sm docked full-width top-0 z-40 fixed mt-10">
+<div class="text-2xl font-black text-primary tracking-tighter">Rant &amp; Heal</div>
+<div class="flex gap-4">
+<button class="text-primary hover:bg-surface-container transition-colors rounded-full p-2 squish"><span class="material-symbols-outlined">notifications</span></button>
+<button class="text-primary hover:bg-surface-container transition-colors rounded-full p-2 squish"><span class="material-symbols-outlined">settings</span></button>
+</div>
+</nav>
+<!-- SideNavBar (Desktop) -->
+<nav class="hidden lg:flex flex-col h-[calc(100vh-2rem)] py-6 bg-surface-container-lowest text-primary font-['Plus_Jakarta_Sans'] font-medium fixed left-4 top-16 bottom-4 w-[260px] rounded-[2rem] overflow-hidden shadow-[0_15px_40px_-10px_rgba(74,107,94,0.2)] border-none z-40">
+<div class="px-6 mb-8 flex flex-col items-center">
+<div class="w-20 h-20 bg-primary-fixed rounded-full flex items-center justify-center mb-4 shadow-clay-card animate-float">
+<img alt="Abstract soft clay marshmallow shape representing Momo the AI companion. Soft pastel lighting, smooth rounded edges, friendly calming aesthetic." class="w-16 h-16 object-cover rounded-full mix-blend-multiply opacity-80" data-alt="Abstract soft clay marshmallow shape representing Momo the AI companion. Soft pastel lighting, smooth rounded edges, friendly calming aesthetic. Warm, inviting, and empathetic." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBrv_j3pHkxhqD-Yyn2GpgumcClF4ngCpqtVhmUfh7r3F9p12izJ_eCk2cAIKj54zyuwtHb3UICTzjERBjzzNCAlzc7pKq0_HfGh75nmf8fHBslnePUKmbjrzTcddA-vOP-4N4XGQGxk9veJ9dDMekmHwS5Th-_DRxs2UVe1psdpbVDn59PjOztQ7auQs5r-ZJGjwfWqgw_JjyB0nSTGfEX15prc6V3_dKhqXRpBisVuxJiesSl2LgCxKeNOjr4SSuzpq4sYLNRZi-p"/>
+</div>
+<h1 class="text-xl font-extrabold text-primary">Rant &amp; Heal</h1>
+<p class="font-label-sm text-outline">Your safe sanctuary</p>
+</div>
+<div class="flex-1 flex flex-col gap-2 px-2">
+<!-- Active Tab -->
+<a class="bg-primary text-on-primary rounded-full mx-2 px-4 py-3 flex items-center gap-3 shadow-clay-button squish shadow-clay-highlight" href="#">
+<span class="material-symbols-outlined fill-icon">forum</span>
+<span class="font-label-md">Daily Rant</span>
+</a>
+<a class="text-on-surface-variant mx-2 px-4 py-3 flex items-center gap-3 hover:bg-primary-fixed/30 rounded-full transition-all squish" href="#">
+<span class="material-symbols-outlined">self_improvement</span>
+<span class="font-label-md">Healing Path</span>
+</a>
+<a class="text-on-surface-variant mx-2 px-4 py-3 flex items-center gap-3 hover:bg-primary-fixed/30 rounded-full transition-all squish" href="#">
+<span class="material-symbols-outlined">shield_with_heart</span>
+<span class="font-label-md">Safe Space</span>
+</a>
+<a class="text-on-surface-variant mx-2 px-4 py-3 flex items-center gap-3 hover:bg-primary-fixed/30 rounded-full transition-all squish" href="#">
+<span class="material-symbols-outlined">cloud</span>
+<span class="font-label-md">Momo's Corner</span>
+</a>
+<a class="text-on-surface-variant mx-2 px-4 py-3 flex items-center gap-3 hover:bg-primary-fixed/30 rounded-full transition-all squish" href="#">
+<span class="material-symbols-outlined">person</span>
+<span class="font-label-md">Profile</span>
+</a>
+</div>
+<div class="px-4 mt-auto">
+<button class="w-full bg-error-container text-on-error-container font-label-md py-3 rounded-full flex items-center justify-center gap-2 shadow-clay-button squish mb-4">
+<span class="material-symbols-outlined">emergency</span>
+                Crisis Support
+            </button>
+<div class="flex flex-col gap-1 border-t border-surface-variant pt-4">
+<a class="text-outline mx-2 px-4 py-2 flex items-center gap-3 hover:bg-surface-variant/50 rounded-full transition-all squish" href="#">
+<span class="material-symbols-outlined text-sm">settings</span>
+<span class="font-label-sm">Settings</span>
+</a>
+<a class="text-outline mx-2 px-4 py-2 flex items-center gap-3 hover:bg-surface-variant/50 rounded-full transition-all squish" href="#">
+<span class="material-symbols-outlined text-sm">lock</span>
+<span class="font-label-sm">Privacy</span>
+</a>
+</div>
+</div>
+</nav>
+<!-- Main Content Canvas -->
+<main class="w-full lg:ml-[290px] pt-24 pb-32 lg:pb-12 px-4 lg:px-8 flex flex-col lg:flex-row gap-gutter min-h-screen">
+<!-- Left Column: Chat Canvas (~65%) -->
+<section class="w-full lg:w-[65%] flex flex-col h-[calc(100vh-8rem)] bg-surface-container-lowest rounded-[2.5rem] shadow-clay-card overflow-hidden relative border border-surface-variant/30">
+<!-- Chat Header -->
+<header class="px-6 py-4 border-b border-surface-variant flex items-center justify-between bg-surface-container-lowest/80 backdrop-blur-sm z-10">
+<div class="flex items-center gap-4">
+<div class="w-12 h-12 rounded-full bg-primary-fixed flex items-center justify-center shadow-inner relative overflow-hidden">
+<img alt="Momo avatar" class="w-full h-full object-cover mix-blend-multiply opacity-90" data-alt="Close up of a soft, glowing, marshmallow-like blob shape representing an empathetic AI. Soft lighting, calming aesthetic, primarily light pastel greens." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDjjzxgVcRhJRNALs7C0gzl0K7Y4X2uyteF_CdxvY5jU6h6O_xFp5IMjlnRIUN91VSKYFgQGnwT9uSKSe6sfCreqJ1XswQ2QeiOllIiNxZlsOQ1yeBm6t4_lmgUE3vioA5xVAl5MRzElECkw6dyP2TJaDOEVjrL3ApxMSEdhMJUhrWaFD0U7DI2hAoid06WfdwH_0wsM3lPWorZI6AqMwJKoK_ZF1d7VHY1zd4Vpun12nb8UmaSobmSs-hW9uShVA-wTEMlKue4saOW"/>
+</div>
+<div>
+<h2 class="font-h2 text-primary">Momo</h2>
+<p class="font-label-sm text-outline">Your AI companion</p>
+</div>
+</div>
+<button class="bg-tertiary-fixed text-on-tertiary-fixed px-4 py-2 rounded-full flex items-center gap-2 font-label-sm shadow-clay-button squish shadow-clay-highlight">
+<span class="material-symbols-outlined text-base">mic</span>
+                    Switch to Voice
+                </button>
+</header>
+<!-- Chat Messages Area -->
+<div class="flex-1 overflow-y-auto p-6 flex flex-col gap-6 bg-surface-container-lowest scroll-smooth pb-24">
+<!-- Date Divider -->
+<div class="flex justify-center">
+<span class="bg-surface-container-low text-on-surface-variant px-4 py-1 rounded-full font-label-sm text-[10px]">Today, 10:42 AM</span>
+</div>
+<!-- Momo Message -->
+<div class="flex gap-4 items-start max-w-[85%]">
+<div class="w-8 h-8 rounded-full bg-primary-fixed flex-shrink-0 flex items-center justify-center mt-1">
+<span class="material-symbols-outlined text-primary text-sm">cloud</span>
+</div>
+<div class="bg-primary-fixed/40 text-on-primary-fixed-variant p-4 rounded-2xl rounded-tl-none shadow-sm relative group">
+<p class="font-body-md">Hi there. I'm here. Whenever you're ready, let it out. No judgment, just listening.</p>
+<button class="absolute -right-10 top-2 opacity-0 group-hover:opacity-100 transition-opacity text-outline hover:text-primary squish">
+<span class="material-symbols-outlined text-sm">favorite</span>
+</button>
+</div>
+</div>
+<!-- User Message -->
+<div class="flex gap-4 items-end justify-end max-w-[85%] self-end">
+<div class="bg-secondary-fixed/50 text-on-secondary-fixed p-4 rounded-2xl rounded-br-none shadow-sm shadow-clay-card">
+<p class="font-body-md">I'm just so overwhelmed today. Everything feels like too much and I can't focus on work. My boss asked for that report and I just blanked.</p>
+</div>
+</div>
+<!-- Momo Message -->
+<div class="flex gap-4 items-start max-w-[85%]">
+<div class="w-8 h-8 rounded-full bg-primary-fixed flex-shrink-0 flex items-center justify-center mt-1">
+<span class="material-symbols-outlined text-primary text-sm">cloud</span>
+</div>
+<div class="bg-primary-fixed/40 text-on-primary-fixed-variant p-4 rounded-2xl rounded-tl-none shadow-sm relative group">
+<p class="font-body-md">That sounds incredibly stressful. It's completely understandable to freeze up when you're feeling overwhelmed. Taking a deep breath... you're doing your best. Want to talk more about what happened with the report?</p>
+</div>
+</div>
+<!-- Typing Indicator (Momo) -->
+<div class="flex gap-4 items-center max-w-[85%] opacity-70">
+<div class="w-8 h-8 rounded-full bg-primary-fixed flex-shrink-0 flex items-center justify-center">
+<span class="material-symbols-outlined text-primary text-sm">cloud</span>
+</div>
+<div class="bg-primary-fixed/20 p-4 rounded-2xl rounded-tl-none flex gap-1">
+<div class="w-2 h-2 rounded-full bg-primary/40 animate-bounce" style="animation-delay: 0ms;"></div>
+<div class="w-2 h-2 rounded-full bg-primary/40 animate-bounce" style="animation-delay: 150ms;"></div>
+<div class="w-2 h-2 rounded-full bg-primary/40 animate-bounce" style="animation-delay: 300ms;"></div>
+</div>
+</div>
+</div>
+<!-- Input Area -->
+<div class="absolute bottom-0 left-0 w-full p-4 bg-gradient-to-t from-surface-container-lowest via-surface-container-lowest to-transparent pt-12">
+<div class="relative bg-surface-container-low rounded-3xl p-2 shadow-clay-inner flex items-end gap-2 border border-surface-variant/50">
+<button class="p-3 text-outline hover:text-primary transition-colors squish shrink-0">
+<span class="material-symbols-outlined">add_circle</span>
+</button>
+<textarea class="w-full bg-transparent border-none focus:ring-0 resize-none font-body-md text-on-surface placeholder-outline py-3 max-h-32 overflow-y-auto" placeholder="Type your rant here..." rows="1"></textarea>
+<button class="bg-primary text-on-primary p-3 rounded-2xl shadow-clay-button squish shadow-clay-highlight shrink-0 flex items-center justify-center">
+<span class="material-symbols-outlined">send</span>
+</button>
+</div>
+</div>
+</section>
+<!-- Right Column: Context Panel (~35%) -->
+<aside class="w-full lg:w-[35%] flex flex-col gap-6 h-[calc(100vh-8rem)] overflow-y-auto pb-10 hide-scrollbar relative">
+<!-- Mood Tracker -->
+<div class="bg-surface-container-lowest rounded-3xl p-6 shadow-clay-card flex flex-col gap-4">
+<h3 class="font-h2 text-on-background text-lg">Current Vibe</h3>
+<div class="flex justify-between items-center bg-surface-container-low p-2 rounded-full shadow-clay-inner">
+<button class="w-10 h-10 rounded-full flex items-center justify-center hover:bg-error-container hover:text-on-error-container transition-colors squish"><span class="material-symbols-outlined">sentiment_very_dissatisfied</span></button>
+<button class="w-10 h-10 rounded-full flex items-center justify-center hover:bg-tertiary-fixed hover:text-on-tertiary-fixed transition-colors squish"><span class="material-symbols-outlined">sentiment_dissatisfied</span></button>
+<!-- Selected Mood Pebble -->
+<button class="w-12 h-12 rounded-full bg-surface text-on-surface shadow-clay-button flex items-center justify-center squish relative border-2 border-primary-fixed"><span class="material-symbols-outlined fill-icon">sentiment_neutral</span></button>
+<button class="w-10 h-10 rounded-full flex items-center justify-center hover:bg-secondary-fixed hover:text-on-secondary-fixed transition-colors squish"><span class="material-symbols-outlined">sentiment_satisfied</span></button>
+<button class="w-10 h-10 rounded-full flex items-center justify-center hover:bg-primary-fixed hover:text-on-primary-fixed transition-colors squish"><span class="material-symbols-outlined">sentiment_very_satisfied</span></button>
+</div>
+</div>
+<!-- Session Stats -->
+<div class="bg-secondary-fixed/30 rounded-3xl p-6 shadow-clay-card relative overflow-hidden border border-secondary-fixed-dim/30">
+<div class="absolute -right-4 -top-4 w-24 h-24 bg-secondary-fixed-dim opacity-20 rounded-full blur-xl"></div>
+<h3 class="font-h2 text-on-secondary-container text-lg mb-4 flex items-center gap-2">
+<span class="material-symbols-outlined text-secondary">analytics</span>
+                    This Session
+                </h3>
+<div class="grid grid-cols-2 gap-4">
+<div class="bg-surface-container-lowest/60 rounded-2xl p-4 shadow-sm">
+<p class="font-label-sm text-outline mb-1">Duration</p>
+<p class="font-h1 text-secondary">12<span class="text-base font-body-md">m</span></p>
+</div>
+<div class="bg-surface-container-lowest/60 rounded-2xl p-4 shadow-sm">
+<p class="font-label-sm text-outline mb-1">Words Venting</p>
+<p class="font-h1 text-secondary">342</p>
+</div>
+</div>
+</div>
+<!-- Momo's Insight -->
+<div class="bg-inverse-primary/20 rounded-3xl p-6 shadow-clay-card relative border border-primary-fixed-dim/30">
+<div class="flex items-center gap-3 mb-4">
+<div class="w-8 h-8 rounded-full bg-primary-fixed flex items-center justify-center shadow-sm">
+<span class="material-symbols-outlined text-primary text-sm">lightbulb</span>
+</div>
+<h3 class="font-h2 text-on-primary-container text-lg">Momo noticed...</h3>
+</div>
+<p class="font-body-md text-on-surface-variant leading-relaxed">
+                    You've mentioned "work" and "overwhelmed" frequently this week. Your breathing pattern might be shallow right now. Want to try a 1-minute box breathing exercise?
+                </p>
+<button class="mt-4 w-full bg-primary-fixed text-on-primary-fixed font-label-md py-2 rounded-xl hover:bg-primary-fixed-dim transition-colors squish shadow-sm">
+                    Start Exercise
+                </button>
+</div>
+<!-- Escalation Support -->
+<div class="bg-surface-container-low rounded-3xl p-6 shadow-clay-card border border-surface-variant">
+<h3 class="font-h2 text-on-surface text-lg mb-4 flex items-center gap-2">
+<span class="material-symbols-outlined text-primary">diversity_1</span>
+                    Need more support?
+                </h3>
+<div class="flex flex-col gap-3">
+<button class="w-full bg-surface-container-lowest border border-outline-variant text-on-surface font-label-md py-3 rounded-full flex items-center justify-center gap-2 hover:bg-surface transition-colors squish shadow-sm">
+<span class="material-symbols-outlined">psychology</span>
+                        Talk to a Therapist
+                    </button>
+<button class="w-full bg-surface-container-lowest border border-tertiary-fixed text-tertiary font-label-md py-3 rounded-full flex items-center justify-center gap-2 hover:bg-tertiary-fixed/20 transition-colors squish shadow-sm">
+<span class="material-symbols-outlined">call</span>
+                        Crisis Line
+                    </button>
+</div>
+</div>
+<!-- Decorative Momo Peeking (Desktop Only) -->
+<div class="hidden lg:flex absolute bottom-0 right-0 items-end justify-end pointer-events-none w-full h-32">
+<div class="relative bg-tertiary-fixed px-4 py-2 rounded-t-2xl rounded-bl-2xl rounded-br-none shadow-clay-card transform translate-x-4">
+<p class="font-label-sm text-on-tertiary-fixed">I'm listening. All of it.</p>
+<div class="absolute -bottom-2 -right-2 w-4 h-4 bg-tertiary-fixed rounded-full"></div>
+</div>
+<div class="w-20 h-20 bg-primary-fixed rounded-t-full rounded-bl-full overflow-hidden translate-y-4">
+<img alt="Momo peeking" class="w-full h-full object-cover mix-blend-multiply opacity-80" data-alt="A soft clay-like marshmallow shape peeking from the bottom right corner. Pastel colors, very cute and comforting, soft lighting." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDRuvgl8omp1A-jmtAB50bF_jrct49jOpmC7T1tZLWQKSH88IR6UYlQ44-mvn4zcDdZPUrsd50QH-N4oN4C3uJFT4iHR5kojvoldfK9IXwPIYrsEJL6xwlFHJAtaHLQkZ71xxb-vNOstrYm7Ofmo_awGJozXv_Pid-5zTVx3CTdoTFxFL98gPY5N8sfPQms0l8fl5AWomU98ORbNNLUP22sdGx3OqF50YD5UValKuH7WlXONJiFOYSV1lxxeO-0qbXfHeYrEwaKgnde"/>
+</div>
+</div>
+</aside>
+</main>
+<!-- BottomNavBar (Mobile) -->
+<nav class="lg:hidden fixed bottom-0 left-0 w-full z-50 flex justify-around items-center bg-surface/90 backdrop-blur-xl text-[10px] font-bold uppercase tracking-widest px-6 pb-6 pt-3 rounded-t-[2.5rem] shadow-[0_-10px_30px_rgba(0,0,0,0.05)] border-t border-surface-variant">
+<a class="flex flex-col items-center justify-center text-outline squish" href="#">
+<span class="material-symbols-outlined mb-1">home</span>
+<span>Home</span>
+</a>
+<!-- Active Nav Item -->
+<a class="flex flex-col items-center justify-center text-primary bg-primary-fixed/40 rounded-2xl px-4 py-2 squish transform scale-110" href="#">
+<span class="material-symbols-outlined fill-icon mb-1">bubble_chart</span>
+<span>Rant</span>
+</a>
+<a class="flex flex-col items-center justify-center text-outline squish" href="#">
+<span class="material-symbols-outlined mb-1">favorite</span>
+<span>Heal</span>
+</a>
+<a class="flex flex-col items-center justify-center text-outline squish" href="#">
+<span class="material-symbols-outlined mb-1">mood</span>
+<span>Momo</span>
+</a>
+</nav>
+</body></html>

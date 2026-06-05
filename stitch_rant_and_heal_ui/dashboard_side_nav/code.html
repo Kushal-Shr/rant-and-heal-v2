@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Dashboard</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;500;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "primary-fixed-dim": "#abcebf",
+                        "on-background": "#2c1601",
+                        "outline": "#717974",
+                        "surface-container": "#ffeada",
+                        "on-error": "#ffffff",
+                        "primary-fixed": "#c6ebda",
+                        "secondary-fixed-dim": "#e9bea2",
+                        "on-secondary-fixed": "#2d1605",
+                        "on-primary-fixed": "#002117",
+                        "on-error-container": "#93000a",
+                        "secondary-fixed": "#ffdcc6",
+                        "on-surface": "#2c1601",
+                        "surface-container-highest": "#ffdcbf",
+                        "outline-variant": "#c1c8c3",
+                        "inverse-on-surface": "#ffeee1",
+                        "surface-container-low": "#fff1e8",
+                        "error-container": "#ffdad6",
+                        "tertiary-fixed-dim": "#ffb59d",
+                        "surface-container-high": "#ffe3cd",
+                        "on-secondary-fixed-variant": "#5e402b",
+                        "inverse-primary": "#abcebf",
+                        "on-tertiary": "#ffffff",
+                        "on-surface-variant": "#414845",
+                        "on-secondary": "#ffffff",
+                        "tertiary-fixed": "#ffdbd0",
+                        "surface-dim": "#fed2ab",
+                        "tertiary-container": "#96523b",
+                        "surface-tint": "#446558",
+                        "surface-variant": "#ffdcbf",
+                        "primary": "#325347",
+                        "on-secondary-container": "#795841",
+                        "surface": "#fff8f5",
+                        "background": "#fff8f5",
+                        "primary-container": "#4a6b5e",
+                        "on-primary": "#ffffff",
+                        "on-primary-fixed-variant": "#2d4d41",
+                        "error": "#ba1a1a",
+                        "on-tertiary-fixed": "#390b00",
+                        "on-tertiary-container": "#ffdacf",
+                        "secondary-container": "#fed1b4",
+                        "secondary": "#785741",
+                        "on-primary-container": "#c6eada",
+                        "inverse-surface": "#442b10",
+                        "surface-container-lowest": "#ffffff",
+                        "tertiary": "#793b26",
+                        "on-tertiary-fixed-variant": "#723521",
+                        "surface-bright": "#fff8f5"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "1rem",
+                        "lg": "2rem",
+                        "xl": "3rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "sm": "1rem",
+                        "md": "1.5rem",
+                        "gutter": "1.5rem",
+                        "xl": "4rem",
+                        "margin_safe": "2rem",
+                        "xs": "0.5rem",
+                        "lg": "2.5rem"
+                    },
+                    "fontFamily": {
+                        "h2": ["Plus Jakarta Sans"],
+                        "label-sm": ["Plus Jakarta Sans"],
+                        "h1": ["Plus Jakarta Sans"],
+                        "display": ["Plus Jakarta Sans"],
+                        "body-lg": ["Plus Jakarta Sans"],
+                        "label-md": ["Plus Jakarta Sans"],
+                        "body-md": ["Plus Jakarta Sans"]
+                    },
+                    "fontSize": {
+                        "h2": ["24px", { "lineHeight": "1.4", "fontWeight": "500" }],
+                        "label-sm": ["12px", { "lineHeight": "1.2", "fontWeight": "500" }],
+                        "h1": ["32px", { "lineHeight": "1.3", "fontWeight": "500" }],
+                        "display": ["48px", { "lineHeight": "1.2", "letterSpacing": "-0.02em", "fontWeight": "500" }],
+                        "body-lg": ["18px", { "lineHeight": "1.6", "fontWeight": "300" }],
+                        "label-md": ["14px", { "lineHeight": "1.2", "letterSpacing": "0.01em", "fontWeight": "500" }],
+                        "body-md": ["16px", { "lineHeight": "1.6", "fontWeight": "300" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body {
+            background-color: #fff8f5;
+        }
+        .blob-bg {
+            position: fixed;
+            top: -10%;
+            right: -10%;
+            width: 800px;
+            height: 800px;
+            background: radial-gradient(circle, rgba(200, 235, 218, 0.4) 0%, rgba(255, 248, 245, 0) 70%);
+            border-radius: 50%;
+            z-index: -1;
+            pointer-events: none;
+            filter: blur(40px);
+        }
+        .blob-bg-2 {
+            position: fixed;
+            bottom: -20%;
+            left: -10%;
+            width: 600px;
+            height: 600px;
+            background: radial-gradient(circle, rgba(255, 220, 198, 0.4) 0%, rgba(255, 248, 245, 0) 70%);
+            border-radius: 50%;
+            z-index: -1;
+            pointer-events: none;
+            filter: blur(40px);
+        }
+        .clay-card {
+            background: rgba(255, 255, 255, 0.6);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.8);
+            box-shadow: 0 10px 30px -15px rgba(74, 107, 94, 0.1), inset 0 2px 4px rgba(255, 255, 255, 0.5);
+        }
+        .clay-button {
+            box-shadow: 0 4px 10px -2px rgba(74, 107, 94, 0.2), inset 0 2px 2px rgba(255, 255, 255, 0.4);
+        }
+    </style>
+</head>
+<body class="font-body-md text-on-background min-h-screen relative overflow-x-hidden">
+<div class="blob-bg"></div>
+<div class="blob-bg-2"></div>
+<div class="flex h-screen overflow-hidden">
+<!-- Side Navigation Component -->
+<nav class="hidden md:flex flex-col bg-[#FDFCF8] dark:bg-zinc-900 text-[#4A6B5E] dark:text-emerald-400 font-['Plus_Jakarta_Sans'] text-sm font-medium h-[calc(100vh-2rem)] w-64 m-4 rounded-[3rem] border-r-0 shadow-[20px_0_60px_-15px_rgba(74,107,94,0.15)] shadow-[15px_15px_40px_rgba(0,0,0,0.05),-10px_-10px_30px_rgba(255,255,255,0.8)] z-40 fixed left-0 top-0 p-4 space-y-2">
+<div class="mb-8 mt-4 px-4">
+<div class="flex items-center gap-3">
+<img alt="Momo Mascot" class="w-10 h-10 rounded-full bg-surface-container" data-alt="A soft, cute, 3D rendered marshmallow-like cloud character floating gently. The character has a friendly face and is rendered in a soft pastel palette with gentle studio lighting, fitting a calm, therapeutic app aesthetic." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDEdHfNzBXNbS0CD9U8mTaTPQEOwlGBpJz4ZFvIipqEEiu4rS5MwO01YKwitRsbxk8fSkRzBzrJbqJ0G8q_z7KQeVTP9lwc1FA4TRiOe07SB0gQt54XPawLcQ-dUziELUywatILJ6ojgJXFrRGAx4MO433w0Rf5Ue7fiYRA6ORVqCMupmrlv0VTaIeUobe3PbkkXltW4BsCnz33povIn7Egc7DIXu5vDHTamFBdfnZiaoGHKkzhEEW_9Cld2YBXREU5nPvIY1NAcTtJ"/>
+<div>
+<h1 class="text-xl font-bold text-emerald-900 dark:text-emerald-100 font-h2 text-h2 leading-none">Rant &amp; Heal</h1>
+<p class="font-label-sm text-label-sm text-on-surface-variant opacity-70 mt-1">Your safe space</p>
+</div>
+</div>
+</div>
+<div class="flex-1 space-y-2 mt-4">
+<a class="flex items-center gap-4 px-4 py-3 bg-emerald-100/50 dark:bg-emerald-900/30 text-emerald-900 dark:text-emerald-100 rounded-full mx-2 shadow-inner hover:translate-x-1 transition-transform duration-300 active:scale-95" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">home</span>
+<span class="font-label-md text-label-md">Home</span>
+</a>
+<a class="flex items-center gap-4 px-4 py-3 text-emerald-800/60 dark:text-zinc-400 hover:bg-emerald-50/50 rounded-full mx-2 hover:translate-x-1 transition-transform duration-300 active:scale-95" href="#">
+<span class="material-symbols-outlined">chat_bubble</span>
+<span class="font-label-md text-label-md">Rant</span>
+</a>
+<a class="flex items-center gap-4 px-4 py-3 text-emerald-800/60 dark:text-zinc-400 hover:bg-emerald-50/50 rounded-full mx-2 hover:translate-x-1 transition-transform duration-300 active:scale-95" href="#">
+<span class="material-symbols-outlined">book</span>
+<span class="font-label-md text-label-md">Journal</span>
+</a>
+<a class="flex items-center gap-4 px-4 py-3 text-emerald-800/60 dark:text-zinc-400 hover:bg-emerald-50/50 rounded-full mx-2 hover:translate-x-1 transition-transform duration-300 active:scale-95" href="#">
+<span class="material-symbols-outlined">cloud</span>
+<span class="font-label-md text-label-md">Momo</span>
+</a>
+<a class="flex items-center gap-4 px-4 py-3 text-emerald-800/60 dark:text-zinc-400 hover:bg-emerald-50/50 rounded-full mx-2 hover:translate-x-1 transition-transform duration-300 active:scale-95" href="#">
+<span class="material-symbols-outlined">bedtime</span>
+<span class="font-label-md text-label-md">Mood/Sleep</span>
+</a>
+<a class="flex items-center gap-4 px-4 py-3 text-emerald-800/60 dark:text-zinc-400 hover:bg-emerald-50/50 rounded-full mx-2 hover:translate-x-1 transition-transform duration-300 active:scale-95" href="#">
+<span class="material-symbols-outlined">group</span>
+<span class="font-label-md text-label-md">Community</span>
+</a>
+</div>
+<div class="mt-auto px-2">
+<button class="w-full py-4 bg-primary text-on-primary rounded-full font-label-md text-label-md flex items-center justify-center gap-2 clay-button active:scale-95 transition-all">
+<span class="material-symbols-outlined">add</span>
+                    New Entry
+                </button>
+</div>
+</nav>
+<!-- Main Content Area -->
+<main class="flex-1 md:ml-[300px] p-margin_safe h-full overflow-y-auto relative pb-24">
+<header class="flex justify-between items-center mb-10 mt-4 md:hidden">
+<h1 class="font-h1 text-h1 text-primary">Rant &amp; Heal</h1>
+<img alt="Profile" class="w-12 h-12 rounded-full shadow-sm" data-alt="Close up portrait of a young adult, soft natural lighting, pastel background, peaceful expression." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAlly3iavRFIRLqWly3gmWPx9JeQPQJJvjzCVyKuuC70H3A75AB3Tuk02gLBZVtPX2NzdaNxNqdCH0S3JBgioVGYsNBwr7Yg3wcQtR-OQWjSiVsvRCBKleg6aQkPnA1RtvgPgbtZ-QmCyeufc2qRpIY26ajtghYodJ0aTb6lP8E0K1ytzE5iaCkEy_cYJWnzkGA-Sysj8rLNf3CPn8bU0AcD7q4x2aFQgt7lE6Tf_ayEfPWVeZ2wo6s-ACI-Bb1ZRFnVahwCF4D_WZB"/>
+</header>
+<div class="max-w-5xl mx-auto space-y-gutter">
+<!-- Greeting Card -->
+<div class="rounded-xl p-8 bg-secondary-container text-on-secondary-container clay-card relative overflow-hidden flex flex-col md:flex-row justify-between items-start md:items-center">
+<div class="z-10 relative">
+<h2 class="font-display text-display mb-2 text-secondary">Hey Alex, you showed up today.</h2>
+<p class="font-body-lg text-body-lg text-on-secondary-container opacity-80">That's something to be proud of. Take a deep breath.</p>
+</div>
+<div class="absolute -right-10 -bottom-10 w-48 h-48 bg-secondary-fixed opacity-50 rounded-full blur-2xl"></div>
+</div>
+<!-- Bento Grid Layout -->
+<div class="grid grid-cols-1 md:grid-cols-12 gap-gutter">
+<!-- Mood Check-in -->
+<div class="md:col-span-12 rounded-xl p-6 clay-card flex flex-col justify-center items-center">
+<h3 class="font-h2 text-h2 text-primary-container mb-6 text-center">How are you feeling right now?</h3>
+<div class="flex gap-4 sm:gap-8 justify-center">
+<!-- 3D Pebbles -->
+<button class="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-error-container shadow-[0_8px_15px_-3px_rgba(186,26,26,0.2),inset_0_-4px_8px_rgba(0,0,0,0.1),inset_0_4px_8px_rgba(255,255,255,0.8)] hover:scale-105 active:scale-95 transition-transform flex items-center justify-center group relative cursor-pointer">
+<span class="material-symbols-outlined text-error opacity-50 group-hover:opacity-100 transition-opacity" style="font-variation-settings: 'FILL' 1;">sentiment_very_dissatisfied</span>
+</button>
+<button class="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-surface-container-highest shadow-[0_8px_15px_-3px_rgba(200,100,0,0.1),inset_0_-4px_8px_rgba(0,0,0,0.1),inset_0_4px_8px_rgba(255,255,255,0.8)] hover:scale-105 active:scale-95 transition-transform flex items-center justify-center group relative cursor-pointer">
+<span class="material-symbols-outlined text-tertiary opacity-50 group-hover:opacity-100 transition-opacity" style="font-variation-settings: 'FILL' 1;">sentiment_dissatisfied</span>
+</button>
+<button class="w-14 h-14 sm:w-20 sm:h-20 rounded-full bg-surface shadow-[0_10px_20px_-5px_rgba(0,0,0,0.05),inset_0_-4px_8px_rgba(0,0,0,0.05),inset_0_4px_8px_rgba(255,255,255,1)] hover:scale-105 active:scale-95 transition-transform flex items-center justify-center group relative cursor-pointer border border-white">
+<span class="material-symbols-outlined text-on-surface opacity-50 group-hover:opacity-100 transition-opacity text-3xl" style="font-variation-settings: 'FILL' 1;">sentiment_neutral</span>
+</button>
+<button class="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-primary-fixed-dim shadow-[0_8px_15px_-3px_rgba(74,107,94,0.2),inset_0_-4px_8px_rgba(0,0,0,0.1),inset_0_4px_8px_rgba(255,255,255,0.8)] hover:scale-105 active:scale-95 transition-transform flex items-center justify-center group relative cursor-pointer">
+<span class="material-symbols-outlined text-primary opacity-50 group-hover:opacity-100 transition-opacity" style="font-variation-settings: 'FILL' 1;">sentiment_satisfied</span>
+</button>
+<button class="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-primary-fixed shadow-[0_8px_15px_-3px_rgba(74,107,94,0.3),inset_0_-4px_8px_rgba(0,0,0,0.1),inset_0_4px_8px_rgba(255,255,255,0.9)] hover:scale-105 active:scale-95 transition-transform flex items-center justify-center group relative cursor-pointer">
+<span class="material-symbols-outlined text-primary-container opacity-50 group-hover:opacity-100 transition-opacity" style="font-variation-settings: 'FILL' 1;">sentiment_very_satisfied</span>
+</button>
+</div>
+</div>
+<!-- Action Tiles Grid -->
+<div class="md:col-span-5 grid grid-cols-2 gap-4">
+<button class="rounded-xl p-6 bg-white/40 hover:bg-white/60 transition-colors border border-white/50 shadow-sm flex flex-col items-center justify-center gap-3 text-center aspect-square clay-card active:scale-95">
+<div class="w-12 h-12 rounded-full bg-error-container flex items-center justify-center mb-2 shadow-inner">
+<span class="material-symbols-outlined text-error" style="font-variation-settings: 'FILL' 1;">mic</span>
+</div>
+<span class="font-label-md text-label-md text-on-surface">Rant Now</span>
+</button>
+<button class="rounded-xl p-6 bg-white/40 hover:bg-white/60 transition-colors border border-white/50 shadow-sm flex flex-col items-center justify-center gap-3 text-center aspect-square clay-card active:scale-95">
+<div class="w-12 h-12 rounded-full bg-primary-container flex items-center justify-center mb-2 shadow-inner">
+<span class="material-symbols-outlined text-on-primary" style="font-variation-settings: 'FILL' 1;">edit_document</span>
+</div>
+<span class="font-label-md text-label-md text-on-surface">Journal</span>
+</button>
+<button class="rounded-xl p-6 bg-white/40 hover:bg-white/60 transition-colors border border-white/50 shadow-sm flex flex-col items-center justify-center gap-3 text-center aspect-square clay-card active:scale-95">
+<div class="w-12 h-12 rounded-full bg-tertiary-container flex items-center justify-center mb-2 shadow-inner">
+<span class="material-symbols-outlined text-on-tertiary" style="font-variation-settings: 'FILL' 1;">nightlight</span>
+</div>
+<span class="font-label-md text-label-md text-on-surface">Sleep Log</span>
+</button>
+<button class="rounded-xl p-6 bg-white/40 hover:bg-white/60 transition-colors border border-white/50 shadow-sm flex flex-col items-center justify-center gap-3 text-center aspect-square clay-card active:scale-95">
+<div class="w-12 h-12 rounded-full bg-surface-variant flex items-center justify-center mb-2 shadow-inner">
+<span class="material-symbols-outlined text-on-surface-variant" style="font-variation-settings: 'FILL' 1;">psychology</span>
+</div>
+<span class="font-label-md text-label-md text-on-surface">My Therapist</span>
+</button>
+</div>
+<!-- Chart Area -->
+<div class="md:col-span-7 rounded-xl p-6 clay-card flex flex-col">
+<div class="flex justify-between items-center mb-6">
+<h3 class="font-h2 text-h2 text-primary-container">Weekly Rhythm</h3>
+<button class="text-primary opacity-60 hover:opacity-100">
+<span class="material-symbols-outlined">more_horiz</span>
+</button>
+</div>
+<div class="flex-1 relative min-h-[200px] w-full flex items-end">
+<!-- SVG Area Chart Mockup for smooth organic feel -->
+<svg class="w-full h-full preserve-aspect-none drop-shadow-md" viewbox="0 0 400 150">
+<defs>
+<lineargradient id="chartGradient" x1="0" x2="0" y1="0" y2="1">
+<stop offset="0%" stop-color="#abcebf" stop-opacity="0.6"></stop>
+<stop offset="100%" stop-color="#abcebf" stop-opacity="0"></stop>
+</lineargradient>
+</defs>
+<path d="M0,150 L0,80 C50,80 80,120 130,110 C180,100 200,40 250,50 C300,60 350,100 400,90 L400,150 Z" fill="url(#chartGradient)"></path>
+<path d="M0,80 C50,80 80,120 130,110 C180,100 200,40 250,50 C300,60 350,100 400,90" fill="none" stroke="#4a6b5e" stroke-linecap="round" stroke-width="3"></path>
+<!-- Data points as clay dots -->
+<circle cx="130" cy="110" fill="#fff" r="6" stroke="#4a6b5e" stroke-width="2"></circle>
+<circle cx="250" cy="50" fill="#fff" r="6" stroke="#4a6b5e" stroke-width="2"></circle>
+<circle cx="400" cy="90" fill="#fff" r="6" stroke="#4a6b5e" stroke-width="2"></circle>
+</svg>
+</div>
+<div class="flex justify-between mt-4 font-label-sm text-label-sm text-outline px-2">
+<span>Mon</span>
+<span>Wed</span>
+<span>Fri</span>
+<span>Sun</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Momo Peeking -->
+<div class="fixed bottom-0 right-4 md:right-10 pointer-events-none z-50">
+<img alt="Momo Peeking" class="w-32 h-32 md:w-48 md:h-48 object-cover rounded-t-full shadow-lg border-t-4 border-white/50 opacity-90 translate-y-4" data-alt="A soft, puffy 3D marshmallow character peeking playfully from the bottom of the frame. The lighting is soft studio style with pastel tones, creating a calming, friendly presence." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCFNoRc3FbIslVozhA0vTATcY8V9OktmIHS-j3BF7BvztA1EHqVpFjNUD2qMWsq39HHrqv12aaBAA-2yHnXObjSWiiecOAb2n_oapB97gdnlQtJ0PgCcjm-mai1AjdEdqPYGq7Bvpk4kEZT7lzXIWT9N0DOARzyDmXl1T4R7jxd4uKz8X8k5fLeIohWVo-FuvWy5tO9LRuN7jjFVCE2hvLUn0eWNEG-pXrL-vg354zryLT42P14T_dgxIkqQJmfpTG9HKf4ffQwWTmk"/>
+</div>
+</main>
+</div>
+</body></html>

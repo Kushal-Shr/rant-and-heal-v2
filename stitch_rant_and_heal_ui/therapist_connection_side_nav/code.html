@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Connect to Therapist</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;500;700;900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "primary-fixed-dim": "#abcebf",
+                      "on-background": "#2c1601",
+                      "outline": "#717974",
+                      "surface-container": "#ffeada",
+                      "on-error": "#ffffff",
+                      "primary-fixed": "#c6ebda",
+                      "secondary-fixed-dim": "#e9bea2",
+                      "on-secondary-fixed": "#2d1605",
+                      "on-primary-fixed": "#002117",
+                      "on-error-container": "#93000a",
+                      "secondary-fixed": "#ffdcc6",
+                      "on-surface": "#2c1601",
+                      "surface-container-highest": "#ffdcbf",
+                      "outline-variant": "#c1c8c3",
+                      "inverse-on-surface": "#ffeee1",
+                      "surface-container-low": "#fff1e8",
+                      "error-container": "#ffdad6",
+                      "tertiary-fixed-dim": "#ffb59d",
+                      "surface-container-high": "#ffe3cd",
+                      "on-secondary-fixed-variant": "#5e402b",
+                      "inverse-primary": "#abcebf",
+                      "on-tertiary": "#ffffff",
+                      "on-surface-variant": "#414845",
+                      "on-secondary": "#ffffff",
+                      "tertiary-fixed": "#ffdbd0",
+                      "surface-dim": "#fed2ab",
+                      "tertiary-container": "#96523b",
+                      "surface-tint": "#446558",
+                      "surface-variant": "#ffdcbf",
+                      "primary": "#325347",
+                      "on-secondary-container": "#795841",
+                      "surface": "#fff8f5",
+                      "background": "#fff8f5",
+                      "primary-container": "#4a6b5e",
+                      "on-primary": "#ffffff",
+                      "on-primary-fixed-variant": "#2d4d41",
+                      "error": "#ba1a1a",
+                      "on-tertiary-fixed": "#390b00",
+                      "on-tertiary-container": "#ffdacf",
+                      "secondary-container": "#fed1b4",
+                      "secondary": "#785741",
+                      "on-primary-container": "#c6eada",
+                      "inverse-surface": "#442b10",
+                      "surface-container-lowest": "#ffffff",
+                      "tertiary": "#793b26",
+                      "on-tertiary-fixed-variant": "#723521",
+                      "surface-bright": "#fff8f5"
+              },
+              "borderRadius": {
+                      "DEFAULT": "1rem",
+                      "lg": "2rem",
+                      "xl": "3rem",
+                      "full": "9999px"
+              },
+              "spacing": {
+                      "sm": "1rem",
+                      "md": "1.5rem",
+                      "gutter": "1.5rem",
+                      "xl": "4rem",
+                      "margin_safe": "2rem",
+                      "xs": "0.5rem",
+                      "lg": "2.5rem"
+              },
+              "fontFamily": {
+                      "h2": [
+                              "Plus Jakarta Sans"
+                      ],
+                      "label-sm": [
+                              "Plus Jakarta Sans"
+                      ],
+                      "h1": [
+                              "Plus Jakarta Sans"
+                      ],
+                      "display": [
+                              "Plus Jakarta Sans"
+                      ],
+                      "body-lg": [
+                              "Plus Jakarta Sans"
+                      ],
+                      "label-md": [
+                              "Plus Jakarta Sans"
+                      ],
+                      "body-md": [
+                              "Plus Jakarta Sans"
+                      ]
+              },
+              "fontSize": {
+                      "h2": [
+                              "24px",
+                              {
+                                      "lineHeight": "1.4",
+                                      "fontWeight": "500"
+                              }
+                      ],
+                      "label-sm": [
+                              "12px",
+                              {
+                                      "lineHeight": "1.2",
+                                      "fontWeight": "500"
+                              }
+                      ],
+                      "h1": [
+                              "32px",
+                              {
+                                      "lineHeight": "1.3",
+                                      "fontWeight": "500"
+                              }
+                      ],
+                      "display": [
+                              "48px",
+                              {
+                                      "lineHeight": "1.2",
+                                      "letterSpacing": "-0.02em",
+                                      "fontWeight": "500"
+                              }
+                      ],
+                      "body-lg": [
+                              "18px",
+                              {
+                                      "lineHeight": "1.6",
+                                      "fontWeight": "300"
+                              }
+                      ],
+                      "label-md": [
+                              "14px",
+                              {
+                                      "lineHeight": "1.2",
+                                      "letterSpacing": "0.01em",
+                                      "fontWeight": "500"
+                              }
+                      ],
+                      "body-md": [
+                              "16px",
+                              {
+                                      "lineHeight": "1.6",
+                                      "fontWeight": "300"
+                              }
+                      ]
+              }
+      },
+          },
+        }
+      </script>
+<style>
+        .blob-bg {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: -1;
+            overflow: hidden;
+            background-color: theme('colors.background');
+        }
+        .blob-1 {
+            position: absolute;
+            top: -10%;
+            right: -5%;
+            width: 50vw;
+            height: 50vw;
+            background: radial-gradient(circle, theme('colors.surface-container-high') 0%, transparent 70%);
+            border-radius: 50%;
+            opacity: 0.8;
+            filter: blur(40px);
+        }
+        .blob-2 {
+            position: absolute;
+            bottom: -20%;
+            left: -10%;
+            width: 60vw;
+            height: 60vw;
+            background: radial-gradient(circle, theme('colors.secondary-container') 0%, transparent 70%);
+            border-radius: 50%;
+            opacity: 0.6;
+            filter: blur(60px);
+        }
+        
+        .marshmallow-shadow {
+            box-shadow: 
+                0 20px 40px -10px rgba(121, 88, 65, 0.1), /* Ambient shadow tinted with secondary */
+                0 10px 15px -5px rgba(121, 88, 65, 0.05), /* Contact shadow */
+                inset 0 2px 4px rgba(255, 255, 255, 0.8);  /* Inner highlight */
+        }
+
+        .marshmallow-btn {
+            box-shadow: 
+                0 8px 20px -5px rgba(121, 88, 65, 0.15),
+                inset 0 1px 2px rgba(255, 255, 255, 0.5);
+            transition: all 0.2s ease;
+        }
+        .marshmallow-btn:active {
+            transform: scale(0.96);
+            box-shadow: 
+                0 2px 5px rgba(121, 88, 65, 0.1),
+                inset 0 2px 4px rgba(0, 0, 0, 0.05);
+        }
+
+        .input-clay {
+            box-shadow: inset 0 3px 6px rgba(0, 0, 0, 0.04);
+            border: 1px solid theme('colors.surface-variant');
+        }
+        .input-clay:focus {
+            box-shadow: inset 0 3px 6px rgba(0, 0, 0, 0.04), 0 0 0 2px theme('colors.primary-fixed-dim');
+            outline: none;
+            border-color: transparent;
+        }
+
+      </style>
+</head>
+<body class="font-body-md text-body-md text-on-surface antialiased bg-background selection:bg-primary-container selection:text-on-primary-container min-h-screen">
+<!-- Organic Background Blobs -->
+<div class="blob-bg">
+<div class="blob-1"></div>
+<div class="blob-2"></div>
+</div>
+<!-- Emergency Banner -->
+<div class="bg-error-container text-on-error-container font-label-md text-label-md px-gutter py-sm flex items-center justify-center gap-xs sticky top-0 z-50 marshmallow-shadow rounded-b-lg mx-margin_safe mt-0 mb-md relative">
+<span class="material-symbols-outlined" data-icon="emergency" style="font-variation-settings: 'FILL' 1;">emergency</span>
+<span>In crisis? Text HOME to 741741 to connect with a Crisis Counselor 24/7.</span>
+</div>
+<!-- Layout Container -->
+<div class="flex h-[calc(100vh-4rem)]">
+<!-- Side Navigation (Web) -->
+<nav class="hidden md:flex h-[calc(100vh-2rem)] w-64 m-4 rounded-[3rem] border-r-0 shadow-[15px_15px_40px_rgba(0,0,0,0.05),-10px_-10px_30px_rgba(255,255,255,0.8)] bg-[#FDFCF8] dark:bg-zinc-900 fixed left-0 top-0 flex flex-col p-4 space-y-2 z-40 mt-[5rem]">
+<div class="mb-xl px-sm flex items-center gap-sm">
+<div class="w-12 h-12 rounded-full overflow-hidden marshmallow-shadow bg-surface-container flex-shrink-0">
+<img alt="Momo Mascot" class="w-full h-full object-cover" data-alt="A soft, 3D rendering of a small, cute marshmallow-like mascot character floating gently in an empty studio space. The lighting is bright and soft, typical of a light-mode interface element, giving the character a tactile, squishy appearance. The background is a very subtle off-white." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDt9cUVGflKSC0LAhpF0h46oVGTqz3zqhO_dQcYkypDDpnS4z60mjL2p9IFHx9omuRaSCk1TULTXUX-HJHncdrmDBNqi0MbNrp8ph-4vUSZaPh7k1ON5CGnqVn7nGhUTDIJ1XKyN0Etv6GM2PXjuW7vL-I9GG8a2K4ycMDRu_cPhxoAU07PXZ47G-2L5G2qI9ofolGy1czi-rkuOHWEZ_16qCAsfxYHpNZGPtc0VmHqz2pPKPsAKGtoAgjQd4EqXsh_nHKiyXAIgVZw"/>
+</div>
+<div>
+<h1 class="text-xl font-bold text-emerald-900 dark:text-emerald-100 font-h2 text-h2">Rant &amp; Heal</h1>
+<p class="font-label-sm text-label-sm text-on-surface-variant">Your safe space</p>
+</div>
+</div>
+<div class="flex-1 flex flex-col gap-xs">
+<a class="flex items-center gap-sm px-md py-sm font-['Plus_Jakarta_Sans'] text-sm font-medium text-emerald-800/60 dark:text-zinc-400 hover:bg-emerald-50/50 rounded-full mx-2 hover:translate-x-1 transition-transform duration-300" href="#">
+<span class="material-symbols-outlined" data-icon="home">home</span>
+<span>Home</span>
+</a>
+<a class="flex items-center gap-sm px-md py-sm font-['Plus_Jakarta_Sans'] text-sm font-medium text-emerald-800/60 dark:text-zinc-400 hover:bg-emerald-50/50 rounded-full mx-2 hover:translate-x-1 transition-transform duration-300" href="#">
+<span class="material-symbols-outlined" data-icon="chat_bubble">chat_bubble</span>
+<span>Rant</span>
+</a>
+<a class="flex items-center gap-sm px-md py-sm font-['Plus_Jakarta_Sans'] text-sm font-medium text-emerald-800/60 dark:text-zinc-400 hover:bg-emerald-50/50 rounded-full mx-2 hover:translate-x-1 transition-transform duration-300" href="#">
+<span class="material-symbols-outlined" data-icon="book">book</span>
+<span>Journal</span>
+</a>
+<a class="flex items-center gap-sm px-md py-sm font-['Plus_Jakarta_Sans'] text-sm font-medium text-emerald-800/60 dark:text-zinc-400 hover:bg-emerald-50/50 rounded-full mx-2 hover:translate-x-1 transition-transform duration-300" href="#">
+<span class="material-symbols-outlined" data-icon="cloud">cloud</span>
+<span>Momo</span>
+</a>
+<a class="flex items-center gap-sm px-md py-sm font-['Plus_Jakarta_Sans'] text-sm font-medium text-emerald-800/60 dark:text-zinc-400 hover:bg-emerald-50/50 rounded-full mx-2 hover:translate-x-1 transition-transform duration-300" href="#">
+<span class="material-symbols-outlined" data-icon="bedtime">bedtime</span>
+<span>Mood/Sleep</span>
+</a>
+<a class="flex items-center gap-sm px-md py-sm font-['Plus_Jakarta_Sans'] text-sm font-medium bg-emerald-100/50 dark:bg-emerald-900/30 text-emerald-900 dark:text-emerald-100 rounded-full mx-2 shadow-inner hover:translate-x-1 transition-transform duration-300" href="#">
+<span class="material-symbols-outlined" data-icon="group" style="font-variation-settings: 'FILL' 1;">group</span>
+<span>Community</span>
+</a>
+</div>
+<div class="mt-auto p-xs">
+<button class="w-full marshmallow-btn bg-primary-container text-on-primary-container font-label-md text-label-md py-sm rounded-full flex justify-center items-center gap-xs">
+<span class="material-symbols-outlined text-[18px]" data-icon="add">add</span>
+                    New Entry
+                </button>
+</div>
+</nav>
+<!-- Main Content Canvas -->
+<main class="flex-1 md:ml-[18rem] p-margin_safe overflow-y-auto">
+<header class="mb-xl flex justify-between items-end">
+<div>
+<h2 class="font-display text-display text-on-surface mb-xs">Find Your Match</h2>
+<p class="font-body-lg text-body-lg text-on-surface-variant max-w-xl">Connect with certified professionals who specialize in soft, patient-led healing. Take your time browsing.</p>
+</div>
+<!-- Filter Input -->
+<div class="relative w-72">
+<span class="material-symbols-outlined absolute left-sm top-1/2 -translate-y-1/2 text-on-surface-variant">search</span>
+<input class="w-full bg-surface-container-lowest input-clay rounded-full py-sm pl-xl pr-sm font-body-md text-body-md text-on-surface placeholder:text-on-surface-variant/50" placeholder="Search by specialty or name..." type="text"/>
+</div>
+</header>
+<!-- Grid Layout -->
+<div class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-xl">
+<!-- Therapist Card 1 -->
+<article class="bg-surface-container-lowest rounded-[2.5rem] p-lg marshmallow-shadow flex flex-col relative group">
+<div class="flex items-start gap-md mb-md">
+<div class="w-20 h-20 rounded-full overflow-hidden ring-4 ring-primary-fixed-dim/30 marshmallow-shadow flex-shrink-0">
+<img alt="Dr. Sarah Jenkins" class="w-full h-full object-cover" data-alt="A warm, professional portrait of a female therapist with glasses, smiling softly in a brightly lit, modern office space. The lighting is soft and airy, fitting a calming health and wellness aesthetic. She is wearing a soft beige sweater." src="https://lh3.googleusercontent.com/aida-public/AB6AXuA73lkZWZ7VFNEU7wtGdly3zpxqYCcyn7aMDmPPKd2PUzPjW6fgVmADa4sh9Nmf52iWrlQDoxZ6zTAZizSQ5pvSgieqbj1eSnZRPbXqZDzdZRUvYHPwPFIx3t9g-u4FZvxeocCSZu3k_nmih4YZtHwQvmMwL1Re10PJbBXq1bejte7yooQlIYJYBICZ3x09eSBy4rnKsz7Dm1ct6gZ4XTskTnrzGuBeiG6xTw9OlmAm_DIJG9kWuGIYvqKIRdjFLYPIMzkXsIXULTpv"/>
+</div>
+<div>
+<h3 class="font-h2 text-h2 text-on-surface">Dr. Sarah Jenkins</h3>
+<p class="font-label-md text-label-md text-primary-container">Clinical Psychologist</p>
+<div class="flex items-center gap-xs mt-xs text-on-surface-variant font-label-sm text-label-sm">
+<span class="material-symbols-outlined text-[14px]">star</span>
+<span>4.9 (120 reviews)</span>
+</div>
+</div>
+</div>
+<div class="flex flex-wrap gap-xs mb-md">
+<span class="bg-primary-fixed-dim/20 text-on-primary-fixed-variant font-label-sm text-label-sm px-md py-xs rounded-full">Anxiety</span>
+<span class="bg-primary-fixed-dim/20 text-on-primary-fixed-variant font-label-sm text-label-sm px-md py-xs rounded-full">Depression</span>
+<span class="bg-primary-fixed-dim/20 text-on-primary-fixed-variant font-label-sm text-label-sm px-md py-xs rounded-full">CBT</span>
+</div>
+<p class="font-body-md text-body-md text-on-surface-variant line-clamp-3 mb-xl flex-1">"I believe healing isn't linear. Together, we'll create a soft landing space for your thoughts and work through them at a pace that feels safe for you."</p>
+<button class="marshmallow-btn bg-transparent border-2 border-primary-container text-primary-container font-label-md text-label-md py-md rounded-full w-full hover:bg-primary-fixed-dim/10 transition-colors">
+                        Connect Now
+                    </button>
+</article>
+<!-- Therapist Card 2 -->
+<article class="bg-surface-container-lowest rounded-[2.5rem] p-lg marshmallow-shadow flex flex-col relative group">
+<div class="flex items-start gap-md mb-md">
+<div class="w-20 h-20 rounded-full overflow-hidden ring-4 ring-primary-fixed-dim/30 marshmallow-shadow flex-shrink-0">
+<img alt="Marcus Chen" class="w-full h-full object-cover" data-alt="A portrait of a male therapist looking empathetic and calm, seated in a room with soft natural light streaming in. He has short hair and a neatly trimmed beard, wearing a casual light grey shirt. The environment suggests a peaceful, safe space." src="https://lh3.googleusercontent.com/aida-public/AB6AXuB7413dSnIYijuzTfgSf0ijm2i9g7B6zHdpcZZfO4O5Oba1sZRNI9O3mTd4_EeTQzo6pTpcsqo9wihvAireEvDc0iw7j8CGI3lAGDfGPHLnouICCH9lRDRaObRgN5l2yDVfWJ4sxBP5q0AMhdcOmomW7R2rxMEi3Y2xFMwWXAX9YMe-gFJK6pJh4zeMUjebH1QbdU0EBbs65h4uFQlWsyUQB0dqt5QM3C7LqHCZWmUmSkQtQbuJi6yb1fTX8eqgckiIbfTc2Z-jh8C5"/>
+</div>
+<div>
+<h3 class="font-h2 text-h2 text-on-surface">Marcus Chen</h3>
+<p class="font-label-md text-label-md text-primary-container">LCSW</p>
+<div class="flex items-center gap-xs mt-xs text-on-surface-variant font-label-sm text-label-sm">
+<span class="material-symbols-outlined text-[14px]">star</span>
+<span>4.8 (85 reviews)</span>
+</div>
+</div>
+</div>
+<div class="flex flex-wrap gap-xs mb-md">
+<span class="bg-primary-fixed-dim/20 text-on-primary-fixed-variant font-label-sm text-label-sm px-md py-xs rounded-full">Trauma</span>
+<span class="bg-primary-fixed-dim/20 text-on-primary-fixed-variant font-label-sm text-label-sm px-md py-xs rounded-full">PTSD</span>
+<span class="bg-primary-fixed-dim/20 text-on-primary-fixed-variant font-label-sm text-label-sm px-md py-xs rounded-full">EMDR</span>
+</div>
+<p class="font-body-md text-body-md text-on-surface-variant line-clamp-3 mb-xl flex-1">"My approach focuses on somatic experiencing. We will listen to what your body is holding onto and gently release it when you are ready."</p>
+<button class="marshmallow-btn bg-transparent border-2 border-primary-container text-primary-container font-label-md text-label-md py-md rounded-full w-full hover:bg-primary-fixed-dim/10 transition-colors">
+                        Connect Now
+                    </button>
+</article>
+<!-- Therapist Card 3 -->
+<article class="bg-surface-container-lowest rounded-[2.5rem] p-lg marshmallow-shadow flex flex-col relative group">
+<div class="flex items-start gap-md mb-md">
+<div class="w-20 h-20 rounded-full overflow-hidden ring-4 ring-primary-fixed-dim/30 marshmallow-shadow flex-shrink-0">
+<img alt="Elena Rodriguez" class="w-full h-full object-cover" data-alt="A professional yet relaxed portrait of a female therapist with curly hair, sitting in an armchair. The room is decorated with warm, earthy tones and plenty of green plants. The lighting is sunny and inviting, highlighting a gentle, welcoming smile." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBocnSK58V0wTlQxV76HuZixnSJIp1bpQXd0_HiKatPdLxqory0InJTWj0U2QcP14Kb86Iz0h6zeh5JVJT7eQDZLE49hp9HEgE6HDtg-U09YpepTcaO4uPzYdfDS6mbVamkZYu9ER4fw-AOWs1fRzDYNfZUrnUdNOP3V-jaolChyG1d_uFKuaj-9u6hFFSZIzPtVFMBppFcZdbjpugr4IibmBfui6HGwagEGUK8nYiAgelGcSDKJr7G74_BCdXF07bOPJP6c6ZTs6B1"/>
+</div>
+<div>
+<h3 class="font-h2 text-h2 text-on-surface">Elena Rodriguez</h3>
+<p class="font-label-md text-label-md text-primary-container">LMFT</p>
+<div class="flex items-center gap-xs mt-xs text-on-surface-variant font-label-sm text-label-sm">
+<span class="material-symbols-outlined text-[14px]">star</span>
+<span>5.0 (200+ reviews)</span>
+</div>
+</div>
+</div>
+<div class="flex flex-wrap gap-xs mb-md">
+<span class="bg-primary-fixed-dim/20 text-on-primary-fixed-variant font-label-sm text-label-sm px-md py-xs rounded-full">Relationships</span>
+<span class="bg-primary-fixed-dim/20 text-on-primary-fixed-variant font-label-sm text-label-sm px-md py-xs rounded-full">Family Dynamics</span>
+</div>
+<p class="font-body-md text-body-md text-on-surface-variant line-clamp-3 mb-xl flex-1">"Navigating relationships can be heavy. Let's untangle the knots together in a non-judgmental, deeply empathetic environment."</p>
+<button class="marshmallow-btn bg-transparent border-2 border-primary-container text-primary-container font-label-md text-label-md py-md rounded-full w-full hover:bg-primary-fixed-dim/10 transition-colors">
+                        Connect Now
+                    </button>
+</article>
+</div>
+</main>
+</div>
+</body></html>
