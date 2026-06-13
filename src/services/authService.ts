@@ -6,10 +6,12 @@ import {
   createUserWithEmailAndPassword,
   signInAnonymously,
   signOut as firebaseSignOut,
+  deleteUser,
   AuthError,
   UserCredential,
 } from "firebase/auth";
-import { auth } from "../config/firebase";
+import { doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { auth, db } from "../config/firebase";
 
 // Custom error mapping for user-friendly messages
 export const mapAuthError = (error: unknown): string => {
@@ -63,10 +65,31 @@ export const authService = {
     }
   },
 
-  async signUpWithEmail(email: string, password: string): Promise<UserCredential> {
+  async signUpWithEmail(email: string, password: string, displayName: string, role: string = "USER"): Promise<UserCredential> {
+    let userCredential: UserCredential | null = null;
     try {
-      return await createUserWithEmailAndPassword(auth, email, password);
+      userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
+
+      await setDoc(doc(db, "users", user.uid), {
+        uid: user.uid,
+        email: user.email,
+        displayName: displayName,
+        role: role,
+        onboardingComplete: false,
+        mfaEnabled: false,
+        createdAt: serverTimestamp(),
+      });
+
+      return userCredential;
     } catch (error) {
+      if (userCredential?.user) {
+        try {
+          await deleteUser(userCredential.user);
+        } catch (rollbackError) {
+          console.error("Failed to rollback auth creation:", rollbackError);
+        }
+      }
       throw new Error(mapAuthError(error));
     }
   },
