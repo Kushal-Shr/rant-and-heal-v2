@@ -37,24 +37,9 @@ Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/bui
 
 ## Technical Architecture
 
-This project is built with a modern, high-performance web stack tailored for security, scalability, and developer experience.
+For a comprehensive overview of the directory structure, routing design, and core architectural patterns (such as our service-oriented layer and atomic database sync bridges), please refer to the detailed [ARCHITECTURE.md](file:///Users/kushal/Projects/rant-and-heal-v2/ARCHITECTURE.md) document.
 
-### Tech Stack
-- **Framework**: Next.js 16 (App Router)
-- **Authentication**: Firebase 10+
-- **Type Safety**: TypeScript
-- **Runtime Validation**: Zod
-
-### Security Features
-- **Server-Side Protection**: Leveraging Next.js Edge Middleware combined with `js-cookie` to strictly protect private routes (e.g., `/dashboard`, `/journal`) before the page even loads.
-- **Environment Safety**: Comprehensive runtime validation of API keys using Zod. This prevents silent failures by immediately alerting developers to missing or malformed environment variables.
-- **Encryption Ready**: The architecture is inherently designed to support an AES-256 implementation layer for the journal feature, ensuring end-to-end data confidentiality.
-
-### Architecture Patterns
-- **Service-Oriented Architecture (SOA)**: Authentication logic is heavily decoupled from UI components into a dedicated `authService`, improving maintainability and testability.
-- **Global State Management**: High-performance React Context (`AuthProvider`) orchestrates the user session state seamlessly with Firebase's observers to prevent UI flickering and hydration mismatches.
-
-### How to Run
+### Quick Start
 1. Create a `.env.local` file in the root directory and add your Firebase configuration variables.
 2. Install the necessary dependencies:
    ```bash

@@ -1,65 +1,75 @@
-import Image from "next/image";
+import Link from "next/link";
+import { MarketingNavbar } from "@/src/components/layout/MarketingNavbar";
+import { MarketingFooter } from "@/src/components/layout/MarketingFooter";
+import { Button } from "@/src/components/ui/Button";
+import { Card } from "@/src/components/ui/Card";
 
-export default function Home() {
+export default function LandingPage() {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
+    <div className="flex min-h-screen flex-col bg-[#fff8f5] text-[#2c1601] font-['Plus_Jakarta_Sans']">
+      <MarketingNavbar />
+
+      <main className="flex-1 flex flex-col items-center justify-center max-w-6xl mx-auto px-6 py-20 text-center">
+        {/* Hero Section */}
+        <section className="mb-20">
+          <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight text-[#325347] uppercase leading-[1.1] mb-6">
+            YOUR MIND.<br />YOUR VAULT.<br />YOUR RULES.
           </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+          <p className="text-lg md:text-xl text-[#414845] max-w-2xl mx-auto mb-10 leading-relaxed">
+            Welcome to a secure sanctuary for mental well-being. Experience empathetic 24/7 AI-guided support paired with private, end-to-end encrypted clinical therapy.
           </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
+
+          <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
+            <Link href="/auth/signup?role=PATIENT" className="w-full sm:w-auto">
+              <Button size="lg" variant="primary" className="w-full uppercase tracking-wider">
+                GET STARTED AS A PATIENT
+              </Button>
+            </Link>
+            <Link href="/auth/signup?role=THERAPIST" className="w-full sm:w-auto">
+              <Button size="lg" variant="secondary" className="w-full uppercase tracking-wider">
+                JOIN AS A PRACTITIONER
+              </Button>
+            </Link>
+          </div>
+        </section>
+
+        {/* Feature Highlights */}
+        <section className="w-full px-4 mb-10">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <Card variant="solid" className="flex flex-col items-center text-center p-8">
+              <div className="size-16 rounded-full bg-[#c6ebda]/50 flex items-center justify-center text-3xl mb-6 shadow-sm">
+                💬
+              </div>
+              <h3 className="text-2xl font-bold mb-3 text-[#325347]">AI Momo</h3>
+              <p className="text-base text-[#414845] leading-relaxed">
+                Your 24/7 empathetic digital companion. Safe, instant, conversational triage to help you unpack thoughts whenever you need.
+              </p>
+            </Card>
+
+            <Card variant="solid" className="flex flex-col items-center text-center p-8">
+              <div className="size-16 rounded-full bg-[#ffeada] flex items-center justify-center text-3xl mb-6 shadow-sm">
+                🔒
+              </div>
+              <h3 className="text-2xl font-bold mb-3 text-[#325347]">Zero-Trust Vault</h3>
+              <p className="text-base text-[#414845] leading-relaxed">
+                Complete data autonomy. Write your journal entries inside a secure sandbox where only you control access keys.
+              </p>
+            </Card>
+
+            <Card variant="solid" className="flex flex-col items-center text-center p-8">
+              <div className="size-16 rounded-full bg-[#fff1e8] border border-[#ffeada] flex items-center justify-center text-3xl mb-6 shadow-sm">
+                🤝
+              </div>
+              <h3 className="text-2xl font-bold mb-3 text-[#325347]">Verified Therapy</h3>
+              <p className="text-base text-[#414845] leading-relaxed">
+                Connect directly with licensed clinicians. Access safe digital chat rooms and high-fidelity video session suites.
+              </p>
+            </Card>
+          </div>
+        </section>
       </main>
+
+      <MarketingFooter />
     </div>
   );
 }
