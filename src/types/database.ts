@@ -16,6 +16,8 @@ export interface UserProfile {
   displayName: string;
   role: UserRole;
   onboardingComplete: boolean;
+  emergencyContact?: string;
+  isIncognito?: boolean;
   mfaEnabled: boolean;
   encryptionKeyHash?: string; // Optional for users who haven't initialized their vault
   createdAt: ServerTime;
@@ -28,7 +30,7 @@ export interface TherapistProfile {
   licenseNo: string;
   isVerified: boolean;
   bio: string;
-  availability: Record<string, any>; // Map string to any shape for now
+  availability: Record<string, unknown>; // Map string to a flexible schedule shape
   createdAt: ServerTime;
 }
 

@@ -3,21 +3,55 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { authService } from "@/src/services/authService";
+import {
+  authService,
+  buildAnonymousUserProfile,
+  type UniversalAuthResult,
+} from "@/src/services/authService";
+import { db } from "@/src/config/firebase";
 import { Button } from "@/src/components/ui/Button";
 import { Card } from "@/src/components/ui/Card";
 import { Input } from "@/src/components/forms/Input";
 import { Label } from "@/src/components/forms/Label";
 import { ErrorMessage } from "@/src/components/forms/ErrorMessage";
+import { UserRole } from "@/src/types/database";
+import { doc, setDoc } from "firebase/firestore";
+import { getAuthRedirectPath, type RoutableUserDoc } from "@/src/utils/authRouter";
+
+function getErrorMessage(error: unknown, fallback: string) {
+  return error instanceof Error ? error.message : fallback;
+}
 
 export default function SignupPage() {
   const router = useRouter();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [role, setRole] = useState("USER"); // Defaulting to USER (Patient) as defined in our schema/service
-  const [loading, setLoading] = useState(false);
+  const [role, setRole] = useState<UserRole.USER | UserRole.THERAPIST>(UserRole.USER);
+  const [activeAction, setActiveAction] = useState<
+    "email" | "google" | "apple" | "guest" | null
+  >(null);
   const [error, setError] = useState<string | null>(null);
+
+  const loading = activeAction !== null;
+
+  const handleUniversalAuthSuccess = async (result: UniversalAuthResult) => {
+    if (result.status === "NEW_USER") {
+      if (result.user.isAnonymous) {
+        const guestProfile = buildAnonymousUserProfile(result.user);
+        await setDoc(doc(db, "users", result.uid), guestProfile);
+        router.push(getAuthRedirectPath(result.user, guestProfile));
+        return;
+      }
+
+      router.push(getAuthRedirectPath(result.user, null));
+      return;
+    }
+
+    router.push(
+      getAuthRedirectPath(result.user, result.userDoc as RoutableUserDoc)
+    );
+  };
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -26,23 +60,41 @@ export default function SignupPage() {
       return;
     }
 
-    setLoading(true);
+    setActiveAction("email");
     setError(null);
 
     try {
-      // Calling authService.signUpWithEmail which creates user credentials AND sets document in Firestore.
       await authService.signUpWithEmail(email, password, name, role);
-
-      // Route the user to onboarding based on role.
-      if (role === "THERAPIST") {
-        router.push("/auth/onboarding-therapist");
-      } else {
-        router.push("/auth/onboarding-patient");
-      }
-    } catch (err: any) {
-      setError(err?.message || "Registration failed. Please try again.");
+      router.push(
+        getAuthRedirectPath(
+          { isAnonymous: false },
+          { role, onboardingComplete: false }
+        )
+      );
+    } catch (error: unknown) {
+      setError(getErrorMessage(error, "Registration failed. Please try again."));
     } finally {
-      setLoading(false);
+      setActiveAction(null);
+    }
+  };
+
+  const handleProviderAuth = async (provider: "google" | "apple" | "guest") => {
+    setActiveAction(provider);
+    setError(null);
+
+    try {
+      const result =
+        provider === "google"
+          ? await authService.signInWithGoogle()
+          : provider === "apple"
+            ? await authService.signInWithApple()
+            : await authService.continueAsGuest();
+
+      await handleUniversalAuthSuccess(result);
+    } catch (error: unknown) {
+      setError(getErrorMessage(error, "Authentication failed. Please try again."));
+    } finally {
+      setActiveAction(null);
     }
   };
 
@@ -60,6 +112,70 @@ export default function SignupPage() {
             Start your secure mental health journey today.
           </p>
         </header>
+
+        <div className="space-y-3">
+          <Button
+            type="button"
+            variant="secondary"
+            className="w-full justify-between px-5 py-4 text-left uppercase tracking-[0.14em]"
+            onClick={() => handleProviderAuth("google")}
+            isLoading={activeAction === "google"}
+            disabled={loading}
+          >
+            <span>Continue with Google</span>
+            <span aria-hidden="true" className="text-lg font-bold">
+              G
+            </span>
+          </Button>
+
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full justify-between px-5 py-4 text-left uppercase tracking-[0.14em]"
+            onClick={() => handleProviderAuth("apple")}
+            isLoading={activeAction === "apple"}
+            disabled={loading}
+          >
+            <span>Continue with Apple</span>
+            <span aria-hidden="true" className="text-lg font-bold">
+              A
+            </span>
+          </Button>
+
+          <Button
+            type="button"
+            variant="ghost"
+            className="w-full justify-between rounded-[2rem] border border-dashed border-[#abcebf] bg-white/40 px-5 py-4 text-left uppercase tracking-[0.14em] text-[#325347] hover:bg-[#c6ebda]/20"
+            onClick={() => handleProviderAuth("guest")}
+            isLoading={activeAction === "guest"}
+            disabled={loading}
+          >
+            <span>Continue as Guest</span>
+            <span aria-hidden="true" className="text-lg font-bold">
+              ?
+            </span>
+          </Button>
+
+          <Button
+            type="button"
+            variant="ghost"
+            className="w-full justify-between rounded-[2rem] border border-[#ffe3cd] bg-[#fff1e8] px-5 py-4 text-left uppercase tracking-[0.14em] text-[#795841] hover:bg-[#ffe3cd]"
+            disabled
+          >
+            <span>Continue with Phone</span>
+            <span className="text-[11px] font-semibold tracking-[0.18em] text-[#717974]">
+              Soon
+            </span>
+          </Button>
+        </div>
+
+        <div className="my-6 flex items-center gap-3">
+          <div className="h-px flex-1 bg-[#ffe3cd]" />
+          <span className="text-xs font-semibold uppercase tracking-[0.18em] text-[#717974]">
+            Or create with email
+          </span>
+          <div className="h-px flex-1 bg-[#ffe3cd]" />
+        </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
           {error && <ErrorMessage>{error}</ErrorMessage>}

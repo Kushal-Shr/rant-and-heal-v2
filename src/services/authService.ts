@@ -9,9 +9,76 @@ import {
   deleteUser,
   AuthError,
   UserCredential,
+  User,
 } from "firebase/auth";
-import { doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { doc, getDoc, setDoc, serverTimestamp, type DocumentData } from "firebase/firestore";
 import { auth, db } from "../config/firebase";
+import { UserRole } from "@/src/types/database";
+
+export type UniversalAuthResult =
+  | {
+      status: "EXISTING_USER";
+      user: User;
+      userDoc: DocumentData;
+    }
+  | {
+      status: "NEW_USER";
+      user: User;
+      uid: string;
+    };
+
+async function buildUniversalAuthResult(user: User): Promise<UniversalAuthResult> {
+  const userDocRef = doc(db, "users", user.uid);
+  const userDocSnap = await getDoc(userDocRef);
+
+  if (userDocSnap.exists()) {
+    return {
+      status: "EXISTING_USER",
+      user,
+      userDoc: userDocSnap.data(),
+    };
+  }
+
+  return {
+    status: "NEW_USER",
+    user,
+    uid: user.uid,
+  };
+}
+
+function getAnonymousHandle(uid: string) {
+  const numericSeed =
+    Array.from(uid).reduce((total, character) => total + character.charCodeAt(0), 0) % 9000;
+
+  return `Patient-${String(numericSeed + 1000).padStart(4, "0")}`;
+}
+
+export function buildAnonymousUserProfile(user: User) {
+  return {
+    uid: user.uid,
+    email: user.email ?? "",
+    displayName: getAnonymousHandle(user.uid),
+    role: UserRole.USER,
+    isIncognito: true,
+    onboardingComplete: true,
+    mfaEnabled: false,
+    createdAt: serverTimestamp(),
+  };
+}
+
+export function buildRoleBridgeUserProfile(user: User, role: UserRole.USER | UserRole.THERAPIST) {
+  return {
+    uid: user.uid,
+    email: user.email ?? "",
+    displayName:
+      user.displayName?.trim() ||
+      (role === UserRole.THERAPIST ? "New Practitioner" : "New Patient"),
+    role,
+    onboardingComplete: false,
+    mfaEnabled: false,
+    createdAt: serverTimestamp(),
+  };
+}
 
 // Custom error mapping for user-friendly messages
 export const mapAuthError = (error: unknown): string => {
@@ -39,19 +106,21 @@ export const mapAuthError = (error: unknown): string => {
 };
 
 export const authService = {
-  async signInWithGoogle(): Promise<UserCredential> {
+  async signInWithGoogle(): Promise<UniversalAuthResult> {
     try {
       const provider = new GoogleAuthProvider();
-      return await signInWithPopup(auth, provider);
+      const userCredential = await signInWithPopup(auth, provider);
+      return await buildUniversalAuthResult(userCredential.user);
     } catch (error) {
       throw new Error(mapAuthError(error));
     }
   },
 
-  async signInWithApple(): Promise<UserCredential> {
+  async signInWithApple(): Promise<UniversalAuthResult> {
     try {
       const provider = new OAuthProvider("apple.com");
-      return await signInWithPopup(auth, provider);
+      const userCredential = await signInWithPopup(auth, provider);
+      return await buildUniversalAuthResult(userCredential.user);
     } catch (error) {
       throw new Error(mapAuthError(error));
     }
@@ -65,7 +134,12 @@ export const authService = {
     }
   },
 
-  async signUpWithEmail(email: string, password: string, displayName: string, role: string = "USER"): Promise<UserCredential> {
+  async signUpWithEmail(
+    email: string,
+    password: string,
+    displayName: string,
+    role: UserRole.USER | UserRole.THERAPIST = UserRole.USER
+  ): Promise<UserCredential> {
     let userCredential: UserCredential | null = null;
     try {
       userCredential = await createUserWithEmailAndPassword(auth, email, password);
@@ -94,9 +168,10 @@ export const authService = {
     }
   },
 
-  async loginAnonymously(): Promise<UserCredential> {
+  async continueAsGuest(): Promise<UniversalAuthResult> {
     try {
-      return await signInAnonymously(auth);
+      const userCredential = await signInAnonymously(auth);
+      return await buildUniversalAuthResult(userCredential.user);
     } catch (error) {
       throw new Error(mapAuthError(error));
     }
