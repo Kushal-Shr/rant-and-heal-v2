@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import {
   authService,
   buildAnonymousUserProfile,
+  buildRoleBridgeUserProfile,
   type UniversalAuthResult,
 } from "@/src/services/authService";
 import { db } from "@/src/config/firebase";
@@ -14,6 +15,7 @@ import { Card } from "@/src/components/ui/Card";
 import { Input } from "@/src/components/forms/Input";
 import { Label } from "@/src/components/forms/Label";
 import { ErrorMessage } from "@/src/components/forms/ErrorMessage";
+import { UserRole } from "@/src/types/database";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { getAuthRedirectPath, type RoutableUserDoc } from "@/src/utils/authRouter";
 
@@ -41,7 +43,10 @@ export default function LoginPage() {
         return;
       }
 
-      router.push(getAuthRedirectPath(result.user, null));
+      // Initialize database profile as USER/Patient on social login
+      const patientProfile = buildRoleBridgeUserProfile(result.user, UserRole.USER);
+      await setDoc(doc(db, "users", result.uid), patientProfile);
+      router.push(getAuthRedirectPath(result.user, patientProfile));
       return;
     }
 

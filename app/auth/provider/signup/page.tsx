@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   authService,
-  buildAnonymousUserProfile,
   buildRoleBridgeUserProfile,
   type UniversalAuthResult,
 } from "@/src/services/authService";
@@ -23,14 +22,14 @@ function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
 }
 
-export default function SignupPage() {
+export default function ProviderSignupPage() {
   const router = useRouter();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const role = UserRole.USER;
+  const role = UserRole.THERAPIST;
   const [activeAction, setActiveAction] = useState<
-    "email" | "google" | "apple" | "guest" | null
+    "email" | "google" | "apple" | null
   >(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -38,17 +37,10 @@ export default function SignupPage() {
 
   const handleUniversalAuthSuccess = async (result: UniversalAuthResult) => {
     if (result.status === "NEW_USER") {
-      if (result.user.isAnonymous) {
-        const guestProfile = buildAnonymousUserProfile(result.user);
-        await setDoc(doc(db, "users", result.uid), guestProfile);
-        router.push(getAuthRedirectPath(result.user, guestProfile));
-        return;
-      }
-
-      // Initialize the database document immediately for social registration
-      const patientProfile = buildRoleBridgeUserProfile(result.user, UserRole.USER);
-      await setDoc(doc(db, "users", result.uid), patientProfile);
-      router.push(getAuthRedirectPath(result.user, patientProfile));
+      // Auto-initialize profile as THERAPIST/Practitioner on social signup
+      const providerProfile = buildRoleBridgeUserProfile(result.user, UserRole.THERAPIST);
+      await setDoc(doc(db, "users", result.uid), providerProfile);
+      router.push(getAuthRedirectPath(result.user, providerProfile));
       return;
     }
 
@@ -82,7 +74,7 @@ export default function SignupPage() {
     }
   };
 
-  const handleProviderAuth = async (provider: "google" | "apple" | "guest") => {
+  const handleProviderAuth = async (provider: "google" | "apple") => {
     setActiveAction(provider);
     setError(null);
 
@@ -90,9 +82,7 @@ export default function SignupPage() {
       const result =
         provider === "google"
           ? await authService.signInWithGoogle()
-          : provider === "apple"
-            ? await authService.signInWithApple()
-            : await authService.continueAsGuest();
+          : await authService.signInWithApple();
 
       await handleUniversalAuthSuccess(result);
     } catch (error: unknown) {
@@ -103,17 +93,17 @@ export default function SignupPage() {
   };
 
   return (
-    <main className="min-h-screen bg-[#fff8f5] flex items-center justify-center p-6 font-['Plus_Jakarta_Sans'] text-[#2c1601]">
-      <Card variant="solid" className="w-full max-w-md p-8 sm:p-10">
+    <main className="min-h-screen bg-[#f4fcf8] flex items-center justify-center p-6 font-['Plus_Jakarta_Sans'] text-[#2d4d41]">
+      <Card variant="solid" className="w-full max-w-md p-8 sm:p-10 border-2 border-[#abcebf] bg-white">
         <header className="mb-8 text-center">
-          <Link href="/" className="text-2xl font-extrabold italic text-[#4a6b5e]">
+          <Link href="/" className="text-2xl font-extrabold italic text-[#325347]">
             Rant & Heal
           </Link>
-          <h1 className="mt-4 text-3xl font-bold uppercase tracking-tight text-[#325347]">
-            Create Account
+          <h1 className="mt-4 text-2xl font-bold uppercase tracking-tight text-[#325347]">
+            Practitioner Registration
           </h1>
-          <p className="mt-2 text-sm text-[#414845]">
-            Start your secure mental health journey today.
+          <p className="mt-2 text-sm text-[#717974]">
+            Set up your clinical account to begin providing care.
           </p>
         </header>
 
@@ -121,7 +111,7 @@ export default function SignupPage() {
           <Button
             type="button"
             variant="secondary"
-            className="w-full justify-between px-5 py-4 text-left uppercase tracking-[0.14em]"
+            className="w-full justify-between px-5 py-4 text-left uppercase tracking-[0.14em] bg-[#c6ebda]/30 text-[#325347] border border-[#abcebf]"
             onClick={() => handleProviderAuth("google")}
             isLoading={activeAction === "google"}
             disabled={loading}
@@ -145,51 +135,25 @@ export default function SignupPage() {
               A
             </span>
           </Button>
-
-          <Button
-            type="button"
-            variant="ghost"
-            className="w-full justify-between rounded-[2rem] border border-dashed border-[#abcebf] bg-white/40 px-5 py-4 text-left uppercase tracking-[0.14em] text-[#325347] hover:bg-[#c6ebda]/20"
-            onClick={() => handleProviderAuth("guest")}
-            isLoading={activeAction === "guest"}
-            disabled={loading}
-          >
-            <span>Continue as Guest</span>
-            <span aria-hidden="true" className="text-lg font-bold">
-              ?
-            </span>
-          </Button>
-
-          <Button
-            type="button"
-            variant="ghost"
-            className="w-full justify-between rounded-[2rem] border border-[#ffe3cd] bg-[#fff1e8] px-5 py-4 text-left uppercase tracking-[0.14em] text-[#795841] hover:bg-[#ffe3cd]"
-            disabled
-          >
-            <span>Continue with Phone</span>
-            <span className="text-[11px] font-semibold tracking-[0.18em] text-[#717974]">
-              Soon
-            </span>
-          </Button>
         </div>
 
         <div className="my-6 flex items-center gap-3">
-          <div className="h-px flex-1 bg-[#ffe3cd]" />
+          <div className="h-px flex-1 bg-[#ffeada]" />
           <span className="text-xs font-semibold uppercase tracking-[0.18em] text-[#717974]">
-            Or create with email
+            Or register with email
           </span>
-          <div className="h-px flex-1 bg-[#ffe3cd]" />
+          <div className="h-px flex-1 bg-[#ffeada]" />
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
           {error && <ErrorMessage>{error}</ErrorMessage>}
 
           <div className="space-y-2">
-            <Label htmlFor="fullname">Full Name</Label>
+            <Label htmlFor="fullname">Full Name & Credentials</Label>
             <Input
               id="fullname"
               type="text"
-              placeholder="Dr. Sarah Jenkins or John Doe"
+              placeholder="Dr. Sarah Jenkins, PsyD"
               value={name}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setName(e.target.value)}
               disabled={loading}
@@ -198,11 +162,11 @@ export default function SignupPage() {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="email">Email Address</Label>
+            <Label htmlFor="email">Work Email Address</Label>
             <Input
               id="email"
               type="email"
-              placeholder="you@example.com"
+              placeholder="clinical@example.com"
               value={email}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)}
               disabled={loading}
@@ -223,14 +187,14 @@ export default function SignupPage() {
             />
           </div>
 
-          <Button type="submit" variant="primary" className="w-full py-4 tracking-wider uppercase mt-8" isLoading={loading}>
-            Sign Up
+          <Button type="submit" variant="primary" className="w-full py-4 tracking-wider uppercase mt-8 bg-[#325347] hover:bg-[#325347]/90" isLoading={loading}>
+            Create Professional Profile
           </Button>
         </form>
 
         <footer className="mt-8 text-center text-sm text-[#414845]">
-          Already have an account?{" "}
-          <Link href="/auth/login" className="font-semibold text-[#325347] hover:underline">
+          Already have a practitioner account?{" "}
+          <Link href="/auth/provider/login" className="font-semibold text-[#325347] hover:underline">
             Log In
           </Link>
         </footer>

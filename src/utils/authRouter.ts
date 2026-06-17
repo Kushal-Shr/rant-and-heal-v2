@@ -2,7 +2,6 @@ import type { User } from "firebase/auth";
 import { UserRole, type UserProfile } from "@/src/types/database";
 
 export const AUTH_ROUTES = {
-  selectRole: "/auth/select-role",
   patientOnboarding: "/auth/onboarding-patient",
   therapistOnboarding: "/auth/onboarding-therapist",
   patientDashboard: "/dashboard",
@@ -24,7 +23,7 @@ export function getAuthRedirectPath(
   userDoc?: RoutableUserDoc | null
 ): (typeof AUTH_ROUTES)[keyof typeof AUTH_ROUTES] {
   if (!userDoc) {
-    return user.isAnonymous ? AUTH_ROUTES.patientDashboard : AUTH_ROUTES.selectRole;
+    return AUTH_ROUTES.patientDashboard;
   }
 
   const role = normalizeRole(userDoc.role);

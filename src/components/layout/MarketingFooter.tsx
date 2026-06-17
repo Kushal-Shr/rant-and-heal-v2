@@ -13,6 +13,7 @@ export interface MarketingFooterProps {
 const defaultLinks: MarketingFooterLink[] = [
   { label: "Privacy", href: "/privacy" },
   { label: "Crisis Support", href: "/crisis" },
+  { label: "For Practitioners", href: "/auth/provider/login" },
   { label: "Sign In", href: "/auth/login" },
 ];
 

@@ -1,14 +1,80 @@
+"use client";
+
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import { MarketingNavbar } from "@/src/components/layout/MarketingNavbar";
 import { MarketingFooter } from "@/src/components/layout/MarketingFooter";
 import { Button } from "@/src/components/ui/Button";
 import { Card } from "@/src/components/ui/Card";
+import { useAuth } from "@/src/context/AuthContext";
+import { getUserProfile } from "@/src/services/userService";
+import { UserRole } from "@/src/types/database";
 
 export default function LandingPage() {
+  const { user, loading } = useAuth();
+  const [role, setRole] = useState<UserRole | null>(null);
+
+  useEffect(() => {
+    if (!user) {
+      setRole(null);
+      return;
+    }
+
+    const fetchRole = async () => {
+      try {
+        const profile = await getUserProfile(user.uid);
+        if (profile) {
+          setRole(profile.role);
+        }
+      } catch (err) {
+        console.error("Error checking role on landing page:", err);
+      }
+    };
+
+    fetchRole();
+  }, [user]);
+
+  const renderCTAs = () => {
+    if (loading) {
+      return (
+        <div className="h-14 flex items-center justify-center">
+          <div className="animate-pulse text-[#4a6b5e] font-medium">Preparing your sanctuary...</div>
+        </div>
+      );
+    }
+
+    if (!user) {
+      return (
+        <div className="flex justify-center items-center">
+          <Link href="/auth/signup" className="w-full sm:w-auto">
+            <Button size="lg" variant="primary" className="px-10 py-5 w-full uppercase tracking-wider text-base font-bold rounded-full shadow-md">
+              GET STARTED AS A PATIENT
+            </Button>
+          </Link>
+        </div>
+      );
+    }
+
+    if (role === UserRole.THERAPIST) {
+      return (
+        <Link href="/portal" className="w-full sm:w-auto">
+          <Button size="lg" variant="primary" className="px-12 py-5 uppercase tracking-widest text-lg font-black rounded-full shadow-[0_15px_30px_rgba(50,83,71,0.25)] hover:scale-105 active:scale-95 transition-transform">
+            Return to Portal
+          </Button>
+        </Link>
+      );
+    }
+
+    return (
+      <Link href="/dashboard" className="w-full sm:w-auto">
+        <Button size="lg" variant="primary" className="px-12 py-5 uppercase tracking-widest text-lg font-black rounded-full shadow-[0_15px_30px_rgba(50,83,71,0.25)] hover:scale-105 active:scale-95 transition-transform">
+          Return to Dashboard
+        </Button>
+      </Link>
+    );
+  };
+
   return (
     <div className="flex min-h-screen flex-col bg-[#fff8f5] text-[#2c1601] font-['Plus_Jakarta_Sans']">
-      <MarketingNavbar />
-
       <main className="flex-1 flex flex-col items-center justify-center max-w-6xl mx-auto px-6 py-20 text-center">
         {/* Hero Section */}
         <section className="mb-20">
@@ -19,18 +85,7 @@ export default function LandingPage() {
             Welcome to a secure sanctuary for mental well-being. Experience empathetic 24/7 AI-guided support paired with private, end-to-end encrypted clinical therapy.
           </p>
 
-          <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
-            <Link href="/auth/signup?role=PATIENT" className="w-full sm:w-auto">
-              <Button size="lg" variant="primary" className="w-full uppercase tracking-wider">
-                GET STARTED AS A PATIENT
-              </Button>
-            </Link>
-            <Link href="/auth/signup?role=THERAPIST" className="w-full sm:w-auto">
-              <Button size="lg" variant="secondary" className="w-full uppercase tracking-wider">
-                JOIN AS A PRACTITIONER
-              </Button>
-            </Link>
-          </div>
+          {renderCTAs()}
         </section>
 
         {/* Feature Highlights */}
