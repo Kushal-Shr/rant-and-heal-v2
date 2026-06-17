@@ -28,7 +28,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [activeAction, setActiveAction] = useState<
-    "email" | "google" | "apple" | "guest" | null
+    "email" | "google" | "apple" | null
   >(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -85,17 +85,15 @@ export default function LoginPage() {
     }
   };
 
-  const handleProviderAuth = async (provider: "google" | "apple" | "guest") => {
+  const handleProviderAuth = async (provider: "google" | "apple") => {
     setActiveAction(provider);
     setError(null);
 
     try {
       const result =
         provider === "google"
-          ? await authService.signInWithGoogle()
-          : provider === "apple"
-            ? await authService.signInWithApple()
-            : await authService.continueAsGuest();
+          ? await authService.signInWithGoogle(UserRole.USER)
+          : await authService.signInWithApple(UserRole.USER);
 
       await handleUniversalAuthSuccess(result);
     } catch (error: unknown) {
@@ -146,20 +144,6 @@ export default function LoginPage() {
             <span>Continue with Apple</span>
             <span aria-hidden="true" className="text-lg font-bold">
               A
-            </span>
-          </Button>
-
-          <Button
-            type="button"
-            variant="ghost"
-            className="w-full justify-between rounded-[2rem] border border-dashed border-[#abcebf] bg-white/40 px-5 py-4 text-left uppercase tracking-[0.14em] text-[#325347] hover:bg-[#c6ebda]/20"
-            onClick={() => handleProviderAuth("guest")}
-            isLoading={activeAction === "guest"}
-            disabled={loading}
-          >
-            <span>Continue as Guest</span>
-            <span aria-hidden="true" className="text-lg font-bold">
-              ?
             </span>
           </Button>
 

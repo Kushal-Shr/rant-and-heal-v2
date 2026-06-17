@@ -5,6 +5,7 @@ import { onAuthStateChanged, User } from "firebase/auth";
 import { auth } from "../config/firebase";
 import { AppUser, AuthState } from "../types/auth";
 import Cookies from "js-cookie";
+import { getUserProfile } from "../services/userService";
 
 interface AuthContextType extends AuthState {}
 
@@ -28,12 +29,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               isAnonymous: firebaseUser.isAnonymous,
             } as AppUser;
             setUser(appUser);
+            
+            const token = await firebaseUser.getIdToken();
+            Cookies.set("firebaseToken", token, { expires: 14, sameSite: "lax" });
+            
+            try {
+              const profile = await getUserProfile(firebaseUser.uid);
+              if (profile?.role) {
+                Cookies.set("userRole", profile.role, { expires: 14, sameSite: "lax" });
+              }
+            } catch (profileError) {
+              console.error("Failed to fetch user role for cookie:", profileError);
+            }
+            
             // Set a lightweight cookie for the middleware to read
             // Note: This does NOT verify the token on the edge, it just flags auth state
             Cookies.set("hasAuth", "true", { expires: 14, sameSite: "lax" });
           } else {
             setUser(null);
             Cookies.remove("hasAuth");
+            Cookies.remove("firebaseToken");
+            Cookies.remove("userRole");
           }
         } catch (err) {
           setError(err instanceof Error ? err : new Error(String(err)));

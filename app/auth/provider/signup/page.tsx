@@ -32,6 +32,7 @@ export default function ProviderSignupPage() {
     "email" | "google" | "apple" | null
   >(null);
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const loading = activeAction !== null;
 
@@ -44,8 +45,14 @@ export default function ProviderSignupPage() {
       return;
     }
 
+    const userData = result.userDoc as RoutableUserDoc;
+    if (userData.role !== UserRole.THERAPIST) {
+      await authService.signOut();
+      throw new Error("Access denied. This portal is for practitioners only.");
+    }
+
     router.push(
-      getAuthRedirectPath(result.user, result.userDoc as RoutableUserDoc)
+      getAuthRedirectPath(result.user, userData)
     );
   };
 
@@ -61,12 +68,7 @@ export default function ProviderSignupPage() {
 
     try {
       await authService.signUpWithEmail(email, password, name, role);
-      router.push(
-        getAuthRedirectPath(
-          { isAnonymous: false },
-          { role, onboardingComplete: false }
-        )
-      );
+      setSuccessMessage("Registration successful! Please check your work email inbox to verify your account before logging in.");
     } catch (error: unknown) {
       setError(getErrorMessage(error, "Registration failed. Please try again."));
     } finally {
@@ -81,8 +83,8 @@ export default function ProviderSignupPage() {
     try {
       const result =
         provider === "google"
-          ? await authService.signInWithGoogle()
-          : await authService.signInWithApple();
+          ? await authService.signInWithGoogle(UserRole.THERAPIST)
+          : await authService.signInWithApple(UserRole.THERAPIST);
 
       await handleUniversalAuthSuccess(result);
     } catch (error: unknown) {
@@ -145,10 +147,19 @@ export default function ProviderSignupPage() {
           <div className="h-px flex-1 bg-[#ffeada]" />
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
-          {error && <ErrorMessage>{error}</ErrorMessage>}
+        {successMessage ? (
+          <div className="rounded-lg bg-[#e8f5e9] p-4 text-center text-[#2e7d32]">
+            <h3 className="font-bold text-lg mb-2">Check Your Email</h3>
+            <p>{successMessage}</p>
+            <Button variant="outline" className="mt-6 w-full" onClick={() => router.push("/auth/provider/login")}>
+              Go to Log In
+            </Button>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="space-y-6">
+            {error && <ErrorMessage>{error}</ErrorMessage>}
 
-          <div className="space-y-2">
+            <div className="space-y-2">
             <Label htmlFor="fullname">Full Name & Credentials</Label>
             <Input
               id="fullname"
@@ -187,10 +198,11 @@ export default function ProviderSignupPage() {
             />
           </div>
 
-          <Button type="submit" variant="primary" className="w-full py-4 tracking-wider uppercase mt-8 bg-[#325347] hover:bg-[#325347]/90" isLoading={loading}>
-            Create Professional Profile
-          </Button>
-        </form>
+            <Button type="submit" variant="primary" className="w-full py-4 tracking-wider uppercase mt-8 bg-[#325347] hover:bg-[#325347]/90" isLoading={loading}>
+              Create Professional Profile
+            </Button>
+          </form>
+        )}
 
         <footer className="mt-8 text-center text-sm text-[#414845]">
           Already have a practitioner account?{" "}

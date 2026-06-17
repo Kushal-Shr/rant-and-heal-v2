@@ -2,19 +2,36 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 export function middleware(request: NextRequest) {
-  // We check for the lightweight cookie set by our AuthContext
-  const hasAuth = request.cookies.get("hasAuth")?.value;
-  
-  const protectedRoutes = ["/dashboard", "/journal"];
-  const isProtectedRoute = protectedRoutes.some(route => request.nextUrl.pathname.startsWith(route));
+  const firebaseToken = request.cookies.get("firebaseToken")?.value;
+  const userRole = request.cookies.get("userRole")?.value;
+  const pathname = request.nextUrl.pathname;
 
-  // If the route is protected and the user does not have the auth cookie,
-  // redirect them to the login page.
-  if (isProtectedRoute && !hasAuth) {
-    const loginUrl = new URL("/login", request.url);
-    // You can also add a `next` query parameter to redirect back after login
-    loginUrl.searchParams.set("next", request.nextUrl.pathname);
+  const patientRoutes = ["/dashboard", "/momo", "/therapy", "/vault"];
+  const therapistRoutes = ["/portal", "/messages", "/patients", "/session"];
+
+  const isPatientRoute = patientRoutes.some(route => pathname.startsWith(route));
+  const isTherapistRoute = therapistRoutes.some(route => pathname.startsWith(route));
+
+  if (!isPatientRoute && !isTherapistRoute) {
+    return NextResponse.next();
+  }
+
+  // 1. If no valid token, redirect to login
+  if (!firebaseToken) {
+    const loginUrl = new URL("/auth/login", request.url);
+    loginUrl.searchParams.set("next", pathname);
     return NextResponse.redirect(loginUrl);
+  }
+
+  // 2. Strict Role Verification
+  if (isTherapistRoute && userRole !== "THERAPIST") {
+    // Patients trying to access therapist routes
+    return NextResponse.redirect(new URL("/dashboard", request.url));
+  }
+
+  if (isPatientRoute && userRole === "THERAPIST") {
+    // Therapists trying to access patient routes
+    return NextResponse.redirect(new URL("/portal", request.url));
   }
 
   return NextResponse.next();
@@ -23,14 +40,6 @@ export function middleware(request: NextRequest) {
 // See "Matching Paths" below to learn more
 export const config = {
   matcher: [
-    /*
-     * Match all request paths except for the ones starting with:
-     * - api (API routes)
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     * - public (public assets)
-     */
     '/((?!api|_next/static|_next/image|favicon.ico|public).*)',
   ],
 };

@@ -42,8 +42,14 @@ export default function ProviderLoginPage() {
       return;
     }
 
+    const userData = result.userDoc as RoutableUserDoc;
+    if (userData.role !== UserRole.THERAPIST) {
+      await authService.signOut();
+      throw new Error("Access denied. This portal is for practitioners only.");
+    }
+
     router.push(
-      getAuthRedirectPath(result.user, result.userDoc as RoutableUserDoc)
+      getAuthRedirectPath(result.user, userData)
     );
   };
 
@@ -91,8 +97,8 @@ export default function ProviderLoginPage() {
     try {
       const result =
         provider === "google"
-          ? await authService.signInWithGoogle()
-          : await authService.signInWithApple();
+          ? await authService.signInWithGoogle(UserRole.THERAPIST)
+          : await authService.signInWithApple(UserRole.THERAPIST);
 
       await handleUniversalAuthSuccess(result);
     } catch (error: unknown) {

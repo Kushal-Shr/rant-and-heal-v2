@@ -43,7 +43,7 @@ export default function TherapistLayout({ children }: { children: React.ReactNod
 
   if (authLoading || roleLoading) {
     return (
-      <div className="flex h-full w-full items-center justify-center bg-brutalBg">
+      <div className="flex h-screen w-screen items-center justify-center bg-brutalBg">
         <Spinner size="lg" label="Securing session..." />
       </div>
     );

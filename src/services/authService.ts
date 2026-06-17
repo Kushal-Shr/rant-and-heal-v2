@@ -1,12 +1,15 @@
 import {
   GoogleAuthProvider,
   OAuthProvider,
+  EmailAuthProvider,
   signInWithPopup,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signInAnonymously,
   signOut as firebaseSignOut,
   deleteUser,
+  linkWithCredential,
+  sendEmailVerification,
   AuthError,
   UserCredential,
   User,
@@ -27,7 +30,7 @@ export type UniversalAuthResult =
       uid: string;
     };
 
-async function buildUniversalAuthResult(user: User): Promise<UniversalAuthResult> {
+async function buildUniversalAuthResult(user: User, role?: UserRole.USER | UserRole.THERAPIST): Promise<UniversalAuthResult> {
   const userDocRef = doc(db, "users", user.uid);
   const userDocSnap = await getDoc(userDocRef);
 
@@ -37,6 +40,24 @@ async function buildUniversalAuthResult(user: User): Promise<UniversalAuthResult
       user,
       userDoc: userDocSnap.data(),
     };
+  }
+
+  // Create document atomically for OAuth/Anonymous flows to prevent ghost accounts
+  const defaultRole = role ?? UserRole.USER;
+  const userProfile = user.isAnonymous 
+    ? buildAnonymousUserProfile(user)
+    : buildRoleBridgeUserProfile(user, defaultRole);
+
+  try {
+    await setDoc(userDocRef, userProfile);
+  } catch (error) {
+    // Rollback ghost account if Firestore write fails
+    try {
+      await deleteUser(user);
+    } catch (rollbackError) {
+      console.error("Failed to rollback auth creation:", rollbackError);
+    }
+    throw error;
   }
 
   return {
@@ -106,21 +127,21 @@ export const mapAuthError = (error: unknown): string => {
 };
 
 export const authService = {
-  async signInWithGoogle(): Promise<UniversalAuthResult> {
+  async signInWithGoogle(role?: UserRole.USER | UserRole.THERAPIST): Promise<UniversalAuthResult> {
     try {
       const provider = new GoogleAuthProvider();
       const userCredential = await signInWithPopup(auth, provider);
-      return await buildUniversalAuthResult(userCredential.user);
+      return await buildUniversalAuthResult(userCredential.user, role);
     } catch (error) {
       throw new Error(mapAuthError(error));
     }
   },
 
-  async signInWithApple(): Promise<UniversalAuthResult> {
+  async signInWithApple(role?: UserRole.USER | UserRole.THERAPIST): Promise<UniversalAuthResult> {
     try {
       const provider = new OAuthProvider("apple.com");
       const userCredential = await signInWithPopup(auth, provider);
-      return await buildUniversalAuthResult(userCredential.user);
+      return await buildUniversalAuthResult(userCredential.user, role);
     } catch (error) {
       throw new Error(mapAuthError(error));
     }
@@ -128,7 +149,12 @@ export const authService = {
 
   async signInWithEmail(email: string, password: string): Promise<UserCredential> {
     try {
-      return await signInWithEmailAndPassword(auth, email, password);
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      if (!userCredential.user.emailVerified) {
+        await firebaseSignOut(auth);
+        throw new Error("Please verify your email address before logging in. Check your inbox for the verification link.");
+      }
+      return userCredential;
     } catch (error) {
       throw new Error(mapAuthError(error));
     }
@@ -145,6 +171,8 @@ export const authService = {
       userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
 
+      await sendEmailVerification(user);
+
       await setDoc(doc(db, "users", user.uid), {
         uid: user.uid,
         email: user.email,
@@ -154,6 +182,9 @@ export const authService = {
         mfaEnabled: false,
         createdAt: serverTimestamp(),
       });
+
+      // Sign them out immediately so they must verify email to log in
+      await firebaseSignOut(auth);
 
       return userCredential;
     } catch (error) {
@@ -171,6 +202,27 @@ export const authService = {
   async continueAsGuest(): Promise<UniversalAuthResult> {
     try {
       const userCredential = await signInAnonymously(auth);
+      return await buildUniversalAuthResult(userCredential.user);
+    } catch (error) {
+      throw new Error(mapAuthError(error));
+    }
+  },
+
+  async linkAnonymousAccountWithEmail(email: string, password: string): Promise<UniversalAuthResult> {
+    try {
+      const currentUser = auth.currentUser;
+      if (!currentUser) throw new Error("No authenticated user to link.");
+      if (!currentUser.isAnonymous) throw new Error("Current user is not anonymous.");
+      
+      const credential = EmailAuthProvider.credential(email, password);
+      const userCredential = await linkWithCredential(currentUser, credential);
+      
+      const userDocRef = doc(db, "users", currentUser.uid);
+      await setDoc(userDocRef, {
+        email: email,
+        isIncognito: false,
+      }, { merge: true });
+
       return await buildUniversalAuthResult(userCredential.user);
     } catch (error) {
       throw new Error(mapAuthError(error));
