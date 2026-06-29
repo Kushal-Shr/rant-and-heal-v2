@@ -7,7 +7,7 @@ import { AppUser, AuthState } from "../types/auth";
 import Cookies from "js-cookie";
 import { getUserProfile } from "../services/userService";
 
-interface AuthContextType extends AuthState {}
+type AuthContextType = AuthState;
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -23,12 +23,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       async (firebaseUser: User | null) => {
         try {
           if (firebaseUser) {
-            // Map to our strict AppUser type
-            const appUser: AppUser = {
-              ...firebaseUser,
-              isAnonymous: firebaseUser.isAnonymous,
-            } as AppUser;
-            setUser(appUser);
+            // Preserve the Firebase User instance so auth methods like getIdToken remain available.
+            setUser(firebaseUser as AppUser);
             
             const token = await firebaseUser.getIdToken();
             Cookies.set("firebaseToken", token, { expires: 14, sameSite: "lax" });

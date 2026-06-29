@@ -157,15 +157,40 @@ export default function MomoPage() {
     setIsSending(true);
 
     try {
+      const userMessageText = nextMessage;
+
       await addDoc(collection(db, "users", user.uid, "sessions", sessionId, "messages"), {
-        text: nextMessage,
+        text: userMessageText,
         sender: "USER",
         timestamp: serverTimestamp(),
       });
       setInputValue("");
+
+      const idToken = await user.getIdToken();
+      const response = await fetch("/api/momo/chat", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${idToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          userId: user.uid,
+          sessionId,
+          messageText: userMessageText,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorPayload = (await response.json().catch(() => null)) as { error?: string } | null;
+        console.error(
+          "MOMO API ERROR:",
+          response.status,
+          errorPayload?.error ?? "Failed to generate Momo response."
+        );
+      }
     } catch (error) {
-      const firestoreError = error as FirestoreError;
-      console.error("FIRESTORE WRITE ERROR:", firestoreError.code, firestoreError.message);
+      const appError = error as FirestoreError;
+      console.error("MOMO SEND ERROR:", appError.code, appError.message);
     } finally {
       setIsSending(false);
     }
