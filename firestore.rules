@@ -1,26 +1,42 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
     
     // Identity Tier
     match /users/{userId} {
-      allow read: if request.auth != null && request.auth.uid == userId;
-      allow create: if request.auth != null && request.auth.uid == userId;
-      allow update: if request.auth != null && request.auth.uid == userId && 
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId) && 
                        request.resource.data.role == resource.data.role;
-      allow delete: if request.auth != null && request.auth.uid == userId;
+      allow delete: if isOwner(userId);
+
+      match /sessions/{sessionId} {
+        allow read, create, delete: if isOwner(userId);
+        allow update: if isOwner(userId);
+
+        match /messages/{messageId} {
+          allow read, write: if isOwner(userId);
+        }
+      }
     }
     
     match /therapists/{therapistId} {
-      allow read: if request.auth != null; 
-      allow write: if request.auth != null && request.auth.uid == therapistId &&
+      allow read: if isSignedIn(); 
+      allow write: if isSignedIn() && request.auth.uid == therapistId &&
                       get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'THERAPIST';
     }
 
     // Relationship Tier
     match /connections/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
-      allow read: if request.auth != null && request.auth.uid == resource.data.therapistId;
+      allow read, write: if isOwner(userId);
+      allow read: if isSignedIn() && request.auth.uid == resource.data.therapistId;
     }
   }
 }
