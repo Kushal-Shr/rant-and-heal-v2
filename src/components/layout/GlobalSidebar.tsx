@@ -12,31 +12,34 @@ export function GlobalSidebar() {
   const { user } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
-  const [role, setRole] = useState<UserRole | null>(null);
-  const [loadingProfile, setLoadingProfile] = useState(false);
+  const [profileRole, setProfileRole] = useState<UserRole | null>(null);
 
   useEffect(() => {
     if (!user) {
-      setRole(null);
       return;
     }
 
+    let isActive = true;
+
     const fetchProfile = async () => {
-      setLoadingProfile(true);
       try {
         const profile = await getUserProfile(user.uid);
-        if (profile) {
-          setRole(profile.role);
+        if (profile && isActive) {
+          setProfileRole(profile.role);
         }
       } catch (error) {
         console.error("Failed to load user profile in GlobalSidebar:", error);
-      } finally {
-        setLoadingProfile(false);
       }
     };
 
     fetchProfile();
+
+    return () => {
+      isActive = false;
+    };
   }, [user]);
+
+  const role = user ? profileRole : null;
 
   const handleSignOut = async () => {
     try {

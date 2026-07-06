@@ -11,19 +11,20 @@ import { UserRole } from "@/src/types/database";
 
 export default function LandingPage() {
   const { user, loading } = useAuth();
-  const [role, setRole] = useState<UserRole | null>(null);
+  const [profileRole, setProfileRole] = useState<UserRole | null>(null);
 
   useEffect(() => {
     if (!user) {
-      setRole(null);
       return;
     }
+
+    let isActive = true;
 
     const fetchRole = async () => {
       try {
         const profile = await getUserProfile(user.uid);
-        if (profile) {
-          setRole(profile.role);
+        if (profile && isActive) {
+          setProfileRole(profile.role);
         }
       } catch (err) {
         console.error("Error checking role on landing page:", err);
@@ -31,7 +32,13 @@ export default function LandingPage() {
     };
 
     fetchRole();
+
+    return () => {
+      isActive = false;
+    };
   }, [user]);
+
+  const role = user ? profileRole : null;
 
   const renderCTAs = () => {
     if (loading) {

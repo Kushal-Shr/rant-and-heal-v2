@@ -61,8 +61,9 @@ The project follows a hybrid directory layout:
 ## 2. Key Architectural Design Patterns
 
 ### Service-Oriented Architecture (SOA)
-- All interaction with third-party APIs (Firebase, WebRTC, database writes) is decoupled into standalone service wrappers inside `src/services/`.
-- UI components do not consume Firebase or WebRTC directly; they interact through the high-level functions exposed by `authService` and `connectionService`.
+- Client-side Firebase helpers live in `src/services/` for user, therapist, and connection flows.
+- Privileged server integrations live in `src/server/`, including Firebase Admin initialization, Firebase ID-token verification, Gemini configuration, and shared Momo persona instructions.
+- UI components should not perform privileged writes directly. Sensitive mutations, such as Momo message creation, should go through authenticated Route Handlers.
 
 ### Auth-to-Database Bridge (Atomic Registration)
 - User sign-ups require atomic syncing between Firebase Auth and Firestore.
@@ -91,3 +92,8 @@ The project follows a hybrid directory layout:
     allow read, write: if isOwner(userId);
   }
   ```
+
+### Momo Data Boundary
+- Patient clients may listen to their own Momo sessions and messages.
+- Message writes are server-owned. `/api/momo/chat` verifies the Firebase ID token, prevents cross-user spoofing, calls Gemini, and writes both USER and MOMO messages through the Admin SDK.
+- Firestore rules intentionally deny direct client writes to `users/{uid}/sessions/{sessionId}/messages`.

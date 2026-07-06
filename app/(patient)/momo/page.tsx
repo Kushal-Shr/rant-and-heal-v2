@@ -50,6 +50,7 @@ export default function MomoPage() {
   const [messages, setMessages] = useState<MomoMessage[]>([]);
   const [inputValue, setInputValue] = useState("");
   const [isSending, setIsSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -121,7 +122,7 @@ export default function MomoPage() {
 
         return {
           id: messageDoc.id,
-          sender: data.sender === "USER" ? "USER" : "MOMO",
+          sender: (data.sender === "USER" ? "USER" : "MOMO") as MessageSender,
           text: typeof data.text === "string" ? data.text : "",
           timestamp: data.timestamp ?? null,
         };
@@ -155,15 +156,10 @@ export default function MomoPage() {
     }
 
     setIsSending(true);
+    setSendError(null);
 
     try {
       const userMessageText = nextMessage;
-
-      await addDoc(collection(db, "users", user.uid, "sessions", sessionId, "messages"), {
-        text: userMessageText,
-        sender: "USER",
-        timestamp: serverTimestamp(),
-      });
       setInputValue("");
 
       const idToken = await user.getIdToken();
@@ -182,15 +178,20 @@ export default function MomoPage() {
 
       if (!response.ok) {
         const errorPayload = (await response.json().catch(() => null)) as { error?: string } | null;
+        const message = errorPayload?.error ?? "Failed to generate Momo response.";
         console.error(
           "MOMO API ERROR:",
           response.status,
-          errorPayload?.error ?? "Failed to generate Momo response."
+          message
         );
+        setInputValue(userMessageText);
+        setSendError(message);
       }
     } catch (error) {
       const appError = error as FirestoreError;
       console.error("MOMO SEND ERROR:", appError.code, appError.message);
+      setInputValue(nextMessage);
+      setSendError(appError.message ?? "Could not send your message.");
     } finally {
       setIsSending(false);
     }
@@ -314,6 +315,11 @@ export default function MomoPage() {
         </main>
 
         <div className="border-t-4 border-black bg-[#ffeada] px-4 py-4 sm:px-6">
+          {sendError ? (
+            <div className="mx-auto mb-3 max-w-4xl rounded-[1rem] border-4 border-black bg-red-100 px-4 py-3 font-['Plus_Jakarta_Sans'] text-sm font-black uppercase tracking-[0.08em] text-red-800 shadow-[4px_4px_0_0_#2c1601]">
+              {sendError}
+            </div>
+          ) : null}
           <form className="mx-auto flex max-w-4xl items-center gap-3" onSubmit={sendMessage}>
             <Input
               aria-label="Message Momo"
@@ -324,6 +330,7 @@ export default function MomoPage() {
             />
             <Button
               className="shrink-0 rounded-[1.5rem] border-4 border-[#2c1601] px-6 py-4 text-sm font-black uppercase tracking-[0.18em] shadow-[6px_6px_0_0_#2c1601]"
+              disabled={!sessionId || isSending}
               isLoading={isSending}
               type="submit"
             >

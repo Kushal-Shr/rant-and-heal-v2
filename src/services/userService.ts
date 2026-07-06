@@ -19,7 +19,7 @@ export async function syncUserProfile(
   if (userSnap.exists()) {
     // Document exists, clean data to remove undefined values before merge update
     const cleanData = Object.fromEntries(
-      Object.entries(data).filter(([_, v]) => v !== undefined)
+      Object.entries(data).filter(([, value]) => value !== undefined)
     );
     await setDoc(userRef, cleanData, { merge: true });
   } else {

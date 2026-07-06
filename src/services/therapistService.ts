@@ -46,7 +46,7 @@ export async function getTherapistProfile(therapistId: string): Promise<Therapis
  */
 export async function updateTherapistAvailability(
   therapistId: string,
-  availability: Record<string, any>
+  availability: Record<string, unknown>
 ): Promise<void> {
   const therapistRef = doc(db, COLLECTION_NAME, therapistId);
   
