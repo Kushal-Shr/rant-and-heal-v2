@@ -17,6 +17,7 @@ import { Input } from "@/src/components/forms/Input";
 import { Spinner } from "@/src/components/ui/Spinner";
 import { db } from "@/src/config/firebase";
 import { useAuth } from "@/src/context/AuthContext";
+import { MomoVoiceCallPanel } from "@/src/components/momo/MomoVoiceCallPanel";
 
 type MessageSender = "USER" | "MOMO";
 
@@ -274,6 +275,8 @@ export default function MomoPage() {
             Talk It Out With Momo
           </h1>
         </header>
+
+        <MomoVoiceCallPanel embedded sessionId={sessionId} />
 
         <main className="flex-1 overflow-y-auto px-4 py-5 sm:px-6">
           <div className="mx-auto flex max-w-4xl flex-col gap-4 pb-32">

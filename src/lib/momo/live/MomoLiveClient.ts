@@ -10,6 +10,7 @@ interface MomoLiveClientOptions {
   model: string;
   onReady: () => void;
   onAudio: (base64Audio: string) => void;
+  onTranscript?: (sender: "USER" | "MOMO", text: string) => void;
   onTurnComplete: () => void;
   onError: (error: unknown) => void;
   onClose: (event: CloseEvent) => void;
@@ -18,6 +19,8 @@ interface MomoLiveClientOptions {
 export class MomoLiveClient {
   private options: MomoLiveClientOptions;
   private session: Session | null = null;
+  private inputTranscriptBuffer = "";
+  private outputTranscriptBuffer = "";
 
   constructor(options: MomoLiveClientOptions) {
     this.options = options;
@@ -33,6 +36,8 @@ export class MomoLiveClient {
       model: this.options.model,
       config: {
         responseModalities: [Modality.AUDIO],
+        inputAudioTranscription: {},
+        outputAudioTranscription: {},
       },
       callbacks: {
         onmessage: (message) => this.handleMessage(message),
@@ -52,6 +57,8 @@ export class MomoLiveClient {
   }
 
   close(): void {
+    this.flushTranscript("USER");
+    this.flushTranscript("MOMO");
     this.session?.close();
     this.session = null;
   }
@@ -70,7 +77,12 @@ export class MomoLiveClient {
       }
     }
 
+    this.handleTranscript("USER", message.serverContent?.inputTranscription);
+    this.handleTranscript("MOMO", message.serverContent?.outputTranscription);
+
     if (message.serverContent?.turnComplete) {
+      this.flushTranscript("USER");
+      this.flushTranscript("MOMO");
       this.options.onTurnComplete();
     }
 
@@ -78,4 +90,65 @@ export class MomoLiveClient {
       console.warn("Gemini Live session ending:", message.goAway);
     }
   }
+
+  private handleTranscript(
+    sender: "USER" | "MOMO",
+    transcription?: { text?: string; finished?: boolean }
+  ): void {
+    if (!transcription?.text && !transcription?.finished) {
+      return;
+    }
+
+    const nextText = transcription.text?.trim() ?? "";
+
+    if (sender === "USER") {
+      this.flushTranscript("MOMO");
+      this.inputTranscriptBuffer = mergeTranscriptText(this.inputTranscriptBuffer, nextText);
+      if (transcription.finished) {
+        this.flushTranscript("USER");
+      }
+      return;
+    }
+
+    this.flushTranscript("USER");
+    this.outputTranscriptBuffer = mergeTranscriptText(this.outputTranscriptBuffer, nextText);
+    if (transcription.finished) {
+      this.flushTranscript("MOMO");
+    }
+  }
+
+  private flushTranscript(sender: "USER" | "MOMO"): void {
+    const text =
+      sender === "USER"
+        ? this.inputTranscriptBuffer.trim()
+        : this.outputTranscriptBuffer.trim();
+
+    if (!text) {
+      return;
+    }
+
+    this.options.onTranscript?.(sender, text);
+
+    if (sender === "USER") {
+      this.inputTranscriptBuffer = "";
+    } else {
+      this.outputTranscriptBuffer = "";
+    }
+  }
+}
+
+function mergeTranscriptText(currentText: string, nextText: string): string {
+  if (!nextText) {
+    return currentText;
+  }
+
+  if (!currentText) {
+    return nextText;
+  }
+
+  if (nextText.startsWith(currentText)) {
+    return nextText;
+  }
+
+  return `${currentText} ${nextText}`;
 }

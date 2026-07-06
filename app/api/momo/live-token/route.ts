@@ -7,6 +7,10 @@ import { MOMO_SYSTEM_INSTRUCTION } from "@/src/server/momo/persona";
 
 export const runtime = "nodejs";
 
+interface LiveTokenRequestBody {
+  sessionId?: string;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const decodedToken = await verifyFirebaseBearerToken(request);
@@ -15,6 +19,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const body = (await request.json().catch(() => ({}))) as LiveTokenRequestBody;
+    const sessionId = body.sessionId?.trim();
     const gemini = new GoogleGenAI({
       apiKey: getRequiredEnv("GEMINI_API_KEY"),
     });
@@ -31,6 +37,8 @@ export async function POST(request: NextRequest) {
             sessionResumption: {},
             temperature: 0.7,
             responseModalities: [Modality.AUDIO],
+            inputAudioTranscription: {},
+            outputAudioTranscription: {},
             systemInstruction: MOMO_SYSTEM_INSTRUCTION,
           },
         },
@@ -43,6 +51,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       token: ephemeralToken.name,
       model: MOMO_LIVE_MODEL,
+      sessionId: sessionId ?? null,
     });
   } catch (error) {
     const detail = getErrorMessage(error);
