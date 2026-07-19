@@ -1,4 +1,14 @@
-import { doc, setDoc, getDoc, serverTimestamp, updateDoc } from "firebase/firestore";
+import {
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  serverTimestamp,
+  setDoc,
+  updateDoc,
+  where,
+  collection,
+} from "firebase/firestore";
 import { db } from "../config/firebase";
 import { TherapistProfile } from "../types/database";
 
@@ -39,6 +49,16 @@ export async function getTherapistProfile(therapistId: string): Promise<Therapis
   }
 
   return null;
+}
+
+export async function listVerifiedTherapists(): Promise<TherapistProfile[]> {
+  const therapistsQuery = query(
+    collection(db, COLLECTION_NAME),
+    where("isVerified", "==", true)
+  );
+  const snap = await getDocs(therapistsQuery);
+
+  return snap.docs.map((therapistDoc) => therapistDoc.data() as TherapistProfile);
 }
 
 /**

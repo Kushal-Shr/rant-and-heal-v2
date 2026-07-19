@@ -8,10 +8,22 @@ service cloud.firestore {
     function isOwner(userId) {
       return isSignedIn() && request.auth.uid == userId;
     }
+
+    function isTherapist() {
+      return isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'THERAPIST';
+    }
+
+    function activeConnection(userId) {
+      return get(/databases/$(database)/documents/connections/$(userId)).data.status == 'ACTIVE';
+    }
     
     // Identity Tier
     match /users/{userId} {
-      allow read: if isOwner(userId);
+      allow read: if isOwner(userId) ||
+        (isSignedIn() &&
+          get(/databases/$(database)/documents/connections/$(userId)).data.status == 'ACTIVE' &&
+          get(/databases/$(database)/documents/connections/$(userId)).data.therapistId == request.auth.uid);
       allow create: if isOwner(userId);
       allow update: if isOwner(userId) && 
                        request.resource.data.role == resource.data.role;
@@ -37,15 +49,83 @@ service cloud.firestore {
     }
     
     match /therapists/{therapistId} {
-      allow read: if isSignedIn(); 
+      allow read: if isSignedIn() &&
+        (resource.data.isVerified == true || request.auth.uid == therapistId);
       allow write: if isSignedIn() && request.auth.uid == therapistId &&
-                      get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'THERAPIST';
+                      isTherapist();
+    }
+
+    match /{path=**}/call_sessions/{sessionId} {
+      allow read: if isSignedIn() &&
+        (request.auth.uid == resource.data.patientId ||
+          request.auth.uid == resource.data.therapistId);
     }
 
     // Relationship Tier
     match /connections/{userId} {
-      allow read, write: if isOwner(userId);
-      allow read: if isSignedIn() && request.auth.uid == resource.data.therapistId;
+      allow create: if isOwner(userId) &&
+        request.resource.data.userId == userId &&
+        request.resource.data.therapistId is string &&
+        request.resource.data.status == 'PENDING';
+      allow read: if isOwner(userId) ||
+        (isSignedIn() && request.auth.uid == resource.data.therapistId);
+      allow update: if (
+        isOwner(userId) &&
+        request.resource.data.userId == resource.data.userId &&
+        (
+          (
+            request.resource.data.therapistId == resource.data.therapistId &&
+            request.resource.data.status == 'REVOKED'
+          ) || (
+            resource.data.status in ['REJECTED', 'REVOKED'] &&
+            request.resource.data.therapistId is string &&
+            request.resource.data.status == 'PENDING'
+          )
+        )
+      ) || (
+        isTherapist() &&
+        request.auth.uid == resource.data.therapistId &&
+        request.resource.data.userId == resource.data.userId &&
+        request.resource.data.therapistId == resource.data.therapistId &&
+        request.resource.data.status in ['ACTIVE', 'REJECTED']
+      ) || (
+        isSignedIn() &&
+        activeConnection(userId) &&
+        (request.auth.uid == userId || request.auth.uid == resource.data.therapistId) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessageAt', 'updatedAt'])
+      );
+      allow delete: if false;
+
+      match /messages/{messageId} {
+        allow read: if isSignedIn() && activeConnection(userId) &&
+          (request.auth.uid == userId ||
+            request.auth.uid == get(/databases/$(database)/documents/connections/$(userId)).data.therapistId);
+        allow create: if isSignedIn() && activeConnection(userId) &&
+          request.resource.data.senderId == request.auth.uid &&
+          request.resource.data.senderRole in ['USER', 'THERAPIST'] &&
+          request.resource.data.text is string &&
+          (request.auth.uid == userId ||
+            request.auth.uid == get(/databases/$(database)/documents/connections/$(userId)).data.therapistId);
+        allow update, delete: if false;
+      }
+
+      match /call_sessions/{sessionId} {
+        allow read, create, update: if isSignedIn() && activeConnection(userId) &&
+          (request.auth.uid == userId ||
+            request.auth.uid == get(/databases/$(database)/documents/connections/$(userId)).data.therapistId);
+        allow delete: if false;
+
+        match /signals/{signalId} {
+          allow read: if isSignedIn() && activeConnection(userId) &&
+            (request.auth.uid == userId ||
+              request.auth.uid == get(/databases/$(database)/documents/connections/$(userId)).data.therapistId);
+          allow create: if isSignedIn() && activeConnection(userId) &&
+            request.resource.data.senderId == request.auth.uid &&
+            (request.auth.uid == userId ||
+              request.auth.uid == get(/databases/$(database)/documents/connections/$(userId)).data.therapistId);
+          allow update, delete: if false;
+        }
+      }
     }
   }
 }

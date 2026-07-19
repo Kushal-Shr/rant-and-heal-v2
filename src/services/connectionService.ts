@@ -1,4 +1,15 @@
-import { doc, setDoc, getDoc, serverTimestamp, updateDoc } from "firebase/firestore";
+import {
+  doc,
+  getDoc,
+  onSnapshot,
+  query,
+  serverTimestamp,
+  setDoc,
+  updateDoc,
+  where,
+  collection,
+  type Unsubscribe,
+} from "firebase/firestore";
 import { db } from "../config/firebase";
 import { Connection, ConnectionStatus } from "../types/database";
 
@@ -20,8 +31,8 @@ export async function requestConnection(
   const existingSnap = await getDoc(connectionRef);
   if (existingSnap.exists()) {
     const data = existingSnap.data() as Connection;
-    if (data.status === ConnectionStatus.ACTIVE) {
-      throw new Error("Patient already has an active connection with a therapist. Revoke it before requesting a new one.");
+    if (data.status === ConnectionStatus.ACTIVE || data.status === ConnectionStatus.PENDING) {
+      throw new Error("You already have a therapist connection in progress.");
     }
   }
 
@@ -30,11 +41,85 @@ export async function requestConnection(
     therapistId: therapistUid ?? "",
     status: ConnectionStatus.PENDING,
     consentHash: consentHash ?? "",
-    connectedAt: serverTimestamp(),
+    requestedAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
   };
 
   // We use setDoc here because a new request safely overwrites a PENDING or REVOKED state
   await setDoc(connectionRef, connectionData);
+}
+
+export function observePatientConnection(
+  patientUid: string,
+  onChange: (connection: Connection | null) => void,
+  onError?: (error: Error) => void
+): Unsubscribe {
+  const connectionRef = doc(db, COLLECTION_NAME, patientUid);
+
+  return onSnapshot(
+    connectionRef,
+    (snap) => {
+      onChange(snap.exists() ? ({ id: snap.id, ...snap.data() } as Connection) : null);
+    },
+    onError
+  );
+}
+
+export async function revokeConnection(patientUid: string): Promise<void> {
+  const connectionRef = doc(db, COLLECTION_NAME, patientUid);
+
+  await updateDoc(connectionRef, {
+    status: ConnectionStatus.REVOKED,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export function observePendingConnections(
+  therapistUid: string,
+  onChange: (connections: Connection[]) => void,
+  onError?: (error: Error) => void
+): Unsubscribe {
+  const connectionsQuery = query(
+    collection(db, COLLECTION_NAME),
+    where("therapistId", "==", therapistUid),
+    where("status", "==", ConnectionStatus.PENDING)
+  );
+
+  return onSnapshot(
+    connectionsQuery,
+    (snap) => {
+      onChange(snap.docs.map((connectionDoc) => ({ id: connectionDoc.id, ...connectionDoc.data() } as Connection)));
+    },
+    onError
+  );
+}
+
+export function observeActiveConnections(
+  therapistUid: string,
+  onChange: (connections: Connection[]) => void,
+  onError?: (error: Error) => void
+): Unsubscribe {
+  const connectionsQuery = query(
+    collection(db, COLLECTION_NAME),
+    where("therapistId", "==", therapistUid),
+    where("status", "==", ConnectionStatus.ACTIVE)
+  );
+
+  return onSnapshot(
+    connectionsQuery,
+    (snap) => {
+      onChange(snap.docs.map((connectionDoc) => ({ id: connectionDoc.id, ...connectionDoc.data() } as Connection)));
+    },
+    onError
+  );
+}
+
+export async function acceptConnection(patientUid: string): Promise<void> {
+  await updateConnectionStatus(patientUid, ConnectionStatus.ACTIVE);
+}
+
+export async function rejectConnection(patientUid: string): Promise<void> {
+  await updateConnectionStatus(patientUid, ConnectionStatus.REJECTED);
 }
 
 /**
@@ -42,12 +127,14 @@ export async function requestConnection(
  */
 export async function updateConnectionStatus(
   userId: string,
-  therapistId: string, // Kept in signature for potential future checks or audit logs
   status: ConnectionStatus
 ): Promise<void> {
   const connectionRef = doc(db, COLLECTION_NAME, userId);
 
   await updateDoc(connectionRef, {
-    status: status ?? ConnectionStatus.REVOKED
+    status: status ?? ConnectionStatus.REVOKED,
+    respondedAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+    ...(status === ConnectionStatus.ACTIVE ? { connectedAt: serverTimestamp() } : {}),
   });
 }
