@@ -48,3 +48,21 @@ export interface Connection {
   consentHash: string; // Proof of cryptographic consent
   connectedAt: ServerTime;
 }
+
+export interface MoodEntry {
+  id?: string;
+  moodScore: number;
+  anxietyScore: number;
+  energyScore: number;
+  note?: string;
+  createdAt: ServerTime;
+}
+
+export interface JournalEntry {
+  id?: string;
+  title: string;
+  body: string;
+  moodTag?: string;
+  createdAt: ServerTime;
+  updatedAt: ServerTime;
+}
