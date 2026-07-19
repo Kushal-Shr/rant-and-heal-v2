@@ -37,16 +37,61 @@ export interface TherapistProfile {
 export enum ConnectionStatus {
   PENDING = "PENDING",
   ACTIVE = "ACTIVE",
+  REJECTED = "REJECTED",
   REVOKED = "REVOKED",
 }
 
 export interface Connection {
-  // Document ID is implicitly therapistId_userId
+  id?: string;
+  // Document ID is the patient UID, enforcing one therapist connection at a time.
   userId: string;
   therapistId: string;
   status: ConnectionStatus;
   consentHash: string; // Proof of cryptographic consent
-  connectedAt: ServerTime;
+  requestedAt: ServerTime;
+  respondedAt?: ServerTime;
+  updatedAt: ServerTime;
+  lastMessageAt?: ServerTime;
+  connectedAt?: ServerTime;
+}
+
+export enum TherapyMessageSenderRole {
+  USER = "USER",
+  THERAPIST = "THERAPIST",
+}
+
+export interface TherapyMessage {
+  id?: string;
+  text: string;
+  senderId: string;
+  senderRole: TherapyMessageSenderRole;
+  createdAt: ServerTime;
+}
+
+export enum TherapyCallStatus {
+  RINGING = "RINGING",
+  ACTIVE = "ACTIVE",
+  ENDED = "ENDED",
+}
+
+export interface TherapyCallSession {
+  id?: string;
+  patientId: string;
+  therapistId: string;
+  startedBy: string;
+  status: TherapyCallStatus;
+  createdAt: ServerTime;
+  endedAt?: ServerTime;
+}
+
+export type TherapySignalType = "offer" | "answer" | "ice-candidate" | "hangup";
+
+export interface TherapyCallSignal {
+  id?: string;
+  type: TherapySignalType;
+  senderId: string;
+  payload: Record<string, unknown>;
+  createdAt: ServerTime;
 }
 
 export interface MoodEntry {

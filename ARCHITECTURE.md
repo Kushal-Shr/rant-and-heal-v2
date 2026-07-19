@@ -97,3 +97,27 @@ The project follows a hybrid directory layout:
 - Patient clients may listen to their own Momo sessions and messages.
 - Message writes are server-owned. `/api/momo/chat` verifies the Firebase ID token, prevents cross-user spoofing, calls Gemini, and writes both USER and MOMO messages through the Admin SDK.
 - Firestore rules intentionally deny direct client writes to `users/{uid}/sessions/{sessionId}/messages`.
+
+### Therapy Connection MVP
+- Therapist directory profiles live at `therapists/{therapistUid}`. The patient directory only reads profiles where `isVerified == true`.
+- One-to-one patient/therapist relationship state lives at `connections/{patientUid}`, enforcing one active or pending therapist connection per patient.
+- Connection status values are `PENDING`, `ACTIVE`, `REJECTED`, and `REVOKED`.
+- Therapy messages live at `connections/{patientUid}/messages/{messageId}` and are separate from Momo session messages.
+- Therapy call sessions live at `connections/{patientUid}/call_sessions/{sessionId}` with signaling documents under `signals/{signalId}`.
+- Shared UI components currently power both sides:
+  - `TherapyChatRoom` is used by patient and therapist message routes.
+  - `TherapyCallRoom` is used by patient and therapist session routes.
+
+Implemented routes:
+- `/therapy`: patient therapist directory, connection request status, and active connection entry to chat.
+- `/portal`: therapist request dashboard with accept/reject actions.
+- `/patients`: therapist active patient roster.
+- `/messages`: therapist conversation list.
+- `/therapy/chat/[therapistId]` and `/messages/[patientId]`: shared real-time therapy chat.
+- `/therapy/session/[sessionId]` and `/session/[sessionId]`: shared WebRTC call room.
+
+Known call work remaining:
+- The call feature is not production-ready. It currently embeds Start/Join/Return call controls in the chat, but caller/recipient display state is unreliable.
+- Observed issue: the UI can show "You started a call" even when the current user did not start it, and incoming call state can appear on the patient side incorrectly.
+- Next fix should make call sessions store explicit participant state, such as `callerId`, `recipientId`, `joinedBy`, and possibly `ringingFor`, then update chat banners based on those fields rather than inferring from `startedBy` alone.
+- End-call and signaling should be manually tested in two separate authenticated browser sessions after that state model is tightened.
