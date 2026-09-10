@@ -4,28 +4,37 @@ import {
   doc,
   onSnapshot,
   serverTimestamp,
-  updateDoc,
   type Unsubscribe,
 } from "firebase/firestore";
 import { auth, db } from "../config/firebase";
 import { TherapyCallSession, TherapyCallSignal, TherapyCallStatus } from "../types/database";
 
-export async function createCallSession(patientUid: string, therapistUid?: string): Promise<string> {
-  const startedBy = auth.currentUser?.uid;
+export async function createCallSession(patientUid: string): Promise<string> {
+  const caller = auth.currentUser;
 
-  if (!startedBy) {
+  if (!caller) {
     throw new Error("You must be signed in to start a call.");
   }
 
-  const sessionRef = await addDoc(collection(db, "connections", patientUid, "call_sessions"), {
-    patientId: patientUid,
-    therapistId: therapistUid ?? "",
-    startedBy,
-    status: TherapyCallStatus.RINGING,
-    createdAt: serverTimestamp(),
+  const idToken = await caller.getIdToken();
+  const response = await fetch("/api/therapy/calls", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${idToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ patientId: patientUid }),
   });
+  const payload = (await response.json().catch(() => null)) as {
+    sessionId?: string;
+    error?: string;
+  } | null;
 
-  return sessionRef.id;
+  if (!response.ok || !payload?.sessionId) {
+    throw new Error(payload?.error ?? "Could not start the call.");
+  }
+
+  return payload.sessionId;
 }
 
 export function observeCallSession(
@@ -53,7 +62,15 @@ export function observeOpenCallSessions(
     (snap) => {
       const sessions = snap.docs
         .map((sessionDoc) => ({ id: sessionDoc.id, ...sessionDoc.data() } as TherapyCallSession))
-        .filter((session) => session.status !== TherapyCallStatus.ENDED);
+        .filter((session) =>
+          session.status === TherapyCallStatus.RINGING ||
+          session.status === TherapyCallStatus.ACTIVE
+        )
+        .sort((left, right) => {
+          const leftMillis = "toMillis" in left.createdAt ? left.createdAt.toMillis() : 0;
+          const rightMillis = "toMillis" in right.createdAt ? right.createdAt.toMillis() : 0;
+          return rightMillis - leftMillis;
+        });
 
       onChange(sessions);
     },
@@ -94,20 +111,40 @@ export function observeSignals(
   );
 }
 
-export async function markCallSessionActive(patientUid: string, sessionId: string): Promise<void> {
-  await updateDoc(doc(db, "connections", patientUid, "call_sessions", sessionId), {
-    status: TherapyCallStatus.ACTIVE,
-  });
+export async function answerCallSession(patientUid: string, sessionId: string): Promise<void> {
+  await updateCallSession(patientUid, sessionId, "ANSWER");
+}
+
+export async function declineCallSession(patientUid: string, sessionId: string): Promise<void> {
+  await updateCallSession(patientUid, sessionId, "DECLINE");
 }
 
 export async function endCallSession(patientUid: string, sessionId: string): Promise<void> {
-  await updateDoc(doc(db, "connections", patientUid, "call_sessions", sessionId), {
-    status: TherapyCallStatus.ENDED,
-    endedAt: serverTimestamp(),
-  });
-
   await sendSignal(patientUid, sessionId, {
     type: "hangup",
     payload: {},
   });
+
+  await updateCallSession(patientUid, sessionId, "END");
+}
+
+async function updateCallSession(
+  patientUid: string,
+  sessionId: string,
+  action: "ANSWER" | "DECLINE" | "END"
+): Promise<void> {
+  const currentUser = auth.currentUser;
+  if (!currentUser) throw new Error("You must be signed in to update a call.");
+
+  const idToken = await currentUser.getIdToken();
+  const response = await fetch(`/api/therapy/calls/${sessionId}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${idToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ patientId: patientUid, action }),
+  });
+  const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+  if (!response.ok) throw new Error(payload?.error ?? "Could not update the call.");
 }

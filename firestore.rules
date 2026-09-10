@@ -14,6 +14,16 @@ service cloud.firestore {
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'THERAPIST';
     }
 
+    function isVerifiedTherapist() {
+      return isTherapist() &&
+        get(/databases/$(database)/documents/therapists/$(request.auth.uid)).data.isVerified == true;
+    }
+
+    function isVerifiedTherapistProfile(therapistId) {
+      return get(/databases/$(database)/documents/users/$(therapistId)).data.role == 'THERAPIST' &&
+        get(/databases/$(database)/documents/therapists/$(therapistId)).data.isVerified == true;
+    }
+
     function activeConnection(userId) {
       return get(/databases/$(database)/documents/connections/$(userId)).data.status == 'ACTIVE';
     }
@@ -24,8 +34,13 @@ service cloud.firestore {
         (isSignedIn() &&
           get(/databases/$(database)/documents/connections/$(userId)).data.status == 'ACTIVE' &&
           get(/databases/$(database)/documents/connections/$(userId)).data.therapistId == request.auth.uid);
-      allow create: if isOwner(userId);
+      // A public client may only create a patient identity. Practitioner and
+      // administrator roles are assigned by a privileged server workflow.
+      allow create: if isOwner(userId) &&
+        request.resource.data.uid == userId &&
+        request.resource.data.role == 'USER';
       allow update: if isOwner(userId) && 
+                       request.resource.data.uid == resource.data.uid &&
                        request.resource.data.role == resource.data.role;
       allow delete: if isOwner(userId);
 
@@ -51,14 +66,27 @@ service cloud.firestore {
     match /therapists/{therapistId} {
       allow read: if isSignedIn() &&
         (resource.data.isVerified == true || request.auth.uid == therapistId);
-      allow write: if isSignedIn() && request.auth.uid == therapistId &&
-                      isTherapist();
-    }
-
-    match /{path=**}/call_sessions/{sessionId} {
-      allow read: if isSignedIn() &&
-        (request.auth.uid == resource.data.patientId ||
-          request.auth.uid == resource.data.therapistId);
+      // Public applicants can submit editable profiles, but cannot verify
+      // themselves or promote their account. Firebase Admin bypasses rules.
+      allow create: if isSignedIn() && request.auth.uid == therapistId &&
+        request.resource.data.therapistId == therapistId &&
+        request.resource.data.isVerified == false &&
+        request.resource.data.verificationStatus == 'PENDING' &&
+        request.resource.data.name is string &&
+        request.resource.data.specialty is string &&
+        request.resource.data.licenseNo is string &&
+        request.resource.data.bio is string &&
+        request.resource.data.availability is map;
+      allow update: if isSignedIn() && request.auth.uid == therapistId &&
+        resource.data.verificationStatus in ['PENDING', 'REJECTED'] &&
+        request.resource.data.therapistId == resource.data.therapistId &&
+        request.resource.data.isVerified == resource.data.isVerified &&
+        (request.resource.data.verificationStatus == resource.data.verificationStatus ||
+          (resource.data.verificationStatus == 'REJECTED' &&
+            request.resource.data.verificationStatus == 'PENDING')) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'name', 'specialty', 'licenseNo', 'bio', 'availability', 'verificationStatus'
+        ]);
     }
 
     // Relationship Tier
@@ -66,6 +94,7 @@ service cloud.firestore {
       allow create: if isOwner(userId) &&
         request.resource.data.userId == userId &&
         request.resource.data.therapistId is string &&
+        isVerifiedTherapistProfile(request.resource.data.therapistId) &&
         request.resource.data.status == 'PENDING';
       allow read: if isOwner(userId) ||
         (isSignedIn() && request.auth.uid == resource.data.therapistId);
@@ -83,7 +112,7 @@ service cloud.firestore {
           )
         )
       ) || (
-        isTherapist() &&
+        isVerifiedTherapist() &&
         request.auth.uid == resource.data.therapistId &&
         request.resource.data.userId == resource.data.userId &&
         request.resource.data.therapistId == resource.data.therapistId &&
@@ -102,27 +131,44 @@ service cloud.firestore {
             request.auth.uid == get(/databases/$(database)/documents/connections/$(userId)).data.therapistId);
         allow create: if isSignedIn() && activeConnection(userId) &&
           request.resource.data.senderId == request.auth.uid &&
-          request.resource.data.senderRole in ['USER', 'THERAPIST'] &&
           request.resource.data.text is string &&
-          (request.auth.uid == userId ||
-            request.auth.uid == get(/databases/$(database)/documents/connections/$(userId)).data.therapistId);
+          ((request.auth.uid == userId && request.resource.data.senderRole == 'USER') ||
+            (request.auth.uid == get(/databases/$(database)/documents/connections/$(userId)).data.therapistId &&
+              request.resource.data.senderRole == 'THERAPIST'));
         allow update, delete: if false;
       }
 
       match /call_sessions/{sessionId} {
-        allow read, create, update: if isSignedIn() && activeConnection(userId) &&
-          (request.auth.uid == userId ||
-            request.auth.uid == get(/databases/$(database)/documents/connections/$(userId)).data.therapistId);
+        function isParticipant() {
+          return isSignedIn() && activeConnection(userId) &&
+            (request.auth.uid == resource.data.patientId ||
+              request.auth.uid == resource.data.therapistId);
+        }
+
+        allow read: if isParticipant();
+        // Sessions are created through the authenticated route handler so it
+        // can atomically prevent more than one ringing or active call.
+        allow create: if false;
+        // State transitions are server-owned so the call lock and session
+        // state remain atomic.
+        allow update: if false;
         allow delete: if false;
 
         match /signals/{signalId} {
+          function callSession() {
+            return get(/databases/$(database)/documents/connections/$(userId)/call_sessions/$(sessionId));
+          }
+
           allow read: if isSignedIn() && activeConnection(userId) &&
-            (request.auth.uid == userId ||
+            (request.auth.uid == get(/databases/$(database)/documents/connections/$(userId)).data.userId ||
               request.auth.uid == get(/databases/$(database)/documents/connections/$(userId)).data.therapistId);
           allow create: if isSignedIn() && activeConnection(userId) &&
             request.resource.data.senderId == request.auth.uid &&
-            (request.auth.uid == userId ||
-              request.auth.uid == get(/databases/$(database)/documents/connections/$(userId)).data.therapistId);
+            request.resource.data.type in ['offer', 'answer', 'ice-candidate', 'hangup'] &&
+            request.resource.data.payload is map &&
+            callSession().data.status in ['RINGING', 'ACTIVE'] &&
+            (request.auth.uid == callSession().data.patientId ||
+              request.auth.uid == callSession().data.therapistId);
           allow update, delete: if false;
         }
       }

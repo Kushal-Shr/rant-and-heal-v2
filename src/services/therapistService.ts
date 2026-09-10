@@ -10,31 +10,61 @@ import {
   collection,
 } from "firebase/firestore";
 import { db } from "../config/firebase";
-import { TherapistProfile } from "../types/database";
+import {
+  TherapistProfile,
+  TherapistVerificationStatus,
+} from "../types/database";
 
 const COLLECTION_NAME = "therapists";
 
 /**
- * Creates a new therapist professional profile using the Auth UID as document ID.
+ * Submits an application for a therapist professional profile. Public clients can only
+ * create and edit pending applications; verification is a privileged staff action.
  */
-export async function createTherapistProfile(
+export async function submitTherapistApplication(
   therapistId: string,
-  data: Omit<TherapistProfile, "therapistId" | "createdAt">
-): Promise<void> {
+  data: Pick<TherapistProfile, "name" | "specialty" | "licenseNo" | "bio" | "availability">
+): Promise<TherapistVerificationStatus> {
   const therapistRef = doc(db, COLLECTION_NAME, therapistId);
-  
-  const newProfile: TherapistProfile = {
-    therapistId,
+  const profileFields = {
     name: data.name || "Anonymous Therapist",
     specialty: data.specialty || "General",
     licenseNo: data.licenseNo || "",
-    isVerified: data.isVerified ?? false,
     bio: data.bio || "",
     availability: data.availability || {},
-    createdAt: serverTimestamp(),
   };
 
-  await setDoc(therapistRef, newProfile);
+  const currentProfile = await getDoc(therapistRef);
+
+  if (currentProfile.exists()) {
+    const currentData = currentProfile.data() as TherapistProfile;
+    const currentStatus = currentData.verificationStatus ?? (
+      currentData.isVerified
+        ? TherapistVerificationStatus.VERIFIED
+        : TherapistVerificationStatus.PENDING
+    );
+
+    await updateDoc(therapistRef, {
+      ...profileFields,
+      ...(currentStatus === TherapistVerificationStatus.REJECTED
+        ? { verificationStatus: TherapistVerificationStatus.PENDING }
+        : {}),
+    });
+
+    return currentStatus === TherapistVerificationStatus.REJECTED
+      ? TherapistVerificationStatus.PENDING
+      : currentStatus;
+  }
+
+  await setDoc(therapistRef, {
+    therapistId,
+    ...profileFields,
+    isVerified: false,
+    verificationStatus: TherapistVerificationStatus.PENDING,
+    createdAt: serverTimestamp(),
+  });
+
+  return TherapistVerificationStatus.PENDING;
 }
 
 /**

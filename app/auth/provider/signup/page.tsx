@@ -27,7 +27,7 @@ export default function ProviderSignupPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const role = UserRole.THERAPIST;
+  const role = UserRole.USER;
   const [activeAction, setActiveAction] = useState<
     "email" | "google" | "apple" | null
   >(null);
@@ -38,22 +38,14 @@ export default function ProviderSignupPage() {
 
   const handleUniversalAuthSuccess = async (result: UniversalAuthResult) => {
     if (result.status === "NEW_USER") {
-      // Auto-initialize profile as THERAPIST/Practitioner on social signup
-      const providerProfile = buildRoleBridgeUserProfile(result.user, UserRole.THERAPIST);
+      const providerProfile = buildRoleBridgeUserProfile(result.user);
       await setDoc(doc(db, "users", result.uid), providerProfile);
-      router.push(getAuthRedirectPath(result.user, providerProfile));
+      router.push("/auth/onboarding-therapist");
       return;
     }
 
     const userData = result.userDoc as RoutableUserDoc;
-    if (userData.role !== UserRole.THERAPIST) {
-      await authService.signOut();
-      throw new Error("Access denied. This portal is for practitioners only.");
-    }
-
-    router.push(
-      getAuthRedirectPath(result.user, userData)
-    );
+    router.push(userData.role === UserRole.THERAPIST ? getAuthRedirectPath(result.user, userData) : "/auth/onboarding-therapist");
   };
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -83,8 +75,8 @@ export default function ProviderSignupPage() {
     try {
       const result =
         provider === "google"
-          ? await authService.signInWithGoogle(UserRole.THERAPIST)
-          : await authService.signInWithApple(UserRole.THERAPIST);
+          ? await authService.signInWithGoogle()
+          : await authService.signInWithApple();
 
       await handleUniversalAuthSuccess(result);
     } catch (error: unknown) {

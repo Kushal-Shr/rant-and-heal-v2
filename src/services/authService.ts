@@ -30,7 +30,7 @@ export type UniversalAuthResult =
       uid: string;
     };
 
-async function buildUniversalAuthResult(user: User, role?: UserRole.USER | UserRole.THERAPIST): Promise<UniversalAuthResult> {
+async function buildUniversalAuthResult(user: User): Promise<UniversalAuthResult> {
   const userDocRef = doc(db, "users", user.uid);
   const userDocSnap = await getDoc(userDocRef);
 
@@ -43,10 +43,9 @@ async function buildUniversalAuthResult(user: User, role?: UserRole.USER | UserR
   }
 
   // Create document atomically for OAuth/Anonymous flows to prevent ghost accounts
-  const defaultRole = role ?? UserRole.USER;
   const userProfile = user.isAnonymous 
     ? buildAnonymousUserProfile(user)
-    : buildRoleBridgeUserProfile(user, defaultRole);
+    : buildRoleBridgeUserProfile(user);
 
   try {
     await setDoc(userDocRef, userProfile);
@@ -87,14 +86,14 @@ export function buildAnonymousUserProfile(user: User) {
   };
 }
 
-export function buildRoleBridgeUserProfile(user: User, role: UserRole.USER | UserRole.THERAPIST) {
+export function buildRoleBridgeUserProfile(user: User) {
   return {
     uid: user.uid,
     email: user.email ?? "",
     displayName:
       user.displayName?.trim() ||
-      (role === UserRole.THERAPIST ? "New Practitioner" : "New Patient"),
-    role,
+      "New Patient",
+    role: UserRole.USER,
     onboardingComplete: false,
     mfaEnabled: false,
     createdAt: serverTimestamp(),
@@ -127,21 +126,21 @@ export const mapAuthError = (error: unknown): string => {
 };
 
 export const authService = {
-  async signInWithGoogle(role?: UserRole.USER | UserRole.THERAPIST): Promise<UniversalAuthResult> {
+  async signInWithGoogle(): Promise<UniversalAuthResult> {
     try {
       const provider = new GoogleAuthProvider();
       const userCredential = await signInWithPopup(auth, provider);
-      return await buildUniversalAuthResult(userCredential.user, role);
+      return await buildUniversalAuthResult(userCredential.user);
     } catch (error) {
       throw new Error(mapAuthError(error));
     }
   },
 
-  async signInWithApple(role?: UserRole.USER | UserRole.THERAPIST): Promise<UniversalAuthResult> {
+  async signInWithApple(): Promise<UniversalAuthResult> {
     try {
       const provider = new OAuthProvider("apple.com");
       const userCredential = await signInWithPopup(auth, provider);
-      return await buildUniversalAuthResult(userCredential.user, role);
+      return await buildUniversalAuthResult(userCredential.user);
     } catch (error) {
       throw new Error(mapAuthError(error));
     }
@@ -164,7 +163,7 @@ export const authService = {
     email: string,
     password: string,
     displayName: string,
-    role: UserRole.USER | UserRole.THERAPIST = UserRole.USER
+    role: UserRole.USER = UserRole.USER
   ): Promise<UserCredential> {
     let userCredential: UserCredential | null = null;
     try {

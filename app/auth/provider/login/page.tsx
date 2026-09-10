@@ -35,17 +35,16 @@ export default function ProviderLoginPage() {
 
   const handleUniversalAuthSuccess = async (result: UniversalAuthResult) => {
     if (result.status === "NEW_USER") {
-      // Auto-initialize profile as THERAPIST/Practitioner on social login
-      const providerProfile = buildRoleBridgeUserProfile(result.user, UserRole.THERAPIST);
+      const providerProfile = buildRoleBridgeUserProfile(result.user);
       await setDoc(doc(db, "users", result.uid), providerProfile);
-      router.push(getAuthRedirectPath(result.user, providerProfile));
+      router.push("/auth/onboarding-therapist");
       return;
     }
 
     const userData = result.userDoc as RoutableUserDoc;
     if (userData.role !== UserRole.THERAPIST) {
-      await authService.signOut();
-      throw new Error("Access denied. This portal is for practitioners only.");
+      router.push("/auth/onboarding-therapist");
+      return;
     }
 
     router.push(
@@ -75,9 +74,8 @@ export default function ProviderLoginPage() {
 
       const userData = userDocSnap.data() as RoutableUserDoc;
       if (userData.role !== UserRole.THERAPIST) {
-        // Log them out and throw error if a patient attempts provider login
-        await authService.signOut();
-        throw new Error("Access denied. This portal is for practitioners only.");
+        router.push("/auth/onboarding-therapist");
+        return;
       }
 
       router.push(
@@ -97,8 +95,8 @@ export default function ProviderLoginPage() {
     try {
       const result =
         provider === "google"
-          ? await authService.signInWithGoogle(UserRole.THERAPIST)
-          : await authService.signInWithApple(UserRole.THERAPIST);
+          ? await authService.signInWithGoogle()
+          : await authService.signInWithApple();
 
       await handleUniversalAuthSuccess(result);
     } catch (error: unknown) {

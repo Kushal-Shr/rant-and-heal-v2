@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const firebaseToken = request.cookies.get("firebaseToken")?.value;
-  const userRole = request.cookies.get("userRole")?.value;
   const pathname = request.nextUrl.pathname;
 
   const patientRoutes = ["/dashboard", "/momo", "/therapy", "/vault"];
@@ -23,17 +22,8 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  // 2. Strict Role Verification
-  if (isTherapistRoute && userRole !== "THERAPIST") {
-    // Patients trying to access therapist routes
-    return NextResponse.redirect(new URL("/dashboard", request.url));
-  }
-
-  if (isPatientRoute && userRole === "THERAPIST") {
-    // Therapists trying to access patient routes
-    return NextResponse.redirect(new URL("/portal", request.url));
-  }
-
+  // Role authorization is enforced by Firestore rules and the client role guard.
+  // This cookie is browser-controlled and must not be used as an authority signal.
   return NextResponse.next();
 }
 

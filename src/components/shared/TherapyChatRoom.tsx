@@ -7,7 +7,11 @@ import { Button } from "@/src/components/ui/Button";
 import { Spinner } from "@/src/components/ui/Spinner";
 import { Textarea } from "@/src/components/forms/Textarea";
 import { useAuth } from "@/src/context/AuthContext";
-import { createCallSession, observeOpenCallSessions } from "@/src/services/therapyCallService";
+import {
+  createCallSession,
+  declineCallSession,
+  observeOpenCallSessions,
+} from "@/src/services/therapyCallService";
 import { observeTherapyMessages, sendTherapyMessage } from "@/src/services/therapyMessageService";
 import {
   TherapyCallSession,
@@ -22,7 +26,6 @@ interface TherapyChatRoomProps {
   subtitle: string;
   backHref: string;
   callHrefForSession: (sessionId: string) => string;
-  therapistUid: string;
 }
 
 function formatMessageTime(message: TherapyMessage) {
@@ -42,7 +45,6 @@ export function TherapyChatRoom({
   patientUid,
   senderRole,
   subtitle,
-  therapistUid,
   title,
 }: TherapyChatRoomProps) {
   const { user } = useAuth();
@@ -51,6 +53,7 @@ export function TherapyChatRoom({
   const [isLoading, setIsLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
   const [isStartingCall, setIsStartingCall] = useState(false);
+  const [isUpdatingCall, setIsUpdatingCall] = useState(false);
   const [openCall, setOpenCall] = useState<TherapyCallSession | null>(null);
   const [error, setError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
@@ -74,13 +77,18 @@ export function TherapyChatRoom({
     return observeOpenCallSessions(
       patientUid,
       (sessions) => {
-        setOpenCall(sessions[0] ?? null);
+        const nextCall =
+          sessions.find((session) => session.status === "ACTIVE") ??
+          sessions.find((session) => session.recipientId === user?.uid) ??
+          sessions.find((session) => session.callerId === user?.uid) ??
+          null;
+        setOpenCall(nextCall);
       },
       (snapshotError) => {
         console.error("Failed to observe therapy calls:", snapshotError);
       }
     );
-  }, [patientUid]);
+  }, [patientUid, user?.uid]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -112,7 +120,7 @@ export function TherapyChatRoom({
     setError(null);
 
     try {
-      const sessionId = await createCallSession(patientUid, therapistUid);
+      const sessionId = await createCallSession(patientUid);
       window.location.href = callHrefForSession(sessionId);
     } catch (callError) {
       console.error("Failed to start therapy call:", callError);
@@ -122,8 +130,29 @@ export function TherapyChatRoom({
     }
   }
 
+  async function handleDeclineCall() {
+    if (!openCall?.id) {
+      return;
+    }
+
+    setIsUpdatingCall(true);
+    setError(null);
+
+    try {
+      await declineCallSession(patientUid, openCall.id);
+    } catch (callError) {
+      console.error("Failed to decline therapy call:", callError);
+      setError(callError instanceof Error ? callError.message : "Could not decline the call.");
+    } finally {
+      setIsUpdatingCall(false);
+    }
+  }
+
   const callActionHref = openCall?.id ? callHrefForSession(openCall.id) : null;
-  const callStartedByMe = openCall?.startedBy === user?.uid;
+  const callStartedByMe = openCall?.callerId === user?.uid;
+  const isIncomingCall = openCall?.status === "RINGING" && openCall.recipientId === user?.uid;
+  const callInProgress = openCall?.status === "ACTIVE";
+  const callActionLabel = callInProgress || callStartedByMe ? "Return to call" : "Join call";
 
   return (
     <div className="flex min-h-[calc(100vh-3rem)] flex-col border-2 border-[#2c1601] bg-[#fff8f5] font-['Plus_Jakarta_Sans'] text-[#2c1601] shadow-[8px_8px_0_#abcebf]">
@@ -141,7 +170,7 @@ export function TherapyChatRoom({
               className="border-2 border-[#2c1601] bg-[#abcebf] px-5 py-3 font-black shadow-[4px_4px_0_#2c1601]"
               href={callActionHref}
             >
-              {callStartedByMe ? "Return to call" : "Join call"}
+              {callActionLabel}
             </Link>
           ) : (
             <Button
@@ -159,7 +188,9 @@ export function TherapyChatRoom({
         <section className="border-b-2 border-[#2c1601] bg-[#ffd86b] p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="text-sm font-black uppercase">{callStartedByMe ? "You started a call" : "Incoming call"}</p>
+              <p className="text-sm font-black uppercase">
+                {callInProgress ? "Call in progress" : callStartedByMe ? "You started a call" : "Incoming call"}
+              </p>
               <p className="text-sm font-bold text-[#4a6b5e]">Status: {openCall.status}</p>
             </div>
             {callActionHref ? (
@@ -167,8 +198,18 @@ export function TherapyChatRoom({
                 className="border-2 border-[#2c1601] bg-white px-4 py-2 font-black shadow-[3px_3px_0_#2c1601]"
                 href={callActionHref}
               >
-                {callStartedByMe ? "Return" : "Join"}
+                {callInProgress || callStartedByMe ? "Return" : "Join"}
               </Link>
+            ) : null}
+            {isIncomingCall ? (
+              <Button
+                className="rounded-none border-2 border-[#2c1601] px-4 py-2 shadow-[3px_3px_0_#2c1601]"
+                isLoading={isUpdatingCall}
+                onClick={handleDeclineCall}
+                variant="danger"
+              >
+                Decline
+              </Button>
             ) : null}
           </div>
         </section>

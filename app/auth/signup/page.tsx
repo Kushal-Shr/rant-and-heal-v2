@@ -47,7 +47,7 @@ export default function SignupPage() {
       }
 
       // Initialize the database document immediately for social registration
-      const patientProfile = buildRoleBridgeUserProfile(result.user, UserRole.USER);
+      const patientProfile = buildRoleBridgeUserProfile(result.user);
       await setDoc(doc(db, "users", result.uid), patientProfile);
       router.push(getAuthRedirectPath(result.user, patientProfile));
       return;
@@ -85,8 +85,8 @@ export default function SignupPage() {
     try {
       const result =
         provider === "google"
-          ? await authService.signInWithGoogle(UserRole.USER)
-          : await authService.signInWithApple(UserRole.USER);
+          ? await authService.signInWithGoogle()
+          : await authService.signInWithApple();
 
       await handleUniversalAuthSuccess(result);
     } catch (error: unknown) {

@@ -29,9 +29,18 @@ export interface TherapistProfile {
   specialty: string;
   licenseNo: string;
   isVerified: boolean;
+  verificationStatus: TherapistVerificationStatus;
   bio: string;
   availability: Record<string, unknown>; // Map string to a flexible schedule shape
   createdAt: ServerTime;
+  reviewedAt?: ServerTime;
+  reviewedBy?: string;
+}
+
+export enum TherapistVerificationStatus {
+  PENDING = "PENDING",
+  VERIFIED = "VERIFIED",
+  REJECTED = "REJECTED",
 }
 
 export enum ConnectionStatus {
@@ -71,6 +80,7 @@ export interface TherapyMessage {
 export enum TherapyCallStatus {
   RINGING = "RINGING",
   ACTIVE = "ACTIVE",
+  DECLINED = "DECLINED",
   ENDED = "ENDED",
 }
 
@@ -78,9 +88,15 @@ export interface TherapyCallSession {
   id?: string;
   patientId: string;
   therapistId: string;
-  startedBy: string;
+  callerId: string;
+  recipientId: string;
   status: TherapyCallStatus;
   createdAt: ServerTime;
+  answeredBy?: string;
+  answeredAt?: ServerTime;
+  declinedBy?: string;
+  declinedAt?: ServerTime;
+  endedBy?: string;
   endedAt?: ServerTime;
 }
 

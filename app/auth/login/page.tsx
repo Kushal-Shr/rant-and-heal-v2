@@ -15,7 +15,6 @@ import { Card } from "@/src/components/ui/Card";
 import { Input } from "@/src/components/forms/Input";
 import { Label } from "@/src/components/forms/Label";
 import { ErrorMessage } from "@/src/components/forms/ErrorMessage";
-import { UserRole } from "@/src/types/database";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { getAuthRedirectPath, type RoutableUserDoc } from "@/src/utils/authRouter";
 
@@ -44,7 +43,7 @@ export default function LoginPage() {
       }
 
       // Initialize database profile as USER/Patient on social login
-      const patientProfile = buildRoleBridgeUserProfile(result.user, UserRole.USER);
+      const patientProfile = buildRoleBridgeUserProfile(result.user);
       await setDoc(doc(db, "users", result.uid), patientProfile);
       router.push(getAuthRedirectPath(result.user, patientProfile));
       return;
@@ -92,8 +91,8 @@ export default function LoginPage() {
     try {
       const result =
         provider === "google"
-          ? await authService.signInWithGoogle(UserRole.USER)
-          : await authService.signInWithApple(UserRole.USER);
+          ? await authService.signInWithGoogle()
+          : await authService.signInWithApple();
 
       await handleUniversalAuthSuccess(result);
     } catch (error: unknown) {

@@ -21,7 +21,6 @@ export default function TherapistMessagePage() {
       patientUid={patientId}
       senderRole={TherapyMessageSenderRole.THERAPIST}
       subtitle={`Patient ${patientId.slice(0, 8)}`}
-      therapistUid={user.uid}
       title="Patient messages"
     />
   );
