@@ -3,11 +3,18 @@ import {
   collection,
   doc,
   onSnapshot,
+  query,
   serverTimestamp,
+  where,
   type Unsubscribe,
 } from "firebase/firestore";
 import { auth, db } from "../config/firebase";
-import { TherapyCallSession, TherapyCallSignal, TherapyCallStatus } from "../types/database";
+import {
+  TherapyCallSession,
+  TherapyCallSignal,
+  TherapyCallStatus,
+  TherapyMessageSenderRole,
+} from "../types/database";
 import type { RTCIceServer } from "../types/therapy";
 
 export async function createCallSession(patientUid: string): Promise<string> {
@@ -55,11 +62,22 @@ export function observeCallSession(
 
 export function observeOpenCallSessions(
   patientUid: string,
+  participantUid: string,
+  participantRole: TherapyMessageSenderRole,
   onChange: (sessions: TherapyCallSession[]) => void,
   onError?: (error: Error) => void
 ): Unsubscribe {
-  return onSnapshot(
+  const participantField =
+    participantRole === TherapyMessageSenderRole.THERAPIST
+      ? "therapistId"
+      : "patientId";
+  const sessionsQuery = query(
     collection(db, "connections", patientUid, "call_sessions"),
+    where(participantField, "==", participantUid)
+  );
+
+  return onSnapshot(
+    sessionsQuery,
     (snap) => {
       const sessions = snap.docs
         .map((sessionDoc) => ({ id: sessionDoc.id, ...sessionDoc.data() } as TherapyCallSession))

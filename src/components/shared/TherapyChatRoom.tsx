@@ -75,8 +75,14 @@ export function TherapyChatRoom({
   }, [patientUid]);
 
   useEffect(() => {
+    if (!user?.uid) {
+      return;
+    }
+
     return observeOpenCallSessions(
       patientUid,
+      user.uid,
+      senderRole,
       (sessions) => {
         const nextCall =
           sessions.find((session) => session.status === "ACTIVE") ??
@@ -89,7 +95,7 @@ export function TherapyChatRoom({
         console.error("Failed to observe therapy calls:", snapshotError);
       }
     );
-  }, [patientUid, user?.uid]);
+  }, [patientUid, senderRole, user?.uid]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
