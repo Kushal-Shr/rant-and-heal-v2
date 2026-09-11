@@ -3,11 +3,19 @@ import {
   collection,
   doc,
   onSnapshot,
+  query,
   serverTimestamp,
+  where,
   type Unsubscribe,
 } from "firebase/firestore";
 import { auth, db } from "../config/firebase";
-import { TherapyCallSession, TherapyCallSignal, TherapyCallStatus } from "../types/database";
+import {
+  TherapyCallSession,
+  TherapyCallSignal,
+  TherapyCallStatus,
+  TherapyMessageSenderRole,
+} from "../types/database";
+import type { RTCIceServer } from "../types/therapy";
 
 export async function createCallSession(patientUid: string): Promise<string> {
   const caller = auth.currentUser;
@@ -54,11 +62,22 @@ export function observeCallSession(
 
 export function observeOpenCallSessions(
   patientUid: string,
+  participantUid: string,
+  participantRole: TherapyMessageSenderRole,
   onChange: (sessions: TherapyCallSession[]) => void,
   onError?: (error: Error) => void
 ): Unsubscribe {
-  return onSnapshot(
+  const participantField =
+    participantRole === TherapyMessageSenderRole.THERAPIST
+      ? "therapistId"
+      : "patientId";
+  const sessionsQuery = query(
     collection(db, "connections", patientUid, "call_sessions"),
+    where(participantField, "==", participantUid)
+  );
+
+  return onSnapshot(
+    sessionsQuery,
     (snap) => {
       const sessions = snap.docs
         .map((sessionDoc) => ({ id: sessionDoc.id, ...sessionDoc.data() } as TherapyCallSession))
@@ -120,12 +139,45 @@ export async function declineCallSession(patientUid: string, sessionId: string):
 }
 
 export async function endCallSession(patientUid: string, sessionId: string): Promise<void> {
-  await sendSignal(patientUid, sessionId, {
-    type: "hangup",
-    payload: {},
-  });
+  try {
+    await sendSignal(patientUid, sessionId, {
+      type: "hangup",
+      payload: {},
+    });
+  } catch (signalError) {
+    // The authoritative state transition below still ends the call if the
+    // signaling write races with a disconnect or another participant ending.
+    console.warn("Could not send hangup signal:", signalError);
+  }
 
   await updateCallSession(patientUid, sessionId, "END");
+}
+
+export async function getCallIceServers(
+  patientUid: string,
+  sessionId: string
+): Promise<RTCIceServer[]> {
+  const currentUser = auth.currentUser;
+  if (!currentUser) throw new Error("You must be signed in to join a call.");
+
+  const idToken = await currentUser.getIdToken();
+  const response = await fetch("/api/therapy/ice-servers", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${idToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ patientId: patientUid, sessionId }),
+  });
+  const payload = (await response.json().catch(() => null)) as {
+    iceServers?: RTCIceServer[];
+    error?: string;
+  } | null;
+  if (!response.ok || !payload?.iceServers?.length) {
+    throw new Error(payload?.error ?? "Could not prepare the call connection.");
+  }
+
+  return payload.iceServers;
 }
 
 async function updateCallSession(

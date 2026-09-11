@@ -89,8 +89,13 @@ export async function POST(
         return;
       }
 
+      // Either participant may hang up while the other tab is responding to
+      // the session update. Ending is therefore intentionally idempotent.
+      if (session.status === TherapyCallStatus.ENDED || session.status === TherapyCallStatus.DECLINED) {
+        return;
+      }
       if (session.status !== TherapyCallStatus.RINGING && session.status !== TherapyCallStatus.ACTIVE) {
-        throw new CallActionError("This call has already ended", 409);
+        throw new CallActionError("This call cannot be ended", 409);
       }
       transaction.update(sessionRef, {
         status: TherapyCallStatus.ENDED,

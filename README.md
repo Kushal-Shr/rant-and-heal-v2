@@ -31,6 +31,11 @@ FIREBASE_ADMIN_PRIVATE_KEY=
 GEMINI_API_KEY=
 GEMINI_MODEL=gemini-2.5-flash
 GEMINI_LIVE_MODEL=gemini-3.1-flash-live-preview
+
+# Optional TURN relay for therapist video calls. Keep these server-only.
+TURN_URLS=turn:turn.example.com:3478,turns:turn.example.com:5349
+TURN_USERNAME=
+TURN_CREDENTIAL=
 ```
 
 Never commit `.env.local` or Firebase service-account JSON files.
@@ -81,6 +86,7 @@ Completed so far:
 
 Known follow-up:
 - Calls currently use a public STUN server only. Configure authenticated TURN credentials before relying on calls across restrictive or mobile networks.
+- TURN settings are returned only by the authenticated `/api/therapy/ice-servers` route to active call participants. Use short-lived credentials from your TURN provider in production.
 - Manually test patient-initiated and therapist-initiated calls in two authenticated browser sessions, including answer, decline, hangup, and a second call after termination.
 
 ## Verification

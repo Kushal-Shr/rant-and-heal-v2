@@ -10,6 +10,7 @@ import { useAuth } from "@/src/context/AuthContext";
 import {
   createCallSession,
   declineCallSession,
+  endCallSession,
   observeOpenCallSessions,
 } from "@/src/services/therapyCallService";
 import { observeTherapyMessages, sendTherapyMessage } from "@/src/services/therapyMessageService";
@@ -74,8 +75,14 @@ export function TherapyChatRoom({
   }, [patientUid]);
 
   useEffect(() => {
+    if (!user?.uid) {
+      return;
+    }
+
     return observeOpenCallSessions(
       patientUid,
+      user.uid,
+      senderRole,
       (sessions) => {
         const nextCall =
           sessions.find((session) => session.status === "ACTIVE") ??
@@ -88,7 +95,7 @@ export function TherapyChatRoom({
         console.error("Failed to observe therapy calls:", snapshotError);
       }
     );
-  }, [patientUid, user?.uid]);
+  }, [patientUid, senderRole, user?.uid]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -143,6 +150,24 @@ export function TherapyChatRoom({
     } catch (callError) {
       console.error("Failed to decline therapy call:", callError);
       setError(callError instanceof Error ? callError.message : "Could not decline the call.");
+    } finally {
+      setIsUpdatingCall(false);
+    }
+  }
+
+  async function handleEndCall() {
+    if (!openCall?.id) {
+      return;
+    }
+
+    setIsUpdatingCall(true);
+    setError(null);
+
+    try {
+      await endCallSession(patientUid, openCall.id);
+    } catch (callError) {
+      console.error("Failed to end therapy call:", callError);
+      setError(callError instanceof Error ? callError.message : "Could not end the call.");
     } finally {
       setIsUpdatingCall(false);
     }
@@ -209,6 +234,16 @@ export function TherapyChatRoom({
                 variant="danger"
               >
                 Decline
+              </Button>
+            ) : null}
+            {callStartedByMe || callInProgress ? (
+              <Button
+                className="rounded-none border-2 border-[#2c1601] px-4 py-2 shadow-[3px_3px_0_#2c1601]"
+                isLoading={isUpdatingCall}
+                onClick={handleEndCall}
+                variant="danger"
+              >
+                {callInProgress ? "End call" : "Cancel call"}
               </Button>
             ) : null}
           </div>

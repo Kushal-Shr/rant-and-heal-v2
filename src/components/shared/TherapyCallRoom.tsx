@@ -9,6 +9,7 @@ import { useAuth } from "@/src/context/AuthContext";
 import {
   answerCallSession,
   endCallSession,
+  getCallIceServers,
   observeCallSession,
   observeSignals,
   sendSignal,
@@ -24,10 +25,6 @@ interface TherapyCallRoomProps {
   sessionId: string;
   backHref: string;
 }
-
-const rtcConfig: RTCConfiguration = {
-  iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
-};
 
 export function TherapyCallRoom({ backHref, patientUid, sessionId }: TherapyCallRoomProps) {
   const { user } = useAuth();
@@ -60,7 +57,8 @@ export function TherapyCallRoom({ backHref, patientUid, sessionId }: TherapyCall
 
   const createPeer = useCallback(async () => {
     isClosedRef.current = false;
-    const peer = new RTCPeerConnection(rtcConfig);
+    const iceServers = await getCallIceServers(patientUid, sessionId);
+    const peer = new RTCPeerConnection({ iceServers });
     peerRef.current = peer;
 
     peer.onicecandidate = (event) => {
@@ -247,10 +245,12 @@ export function TherapyCallRoom({ backHref, patientUid, sessionId }: TherapyCall
     cleanup();
     try {
       await endCallSession(patientUid, sessionId);
+      router.push(backHref);
     } catch (hangupError) {
       console.error("Failed to end call:", hangupError);
+      setError("Could not confirm that the call ended. Return to messages and try again.");
+      setStatus("failed");
     }
-    router.push(backHref);
   }
 
   const waitingForRecipient = session?.status === TherapyCallStatus.RINGING && session.callerId === user?.uid;
@@ -287,7 +287,7 @@ export function TherapyCallRoom({ backHref, patientUid, sessionId }: TherapyCall
         <aside className="space-y-4">
           <video ref={localVideoRef} autoPlay className="aspect-video w-full border-2 border-white/30 bg-black object-cover" muted playsInline />
           <div className="border-2 border-white/30 bg-white/10 p-4 text-sm leading-6">
-            Calls use Firestore signaling and a Google STUN server for this MVP. Some restrictive networks will require a TURN relay before launch.
+            Calls use Firestore signaling. TURN relay settings are supplied securely when configured; without them, some restrictive networks may not connect.
           </div>
         </aside>
       </main>
