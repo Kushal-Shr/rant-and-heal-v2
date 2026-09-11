@@ -106,6 +106,7 @@ The project follows a hybrid directory layout:
 - Therapy messages live at `connections/{patientUid}/messages/{messageId}` and are separate from Momo session messages.
 - Therapy call sessions live at `connections/{patientUid}/call_sessions/{sessionId}` with signaling documents under `signals/{signalId}`. Each new session records `callerId`, `recipientId`, and explicit answer/decline/end fields.
 - Call creation and status transitions are authenticated Route Handlers. A server-owned `connections/{patientUid}/call_state/current` document is updated atomically with the session so only one ringing or active call can exist per connection.
+- The call room obtains STUN/TURN configuration through `/api/therapy/ice-servers`, which verifies the active session before returning optional server-only TURN credentials.
 - Shared UI components currently power both sides:
   - `TherapyChatRoom` is used by patient and therapist message routes.
   - `TherapyCallRoom` is used by patient and therapist session routes.
@@ -119,5 +120,5 @@ Implemented routes:
 - `/therapy/session/[sessionId]` and `/session/[sessionId]`: shared WebRTC call room.
 
 Known call work remaining:
-- Calls still require an authenticated TURN relay before they are reliable across restrictive networks; the MVP currently has only Google STUN configured.
+- Set `TURN_URLS`, `TURN_USERNAME`, and `TURN_CREDENTIAL` before launch. Prefer short-lived credentials from the TURN provider; without this configuration, the call room falls back to Google STUN only.
 - End-to-end testing still needs two separate authenticated browser sessions for both caller directions, decline, hangup, and a subsequent call.

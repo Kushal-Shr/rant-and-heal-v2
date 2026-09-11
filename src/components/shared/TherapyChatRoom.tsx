@@ -10,6 +10,7 @@ import { useAuth } from "@/src/context/AuthContext";
 import {
   createCallSession,
   declineCallSession,
+  endCallSession,
   observeOpenCallSessions,
 } from "@/src/services/therapyCallService";
 import { observeTherapyMessages, sendTherapyMessage } from "@/src/services/therapyMessageService";
@@ -148,6 +149,24 @@ export function TherapyChatRoom({
     }
   }
 
+  async function handleEndCall() {
+    if (!openCall?.id) {
+      return;
+    }
+
+    setIsUpdatingCall(true);
+    setError(null);
+
+    try {
+      await endCallSession(patientUid, openCall.id);
+    } catch (callError) {
+      console.error("Failed to end therapy call:", callError);
+      setError(callError instanceof Error ? callError.message : "Could not end the call.");
+    } finally {
+      setIsUpdatingCall(false);
+    }
+  }
+
   const callActionHref = openCall?.id ? callHrefForSession(openCall.id) : null;
   const callStartedByMe = openCall?.callerId === user?.uid;
   const isIncomingCall = openCall?.status === "RINGING" && openCall.recipientId === user?.uid;
@@ -209,6 +228,16 @@ export function TherapyChatRoom({
                 variant="danger"
               >
                 Decline
+              </Button>
+            ) : null}
+            {callStartedByMe || callInProgress ? (
+              <Button
+                className="rounded-none border-2 border-[#2c1601] px-4 py-2 shadow-[3px_3px_0_#2c1601]"
+                isLoading={isUpdatingCall}
+                onClick={handleEndCall}
+                variant="danger"
+              >
+                {callInProgress ? "End call" : "Cancel call"}
               </Button>
             ) : null}
           </div>
