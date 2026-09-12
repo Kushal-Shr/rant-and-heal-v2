@@ -21,6 +21,11 @@ interface LiveTokenResponse {
   error?: string;
 }
 
+interface TranscriptResponse {
+  safety?: { level?: string };
+  error?: string;
+}
+
 interface MomoVoiceCallPanelProps {
   embedded?: boolean;
   sessionId?: string | null;
@@ -123,9 +128,17 @@ export function MomoVoiceCallPanel({ embedded = false, sessionId }: MomoVoiceCal
         }),
       });
 
+      const payload = (await response.json().catch(() => null)) as TranscriptResponse | null;
       if (!response.ok) {
-        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
         console.error("MOMO TRANSCRIPT ERROR:", response.status, payload?.error ?? "Failed to save transcript.");
+        return;
+      }
+
+      if (sender === "USER" && payload?.safety?.level === "URGENT") {
+        intentionalCloseRef.current = true;
+        cleanupCallResources();
+        setCallState("DISCONNECTED");
+        router.push("/crisis?source=momo-voice");
       }
     } catch (error) {
       console.error("MOMO TRANSCRIPT ERROR:", error);

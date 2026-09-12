@@ -6,6 +6,7 @@ import { getAdminDb } from "@/src/server/firebaseAdmin";
 import { getErrorMessage } from "@/src/server/errors";
 import { getGeminiClient, MOMO_TEXT_MODEL } from "@/src/server/momo/gemini";
 import { MOMO_SYSTEM_INSTRUCTION } from "@/src/server/momo/persona";
+import { assessMomoSafety, crisisReplyFor, recordMomoSafetyEvent } from "@/src/server/momo/safety";
 
 export const runtime = "nodejs";
 
@@ -56,6 +57,30 @@ export async function POST(request: NextRequest) {
     const adminDb = getAdminDb();
     const sessionRef = adminDb.collection("users").doc(userId).collection("sessions").doc(sessionId);
     const messagesRef = sessionRef.collection("messages");
+    const safetyAssessment = assessMomoSafety(messageText);
+
+    if (safetyAssessment.level === "URGENT") {
+      await recordMomoSafetyEvent({
+        db: adminDb,
+        userId,
+        sessionId,
+        userText: messageText,
+        source: "TEXT",
+        assessment: safetyAssessment,
+      });
+
+      return NextResponse.json(
+        {
+          message: crisisReplyFor(safetyAssessment),
+          safety: {
+            level: safetyAssessment.level,
+            category: safetyAssessment.category,
+          },
+        },
+        { status: 200 }
+      );
+    }
+
     const historySnapshot = await messagesRef
       .orderBy("timestamp", "asc")
       .limitToLast(HISTORY_LIMIT)

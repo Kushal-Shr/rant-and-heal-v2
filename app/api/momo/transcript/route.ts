@@ -3,6 +3,7 @@ import { FieldValue } from "firebase-admin/firestore";
 import { verifyFirebaseBearerToken } from "@/src/server/auth";
 import { getErrorMessage } from "@/src/server/errors";
 import { getAdminDb } from "@/src/server/firebaseAdmin";
+import { assessMomoSafety, recordMomoSafetyEvent } from "@/src/server/momo/safety";
 
 export const runtime = "nodejs";
 
@@ -35,7 +36,32 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    const sessionRef = getAdminDb().collection("users").doc(userId).collection("sessions").doc(sessionId);
+    const adminDb = getAdminDb();
+    const safetyAssessment = sender === "USER" ? assessMomoSafety(text) : { level: "SAFE" as const, matchedSignals: [] };
+
+    if (safetyAssessment.level === "URGENT") {
+      await recordMomoSafetyEvent({
+        db: adminDb,
+        userId,
+        sessionId,
+        userText: text,
+        source: "VOICE",
+        assessment: safetyAssessment,
+      });
+
+      return NextResponse.json(
+        {
+          ok: true,
+          safety: {
+            level: safetyAssessment.level,
+            category: safetyAssessment.category,
+          },
+        },
+        { status: 200 }
+      );
+    }
+
+    const sessionRef = adminDb.collection("users").doc(userId).collection("sessions").doc(sessionId);
     const messageRef = await sessionRef.collection("messages").add({
       text,
       sender,

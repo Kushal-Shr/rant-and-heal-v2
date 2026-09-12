@@ -58,6 +58,13 @@ service cloud.firestore {
         allow read, write: if isOwner(userId);
       }
 
+      // Safety events are written by authenticated server handlers only.
+      // They are intentionally not exposed to the browser while the clinical
+      // review and follow-up workflow is still being designed.
+      match /safety_events/{eventId} {
+        allow read, write: if false;
+      }
+
       match /journals/{entryId} {
         allow read, write: if isOwner(userId);
       }

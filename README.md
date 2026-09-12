@@ -36,6 +36,11 @@ GEMINI_LIVE_MODEL=gemini-3.1-flash-live-preview
 TURN_URLS=turn:turn.example.com:3478,turns:turn.example.com:5349
 TURN_USERNAME=
 TURN_CREDENTIAL=
+
+# Public number shown as the temporary crisis-support contact. This is
+# intentionally optional, but should be set before presenting the feature.
+NEXT_PUBLIC_CRISIS_CONTACT_NAME=Rant and Heal Support
+NEXT_PUBLIC_CRISIS_CONTACT_PHONE=+15551234567
 ```
 
 Never commit `.env.local` or Firebase service-account JSON files.
@@ -67,6 +72,14 @@ Verification atomically marks the directory profile as verified and changes the 
 Momo text chat is server-owned: the client calls `/api/momo/chat`, the route verifies the Firebase ID token, fetches session history, calls Gemini, then writes both USER and MOMO messages with the Admin SDK.
 
 Momo voice uses `/api/momo/live-token` to mint a short-lived Gemini Live token. Browser code captures microphone PCM audio and streams it directly to Gemini Live with the ephemeral token.
+
+### Momo safety interceptor v0.1
+
+Before a text message reaches Gemini, `/api/momo/chat` applies a conservative server-side phrase screen for direct self-harm or harm-to-others language in English, Nepali, and romanized Nepali. A matching message bypasses Gemini, receives fixed crisis wording, records a minimal server-only `users/{uid}/safety_events/{eventId}` audit event, and takes the user to `/crisis`.
+
+Voice transcription is screened when a completed user transcript is saved. On a match, the browser ends the Momo Live session and opens `/crisis`. Because Gemini Live receives audio directly, this post-transcription safeguard is not a replacement for real-time voice moderation.
+
+This is not a clinical risk assessment or an emergency-response service. It needs clinician-approved rules, localized resources, escalation ownership, and a reviewed evaluation corpus before release. See [docs/SAFETY_INTERCEPTOR_V0.md](./docs/SAFETY_INTERCEPTOR_V0.md).
 
 ## Therapy Connection MVP Status
 

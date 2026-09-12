@@ -177,9 +177,13 @@ export default function MomoPage() {
         }),
       });
 
+      const responsePayload = (await response.json().catch(() => null)) as {
+        error?: string;
+        safety?: { level?: string };
+      } | null;
+
       if (!response.ok) {
-        const errorPayload = (await response.json().catch(() => null)) as { error?: string } | null;
-        const message = errorPayload?.error ?? "Failed to generate Momo response.";
+        const message = responsePayload?.error ?? "Failed to generate Momo response.";
         console.error(
           "MOMO API ERROR:",
           response.status,
@@ -187,6 +191,8 @@ export default function MomoPage() {
         );
         setInputValue(userMessageText);
         setSendError(message);
+      } else if (responsePayload?.safety?.level === "URGENT") {
+        router.push("/crisis?source=momo");
       }
     } catch (error) {
       const appError = error as FirestoreError;

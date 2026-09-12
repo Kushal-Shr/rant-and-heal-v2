@@ -97,6 +97,8 @@ The project follows a hybrid directory layout:
 - Patient clients may listen to their own Momo sessions and messages.
 - Message writes are server-owned. `/api/momo/chat` verifies the Firebase ID token, prevents cross-user spoofing, calls Gemini, and writes both USER and MOMO messages through the Admin SDK.
 - Firestore rules intentionally deny direct client writes to `users/{uid}/sessions/{sessionId}/messages`.
+- The Momo safety interceptor runs in the authenticated chat and transcript handlers before normal persistence/generation. Direct, high-confidence self-harm or harm-to-others signals bypass Gemini, save a fixed support reply, and write a minimal server-only audit event at `users/{uid}/safety_events/{eventId}`. Browser clients cannot read or write safety events.
+- Text is intercepted before it reaches Gemini. Momo Live voice is screened after its completed user transcript is received; since its audio reaches Gemini Live directly, the voice path must not be represented as real-time crisis moderation.
 
 ### Therapy Connection MVP
 - Therapist directory profiles live at `therapists/{therapistUid}`. Public applicants may create and edit a `PENDING` profile, but cannot change `isVerified`, `verificationStatus`, or their account role. The patient directory only reads profiles where `isVerified == true`.
