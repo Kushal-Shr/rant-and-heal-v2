@@ -4,6 +4,8 @@ import { verifyFirebaseBearerToken } from "@/src/server/auth";
 import { getErrorMessage } from "@/src/server/errors";
 import { getAdminDb } from "@/src/server/firebaseAdmin";
 import { assessMomoSafety, recordMomoSafetyEvent } from "@/src/server/momo/safety";
+import { classifySafetyRisk } from "@/src/server/safety/classifier";
+import { notifySafetySupport } from "@/src/server/safety/notifications";
 
 export const runtime = "nodejs";
 
@@ -39,15 +41,33 @@ export async function POST(request: NextRequest) {
     const adminDb = getAdminDb();
     const safetyAssessment = sender === "USER" ? assessMomoSafety(text) : { level: "SAFE" as const, matchedSignals: [] };
 
-    if (safetyAssessment.level === "URGENT") {
-      await recordMomoSafetyEvent({
-        db: adminDb,
-        userId,
-        sessionId,
-        userText: text,
-        source: "VOICE",
-        assessment: safetyAssessment,
-      });
+    if (safetyAssessment.level === "IMMINENT") {
+      const [eventId, modelAssessment] = await Promise.all([
+        recordMomoSafetyEvent({
+          db: adminDb,
+          userId,
+          sessionId,
+          userText: text,
+          source: "VOICE",
+          assessment: safetyAssessment,
+        }),
+        classifySafetyRisk(text),
+      ]);
+      const hasClassifierAgreement = modelAssessment?.level === "IMMINENT" &&
+        modelAssessment.category === safetyAssessment.category;
+
+      if (hasClassifierAgreement) {
+        const notificationStatus = await notifySafetySupport({
+          eventId,
+          category: safetyAssessment.category,
+          source: "VOICE",
+          state: "IMMINENT_RULE_AND_MODEL_AGREE",
+        });
+        await adminDb.collection("users").doc(userId).collection("safety_events").doc(eventId).update({
+          supportNotificationStatus: notificationStatus,
+          supportNotificationUpdatedAt: FieldValue.serverTimestamp(),
+        });
+      }
 
       return NextResponse.json(
         {

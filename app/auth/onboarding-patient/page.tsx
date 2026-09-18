@@ -21,7 +21,6 @@ export default function PatientOnboardingPage() {
   const { user, loading: authLoading } = useAuth();
   const previousDisplayNameRef = useRef("");
   const [displayName, setDisplayName] = useState("");
-  const [emergencyContact, setEmergencyContact] = useState("");
   const [isIncognito, setIsIncognito] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -57,11 +56,6 @@ export default function PatientOnboardingPage() {
       return;
     }
 
-    if (!emergencyContact.trim()) {
-      setError("Please add an emergency contact before continuing.");
-      return;
-    }
-
     const finalDisplayName = isIncognito
       ? displayName.trim() || generateAnonymousHandle()
       : displayName.trim();
@@ -77,7 +71,6 @@ export default function PatientOnboardingPage() {
     try {
       await updateDoc(doc(db, "users", user.uid), {
         displayName: finalDisplayName,
-        emergencyContact: emergencyContact.trim(),
         isIncognito,
         onboardingComplete: true,
       });
@@ -257,24 +250,6 @@ export default function PatientOnboardingPage() {
                     {isIncognito
                       ? "Incognito mode automatically assigns your patient handle."
                       : "Use the name you want to appear across your care experience."}
-                  </p>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="emergencyContact" required>
-                    Emergency contact
-                  </Label>
-                  <Input
-                    id="emergencyContact"
-                    type="text"
-                    value={emergencyContact}
-                    onChange={(event) => setEmergencyContact(event.target.value)}
-                    placeholder="Name and phone number"
-                    disabled={isSubmitting}
-                    required
-                  />
-                  <p className="ml-2 text-xs font-medium leading-5 text-[#717974]">
-                    Add a trusted contact we can keep on file for urgent situations.
                   </p>
                 </div>
 

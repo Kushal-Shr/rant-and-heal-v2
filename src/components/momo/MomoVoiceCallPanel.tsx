@@ -134,7 +134,7 @@ export function MomoVoiceCallPanel({ embedded = false, sessionId }: MomoVoiceCal
         return;
       }
 
-      if (sender === "USER" && payload?.safety?.level === "URGENT") {
+      if (sender === "USER" && payload?.safety?.level === "IMMINENT") {
         intentionalCloseRef.current = true;
         cleanupCallResources();
         setCallState("DISCONNECTED");

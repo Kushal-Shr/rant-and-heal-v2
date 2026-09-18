@@ -7,6 +7,8 @@ import { getErrorMessage } from "@/src/server/errors";
 import { getGeminiClient, MOMO_TEXT_MODEL } from "@/src/server/momo/gemini";
 import { MOMO_SYSTEM_INSTRUCTION } from "@/src/server/momo/persona";
 import { assessMomoSafety, crisisReplyFor, recordMomoSafetyEvent } from "@/src/server/momo/safety";
+import { classifySafetyRisk } from "@/src/server/safety/classifier";
+import { notifySafetySupport } from "@/src/server/safety/notifications";
 
 export const runtime = "nodejs";
 
@@ -59,8 +61,9 @@ export async function POST(request: NextRequest) {
     const messagesRef = sessionRef.collection("messages");
     const safetyAssessment = assessMomoSafety(messageText);
 
-    if (safetyAssessment.level === "URGENT") {
-      await recordMomoSafetyEvent({
+    if (safetyAssessment.level === "IMMINENT") {
+      const modelAssessment = await classifySafetyRisk(messageText);
+      const eventId = await recordMomoSafetyEvent({
         db: adminDb,
         userId,
         sessionId,
@@ -69,11 +72,26 @@ export async function POST(request: NextRequest) {
         assessment: safetyAssessment,
       });
 
+      const hasClassifierAgreement = modelAssessment?.level === "IMMINENT" &&
+        modelAssessment.category === safetyAssessment.category;
+      if (hasClassifierAgreement) {
+        const notificationStatus = await notifySafetySupport({
+          eventId,
+          category: safetyAssessment.category,
+          source: "TEXT",
+          state: "IMMINENT_RULE_AND_MODEL_AGREE",
+        });
+        await adminDb.collection("users").doc(userId).collection("safety_events").doc(eventId).update({
+          supportNotificationStatus: notificationStatus,
+          supportNotificationUpdatedAt: FieldValue.serverTimestamp(),
+        });
+      }
+
       return NextResponse.json(
         {
           message: crisisReplyFor(safetyAssessment),
           safety: {
-            level: safetyAssessment.level,
+            level: "IMMINENT",
             category: safetyAssessment.category,
           },
         },

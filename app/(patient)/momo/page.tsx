@@ -191,7 +191,7 @@ export default function MomoPage() {
         );
         setInputValue(userMessageText);
         setSendError(message);
-      } else if (responsePayload?.safety?.level === "URGENT") {
+      } else if (responsePayload?.safety?.level === "IMMINENT") {
         router.push("/crisis?source=momo");
       }
     } catch (error) {

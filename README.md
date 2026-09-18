@@ -41,6 +41,14 @@ TURN_CREDENTIAL=
 # intentionally optional, but should be set before presenting the feature.
 NEXT_PUBLIC_CRISIS_CONTACT_NAME=Rant and Heal Support
 NEXT_PUBLIC_CRISIS_CONTACT_PHONE=+15551234567
+
+# Optional safety-support notification. Disabled by default. Resend must use
+# a verified sender domain. Alerts contain metadata only, never chat content
+# or a user's identity.
+SAFETY_SUPPORT_NOTIFICATIONS_ENABLED=false
+RESEND_API_KEY=
+SAFETY_ALERT_FROM_EMAIL=
+SAFETY_SUPPORT_ALERT_EMAIL=
 ```
 
 Never commit `.env.local` or Firebase service-account JSON files.
@@ -80,6 +88,14 @@ Before a text message reaches Gemini, `/api/momo/chat` applies a conservative se
 Voice transcription is screened when a completed user transcript is saved. On a match, the browser ends the Momo Live session and opens `/crisis`. Because Gemini Live receives audio directly, this post-transcription safeguard is not a replacement for real-time voice moderation.
 
 This is not a clinical risk assessment or an emergency-response service. It needs clinician-approved rules, localized resources, escalation ownership, and a reviewed evaluation corpus before release. See [docs/SAFETY_INTERCEPTOR_V0.md](./docs/SAFETY_INTERCEPTOR_V0.md).
+
+### Optional safety-support notification
+
+When the deterministic phrase screen and the schema-validated Gemini classifier both identify imminent self-harm or harm-to-others risk, Momo records its fixed crisis response and can send a minimal email alert to the configured support address. The setting is disabled by default. The alert has only an event ID, risk category, source, state, and timestamp—never a message, name, phone number, or user ID.
+
+There are no emergency-contact calls, text-message fallbacks, delayed dispatches, IP-location workflows, or police integrations. The feature is not live monitoring or an emergency-response service. Voice alerts, if enabled, occur only after a completed transcript has reached the server and are not real-time moderation.
+
+Configure Firestore TTL for `safety_events.expireAt` before relying on the 30-day retention target. TTL deletion is asynchronous. Do not enable email alerts without a named operating owner, clinician/legal review, a verified Resend sender, and a tested response protocol.
 
 ## Therapy Connection MVP Status
 

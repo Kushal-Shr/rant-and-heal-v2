@@ -1,10 +1,11 @@
-import { FieldValue, type Firestore } from "firebase-admin/firestore";
+import { FieldValue, Timestamp, type Firestore } from "firebase-admin/firestore";
+import { SAFETY_POLICY_VERSION } from "@/src/server/safety/classifier";
 
 export type MomoSafetyCategory = "SELF_HARM" | "HARM_TO_OTHERS";
 export type MomoSafetyLanguage = "EN" | "NE";
 
 export interface MomoSafetyAssessment {
-  level: "SAFE" | "URGENT";
+  level: "SAFE" | "CONCERNING" | "IMMINENT";
   category?: MomoSafetyCategory;
   language?: MomoSafetyLanguage;
   matchedSignals: string[];
@@ -41,7 +42,7 @@ export function assessMomoSafety(text: string): MomoSafetyAssessment {
 
   const primaryMatch = matchedPatterns[0];
   return {
-    level: "URGENT",
+    level: "IMMINENT",
     category: primaryMatch.category,
     language: primaryMatch.language,
     matchedSignals: matchedPatterns.map((pattern) => pattern.id),
@@ -74,7 +75,7 @@ export async function recordMomoSafetyEvent({
   userText,
   source,
   assessment,
-}: RecordMomoSafetyEventOptions): Promise<void> {
+}: RecordMomoSafetyEventOptions): Promise<string> {
   const userRef = db.collection("users").doc(userId);
   const sessionRef = userRef.collection("sessions").doc(sessionId);
   const messagesRef = sessionRef.collection("messages");
@@ -107,8 +108,13 @@ export async function recordMomoSafetyEvent({
     matchedSignals: assessment.matchedSignals,
     source,
     sessionId,
+    status: "CRISIS_SUPPORT",
+    policyVersion: SAFETY_POLICY_VERSION,
     createdAt: FieldValue.serverTimestamp(),
+    // Firestore TTL must be configured separately before this is relied on.
+    expireAt: Timestamp.fromMillis(Date.now() + 30 * 24 * 60 * 60 * 1000),
   });
 
   await batch.commit();
+  return safetyEventRef.id;
 }

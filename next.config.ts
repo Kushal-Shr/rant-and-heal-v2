@@ -1,7 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // Resend is used only by Node.js route handlers.
+  serverExternalPackages: ["resend"],
 };
 
 export default nextConfig;
