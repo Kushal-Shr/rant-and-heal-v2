@@ -1,5 +1,8 @@
 "use client";
 
+import Link from "next/link";
+import { MomoPortrait } from "@/src/components/shared/MomoPortrait";
+
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Spinner } from "@/src/components/ui/Spinner";
@@ -276,36 +279,35 @@ export function MomoVoiceCallPanel({ embedded = false, sessionId }: MomoVoiceCal
     <div
       className={
         embedded
-          ? "border-b-4 border-black bg-[#fff6c7] px-4 py-4 sm:px-6"
-          : "flex min-h-screen flex-col items-center justify-center bg-[var(--color-brutalBg)] p-6 text-[var(--color-foreground)]"
+          ? "border-b border-[#ffeada] bg-[#fff8f5]/80 px-4 py-3 sm:px-6"
+          : "flex min-h-[75dvh] flex-col items-center justify-center gap-6 py-6 text-[#2c1601]"
       }
     >
+      {!embedded && <Link className="self-start rounded-full bg-white/70 px-4 py-2 text-sm text-[#325347]" href="/momo">← Back to conversation</Link>}
       <div
         className={
-          embedded
-            ? "mx-auto flex max-w-4xl flex-col gap-4 rounded-[1.5rem] border-4 border-black bg-white p-4 shadow-[6px_6px_0_0_#000000] sm:flex-row sm:items-center sm:justify-between"
-            : "flex w-full max-w-md flex-col items-center rounded-3xl border-4 border-black bg-white p-8 shadow-[8px_8px_0px_0px_rgba(0,0,0,1)]"
+        embedded
+            ? "mx-auto flex max-w-3xl flex-col gap-4 rounded-[1.5rem] border border-white/80 bg-white/80 p-4 shadow-[0_12px_28px_-18px_rgba(121,88,65,0.25),inset_0_2px_4px_rgba(255,255,255,0.8)] sm:flex-row sm:items-center sm:justify-between"
+            : "flex w-full max-w-md flex-col items-center rounded-[2.5rem] border border-white/80 bg-white/80 p-8 shadow-[0_20px_40px_-20px_rgba(121,88,65,0.24),inset_0_2px_4px_rgba(255,255,255,0.8)]"
         }
       >
         <div className={embedded ? "flex items-center gap-4" : "flex flex-col items-center"}>
           <div className={embedded ? "relative flex h-16 w-16 items-center justify-center" : "relative mb-12 flex h-48 w-48 items-center justify-center"}>
             <div
-              className={`absolute inset-0 rounded-full bg-[var(--color-brutalTeal)] ${isPulseActive ? "animate-ping" : ""}`}
+              className={`absolute inset-0 rounded-full bg-[#abcebf] ${isPulseActive ? "animate-ping" : ""}`}
               style={{ opacity: isPulseActive ? 0.6 : 0.2 }}
             />
-            <div className={embedded ? "relative z-10 flex h-12 w-12 items-center justify-center rounded-full border-4 border-black bg-[var(--color-brutalPurple)] text-sm font-black shadow-[3px_3px_0_0_#000000]" : "relative z-10 flex h-32 w-32 items-center justify-center rounded-full border-4 border-black bg-[var(--color-brutalPurple)] shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition-transform duration-300 hover:scale-105"}>
-              MO
-            </div>
+            <MomoPortrait className={embedded ? "relative z-10 size-12" : "relative z-10 size-40"} />
           </div>
 
           <div className={embedded ? "" : "text-center"}>
-            <p className="font-['Plus_Jakarta_Sans'] text-xs font-black uppercase tracking-[0.22em] text-[#6f5a48]">
+            <p className="font-['Plus_Jakarta_Sans'] text-xs font-medium uppercase tracking-[0.12em] text-[#4a6b5e]/70">
               Momo Voice
             </p>
-            <h2 className={embedded ? "mt-1 font-['Plus_Jakarta_Sans'] text-lg font-black uppercase text-[#2c1601]" : "mb-4 mt-2 text-center text-3xl font-black uppercase tracking-tighter"}>
+            <h2 className={embedded ? "mt-1 font-['Plus_Jakarta_Sans'] text-lg font-medium text-[#325347]" : "mb-4 mt-2 text-center text-3xl font-medium tracking-[-0.03em] text-[#325347]"}>
               Talk to Momo
             </h2>
-            <p className={`font-['Plus_Jakarta_Sans'] text-sm font-bold ${callState === "ERROR" ? "text-red-600" : "text-[#2c1601]"}`}>
+            <p className={`font-['Plus_Jakarta_Sans'] text-sm ${callState === "ERROR" ? "text-[#ba1a1a]" : "text-[#414845]"}`}>
               {isCallable ? statusText : "Create or select a chat before calling."}
             </p>
           </div>
@@ -313,7 +315,7 @@ export function MomoVoiceCallPanel({ embedded = false, sessionId }: MomoVoiceCal
 
         {callState === "IDLE" || callState === "DISCONNECTED" || callState === "ERROR" ? (
           <button
-            className={embedded ? "rounded-[1rem] border-4 border-black bg-brutalYellow px-5 py-3 font-['Plus_Jakarta_Sans'] text-sm font-black uppercase tracking-[0.18em] text-black shadow-[5px_5px_0_0_#000000] transition-all hover:translate-y-1 hover:shadow-none disabled:pointer-events-none disabled:opacity-50" : "w-full rounded-xl border-4 border-black bg-[var(--color-brutalYellow)] py-4 text-xl font-black text-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition-all hover:translate-y-1 hover:shadow-[0px_0px_0px_0px_rgba(0,0,0,1)] disabled:pointer-events-none disabled:opacity-50"}
+            className={embedded ? "rounded-full bg-[#325347] px-5 py-3 font-['Plus_Jakarta_Sans'] text-sm font-medium text-white shadow-[0_8px_16px_-6px_rgba(50,83,71,0.3),inset_0_1px_0_rgba(255,255,255,0.4)] transition-all hover:bg-[#4a6b5e] active:scale-95 disabled:pointer-events-none disabled:opacity-50" : "w-full rounded-full bg-[#325347] py-4 text-lg font-medium text-white shadow-[0_8px_16px_-6px_rgba(50,83,71,0.3),inset_0_1px_0_rgba(255,255,255,0.4)] transition-all hover:bg-[#4a6b5e] active:scale-95 disabled:pointer-events-none disabled:opacity-50"}
             disabled={!isCallable}
             onClick={startCall}
           >
@@ -321,7 +323,7 @@ export function MomoVoiceCallPanel({ embedded = false, sessionId }: MomoVoiceCal
           </button>
         ) : (
           <button
-            className={embedded ? "rounded-[1rem] border-4 border-black bg-red-500 px-5 py-3 font-['Plus_Jakarta_Sans'] text-sm font-black uppercase tracking-[0.18em] text-white shadow-[5px_5px_0_0_#000000] transition-all hover:translate-y-1 hover:shadow-none" : "w-full rounded-xl border-4 border-black bg-red-500 py-4 text-xl font-black text-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition-all hover:translate-y-1 hover:shadow-[0px_0px_0px_0px_rgba(0,0,0,1)]"}
+            className={embedded ? "rounded-full bg-[#ffdad6] px-5 py-3 font-['Plus_Jakarta_Sans'] text-sm font-medium text-[#93000a] shadow-[0_8px_16px_-6px_rgba(186,26,26,0.2),inset_0_1px_0_rgba(255,255,255,0.55)] transition-all hover:bg-[#ffb4ab] active:scale-95" : "w-full rounded-full bg-[#ffdad6] py-4 text-lg font-medium text-[#93000a] shadow-[0_8px_16px_-6px_rgba(186,26,26,0.2),inset_0_1px_0_rgba(255,255,255,0.55)] transition-all hover:bg-[#ffb4ab] active:scale-95"}
             onClick={endCall}
           >
             End Rant

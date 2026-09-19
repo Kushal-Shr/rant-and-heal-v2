@@ -7,7 +7,7 @@ import { useRequireRole } from "@/src/hooks/useRequireRole";
 import { UserRole } from "@/src/types/database";
 
 export default function PatientLayout({ children }: { children: React.ReactNode }) {
-  const { user, loading, isAllowed } = useRequireRole({
+  const { user, loading, isAllowed, error, retry } = useRequireRole({
     allowedRole: UserRole.USER,
     redirectTo: "/portal",
   });
@@ -15,21 +15,23 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
   // Render centered spinner while loading auth state or checking role
   if (loading) {
     return (
-      <div className="flex h-screen w-screen items-center justify-center bg-brutalBg">
+      <div className="flex min-h-[70dvh] w-full items-center justify-center">
         <Spinner size="lg" label="Securing session..." />
       </div>
     );
   }
 
   // If there's no authenticated user or if the user is a therapist, prevent flashing components
+  if (error) return <div className="workspace"><div className="clay-card p-8" role="alert"><h1 className="text-xl font-medium text-[#325347]">Your space couldn’t load</h1><p className="mt-3 text-sm text-[#414845]">Please try again to securely open your workspace.</p><button className="clay-link mt-5" onClick={retry}>Try again</button></div></div>;
+
   if (!user || !isAllowed) {
     return null;
   }
 
   return (
     <>
-      <div className="w-full h-full px-6 py-6">
-        <div className="mx-auto max-w-6xl">
+      <div className="workspace">
+        <div className="min-w-0">
           {children}
         </div>
       </div>

@@ -1,30 +1,77 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #fff8f5;
+  --foreground: #2c1601;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: "Plus Jakarta Sans", Arial, Helvetica, sans-serif;
+  --font-mono: ui-monospace, monospace;
   --color-brutalBg: #fff8f5;
   --color-brutalTeal: #abcebf;
   --color-brutalPurple: #e1d4ff;
   --color-brutalYellow: #ffd86b;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: "Plus Jakarta Sans", Arial, Helvetica, sans-serif;
+}
+
+::selection {
+  background: #c6ebda;
+  color: #002117;
+}
+
+/* Shared Daybreak canvas from stitch_rant_and_heal_ui/soft_clay_realism. */
+:root {
+  --clay-surface: #fff8f5;
+  --clay-moss: #325347;
+  --clay-sage: #c6ebda;
+  --clay-peach: #fed1b4;
+  --clay-shadow: 0 18px 40px -24px rgb(120 87 65 / 28%),
+    0 4px 12px -8px rgb(120 87 65 / 12%), inset 0 2px 4px rgb(255 255 255 / 80%);
+}
+html { min-height: 100%; scroll-behavior: smooth; }
+body { min-height: 100dvh; }
+.app-canvas {
+  position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background: radial-gradient(ellipse at 10% 15%, #c6ebda55, transparent 45%),
+    radial-gradient(ellipse at 90% 90%, #ffdcc655, transparent 45%), #fff8f5;
+}
+.app-main { min-width: 0; flex: 1; }
+.workspace { width: 100%; max-width: 88rem; margin-inline: auto; padding: 2rem; }
+.clay-card { border: 1px solid #ffffffcc; border-radius: 2.5rem; background: #ffffffba; box-shadow: var(--clay-shadow); }
+.clay-page-header { position: relative; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1.5rem; overflow: hidden; border: 1px solid #ffffffb3; border-radius: 2.5rem; padding: 2.25rem; box-shadow: var(--clay-shadow); }
+.clay-page-header::before { content: ''; position: absolute; width: 16rem; height: 16rem; right: -5rem; top: -7rem; border-radius: 45% 55% 60% 40%; background: #ffffff40; }
+.clay-page-header--sage { background: #c6ebdaba; color: #2d4d41; }
+.clay-page-header--peach { background: #fed1b4cc; color: #795841; }
+.clay-eyebrow { font-size: .6875rem; font-weight: 500; letter-spacing: .14em; text-transform: uppercase; }
+.clay-icon { display: inline-flex; flex-shrink: 0; width: 3rem; height: 3rem; align-items: center; justify-content: center; border-radius: 50%; background: #c6ebda; color: #325347; box-shadow: var(--clay-shadow); }
+.clay-link { display: inline-flex; align-items: center; justify-content: center; gap: .5rem; min-height: 2.75rem; padding: .75rem 1.25rem; border-radius: 9999px; background: #325347; color: white; font-size: .875rem; font-weight: 500; box-shadow: 0 8px 16px -8px #32534755, inset 0 1px 2px #ffffff66; transition: background .2s, transform .2s; }
+.clay-link:hover { background: #4a6b5e; }
+.clay-link:active { transform: scale(.96); }
+.momo-portrait { overflow: hidden; flex-shrink: 0; border-radius: 50%; box-shadow: 0 20px 40px -20px #4a6b5e55, inset 0 2px 4px #fff; }
+.momo-float { animation: momo-float 3s ease-in-out infinite; }
+@keyframes momo-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+a, button, input, textarea, select, summary { -webkit-tap-highlight-color: transparent; }
+button:not(:disabled), summary { cursor: pointer; }
+:where(a, button, input, textarea, select, summary):focus-visible { outline: 2px solid #325347; outline-offset: 4px; }
+:where(h1, h2, h3, p) { overflow-wrap: anywhere; }
+:where(input, textarea) { caret-color: #325347; }
+.material-symbols-outlined { flex-shrink: 0; }
+.skip-link { position: fixed; left: 1rem; top: -5rem; z-index: 100; padding: .75rem 1.25rem; border-radius: 2rem; background: #325347; color: white; }
+.skip-link:focus { top: 1rem; }
+@media (max-width: 767px) {
+  .workspace { padding: 1.25rem 1rem 2rem; }
+  .clay-page-header { padding: 1.5rem; border-radius: 2rem; }
+  .clay-card { border-radius: 2rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }

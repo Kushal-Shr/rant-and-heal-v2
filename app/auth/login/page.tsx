@@ -103,13 +103,13 @@ export default function LoginPage() {
   };
 
   return (
-    <main className="min-h-screen bg-[#fff8f5] flex items-center justify-center p-6 font-['Plus_Jakarta_Sans'] text-[#2c1601]">
+    <div className="min-h-[calc(100dvh-5rem)] md:min-h-dvh flex items-center justify-center p-6 font-['Plus_Jakarta_Sans'] text-[#2c1601]">
       <Card variant="solid" className="w-full max-w-md p-8 sm:p-10">
         <header className="mb-8 text-center">
-          <Link href="/" className="text-2xl font-extrabold italic text-[#4a6b5e]">
+          <Link href="/" className="text-2xl font-semibold text-[#4a6b5e]">
             Rant & Heal
           </Link>
-          <h1 className="mt-4 text-3xl font-bold uppercase tracking-tight text-[#325347]">
+          <h1 className="mt-4 text-3xl font-medium tracking-tight text-[#325347]">
             Welcome Back
           </h1>
           <p className="mt-2 text-sm text-[#414845]">
@@ -121,7 +121,7 @@ export default function LoginPage() {
           <Button
             type="button"
             variant="secondary"
-            className="w-full justify-between px-5 py-4 text-left uppercase tracking-[0.14em]"
+            className="w-full justify-between px-5 py-4 text-left"
             onClick={() => handleProviderAuth("google")}
             isLoading={activeAction === "google"}
             disabled={loading}
@@ -135,7 +135,7 @@ export default function LoginPage() {
           <Button
             type="button"
             variant="outline"
-            className="w-full justify-between px-5 py-4 text-left uppercase tracking-[0.14em]"
+            className="w-full justify-between px-5 py-4 text-left"
             onClick={() => handleProviderAuth("apple")}
             isLoading={activeAction === "apple"}
             disabled={loading}
@@ -149,7 +149,7 @@ export default function LoginPage() {
           <Button
             type="button"
             variant="ghost"
-            className="w-full justify-between rounded-[2rem] border border-[#ffe3cd] bg-[#fff1e8] px-5 py-4 text-left uppercase tracking-[0.14em] text-[#795841] hover:bg-[#ffe3cd]"
+            className="w-full justify-between rounded-[2rem] border border-[#ffe3cd] bg-[#fff1e8] px-5 py-4 text-left text-[#795841] hover:bg-[#ffe3cd]"
             disabled
           >
             <span>Continue with Phone</span>
@@ -196,7 +196,7 @@ export default function LoginPage() {
             />
           </div>
 
-          <Button type="submit" variant="primary" className="w-full py-4 tracking-wider uppercase mt-8" isLoading={loading}>
+          <Button type="submit" variant="primary" className="w-full py-4 mt-8" isLoading={loading}>
             Log In
           </Button>
         </form>
@@ -208,6 +208,6 @@ export default function LoginPage() {
           </Link>
         </footer>
       </Card>
-    </main>
+    </div>
   );
 }

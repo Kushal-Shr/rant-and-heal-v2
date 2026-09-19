@@ -102,40 +102,40 @@ export default function TherapistOnboardingPage() {
 
   if (authLoading || !user) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#fff8f5]">
+      <div className="flex min-h-[calc(100dvh-5rem)] md:min-h-dvh items-center justify-center bg-[#fff8f5]">
         <Spinner size="lg" label="Loading practitioner onboarding" />
-      </main>
+      </div>
     );
   }
 
   return (
-    <main className="min-h-screen bg-[#fff8f5] px-6 py-10 font-['Plus_Jakarta_Sans'] text-[#2c1601]">
+    <div className="min-h-[calc(100dvh-5rem)] md:min-h-dvh px-6 py-10 font-['Plus_Jakarta_Sans'] text-[#2c1601]">
       <div className="mx-auto grid min-h-[calc(100vh-5rem)] max-w-6xl items-center gap-8 lg:grid-cols-[0.9fr_1.1fr]">
         <section>
-          <Link href="/" className="inline-flex items-center gap-3 font-black text-[#325347]">
-            <span className="flex size-11 items-center justify-center rounded-full bg-[#c6ebda]">RH</span>
+          <Link href="/" className="inline-flex items-center gap-3 font-medium text-[#325347]">
+            <span className="flex size-11 items-center justify-center rounded-full bg-[#c6ebda] shadow-[inset_0_2px_4px_rgba(255,255,255,0.8),0_8px_16px_-8px_rgba(50,83,71,0.3)]">RH</span>
             Rant & Heal
           </Link>
-          <p className="mt-10 text-sm font-black uppercase text-[#4a6b5e]">Practitioner onboarding</p>
-          <h1 className="mt-3 text-4xl font-black leading-tight text-[#325347]">
+          <p className="mt-10 text-xs font-medium uppercase tracking-[0.14em] text-[#4a6b5e]/70">Practitioner onboarding</p>
+          <h1 className="mt-3 text-4xl font-medium leading-tight tracking-[-0.04em] text-[#325347]">
             Apply to join the therapist directory.
           </h1>
-          <p className="mt-5 max-w-lg text-base font-bold leading-7 text-[#414845]">
+          <p className="mt-5 max-w-lg text-base font-light leading-7 text-[#414845]">
             Your application is reviewed before it appears in the patient directory or gains access to clinical tools.
           </p>
         </section>
 
-        <Card className="rounded-none border-2 border-[#2c1601] bg-white p-6 shadow-[8px_8px_0_#abcebf]" variant="solid">
+        <Card className="p-6 sm:p-8" variant="solid">
           {verificationStatus === TherapistVerificationStatus.PENDING ? (
-            <p className="mb-5 border-2 border-[#2c1601] bg-[#ffd86b] p-4 text-sm font-bold">
+            <p className="mb-5 rounded-[1.5rem] bg-[#ffe3cd] p-4 text-sm font-light leading-6 text-[#795841]">
               Application pending review. You can update these details while you wait.
             </p>
           ) : verificationStatus === TherapistVerificationStatus.REJECTED ? (
-            <p className="mb-5 border-2 border-[#2c1601] bg-[#ffdad6] p-4 text-sm font-bold">
+            <p className="mb-5 rounded-[1.5rem] bg-[#ffdad6] p-4 text-sm font-light leading-6 text-[#93000a]">
               Your application needs changes before approval. Update your details and submit again.
             </p>
           ) : verificationStatus === TherapistVerificationStatus.VERIFIED ? (
-            <p className="mb-5 border-2 border-[#2c1601] bg-[#abcebf] p-4 text-sm font-bold">
+            <p className="mb-5 rounded-[1.5rem] bg-[#c6ebda] p-4 text-sm font-light leading-6 text-[#2d4d41]">
               Your profile is verified. Contact support to amend published directory information.
             </p>
           ) : null}
@@ -197,7 +197,7 @@ export default function TherapistOnboardingPage() {
                 Directory bio
               </Label>
               <Textarea
-                className="rounded-none border-2 border-[#2c1601] bg-[#fff8f5] shadow-none"
+                className="bg-[#fff1e8]"
                 id="bio"
                 onChange={(event) => setBio(event.target.value)}
                 placeholder="Share how you support patients and what care with you feels like."
@@ -208,7 +208,7 @@ export default function TherapistOnboardingPage() {
             </div>
 
             <Button
-              className="w-full rounded-none border-2 border-[#2c1601] shadow-[4px_4px_0_#2c1601]"
+              className="w-full"
               disabled={verificationStatus === TherapistVerificationStatus.VERIFIED}
               isLoading={isSubmitting}
               type="submit"
@@ -222,6 +222,6 @@ export default function TherapistOnboardingPage() {
           </form>
         </Card>
       </div>
-    </main>
+    </div>
   );
 }

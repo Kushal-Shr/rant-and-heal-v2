@@ -1,158 +1,108 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useAuth } from "@/src/context/AuthContext";
 import { authService } from "@/src/services/authService";
-import { getUserProfile } from "@/src/services/userService";
+import { useCurrentProfile } from "@/src/hooks/useCurrentProfile";
 import { UserRole } from "@/src/types/database";
+import { MomoPortrait } from "@/src/components/shared/MomoPortrait";
+
+const publicLinks = [
+  { label: "Home", href: "/", icon: "home" },
+  { label: "Crisis support", href: "/crisis", icon: "favorite" },
+];
+const patientLinks = [
+  { label: "Dashboard", href: "/dashboard", icon: "home" },
+  { label: "Talk to Momo", href: "/momo", icon: "cloud" },
+  { label: "Journal", href: "/vault", icon: "menu_book" },
+  { label: "Find a therapist", href: "/therapy", icon: "groups" },
+];
+const therapistLinks = [
+  { label: "Overview", href: "/portal", icon: "dashboard" },
+  { label: "My patients", href: "/patients", icon: "groups" },
+  { label: "Messages", href: "/messages", icon: "chat_bubble" },
+];
 
 export function GlobalSidebar() {
-  const { user } = useAuth();
+  const { user, profile, loading, error, retry } = useCurrentProfile();
   const pathname = usePathname();
   const router = useRouter();
-  const [profileRole, setProfileRole] = useState<UserRole | null>(null);
+  const mobileMenu = useRef<HTMLDetailsElement>(null);
+  const [signingOut, setSigningOut] = useState(false);
+  const [signOutError, setSignOutError] = useState(false);
+  const role = profile?.role;
+  const workspaceLinks = role === UserRole.THERAPIST ? therapistLinks : role === UserRole.USER ? patientLinks : [];
+  const links = user ? [...workspaceLinks, publicLinks[1]] : publicLinks;
+  const home = role === UserRole.THERAPIST ? "/portal" : role === UserRole.USER ? "/dashboard" : "/";
+  const subtitle = loading ? "Preparing your space" : role === UserRole.THERAPIST ? "Practitioner workspace" : role === UserRole.USER ? "Your personal sanctuary" : "A soft space to begin";
+  const closeMenu = () => { if (mobileMenu.current) mobileMenu.current.open = false; };
 
-  useEffect(() => {
-    if (!user) {
-      return;
-    }
-
-    let isActive = true;
-
-    const fetchProfile = async () => {
-      try {
-        const profile = await getUserProfile(user.uid);
-        if (profile && isActive) {
-          setProfileRole(profile.role);
-        }
-      } catch (error) {
-        console.error("Failed to load user profile in GlobalSidebar:", error);
-      }
-    };
-
-    fetchProfile();
-
-    return () => {
-      isActive = false;
-    };
-  }, [user]);
-
-  const role = user ? profileRole : null;
-
-  const handleSignOut = async () => {
+  async function signOut() {
+    setSigningOut(true);
+    setSignOutError(false);
     try {
       await authService.signOut();
-      router.push("/");
-    } catch (error) {
-      console.error("Error signing out:", error);
+      closeMenu();
+      router.replace("/");
+    } catch {
+      setSignOutError(true);
+    } finally {
+      setSigningOut(false);
     }
-  };
+  }
 
-  // Nav items based on role
-  const getNavItems = () => {
-    if (!user) {
-      return [
-        { label: "Home", href: "/", icon: "home" },
-        { label: "Crisis Support", href: "/crisis", icon: "emergency" },
-      ];
-    }
+  const brand = (
+    <Link href={home} onClick={closeMenu} className="flex min-w-0 items-center gap-3 rounded-2xl">
+      <MomoPortrait className="size-11" />
+      <div className="min-w-0"><p className="text-lg font-semibold tracking-tight text-[#325347]">Rant &amp; Heal</p><p className="mt-0.5 text-[11px] text-[#596c60]">{subtitle}</p></div>
+    </Link>
+  );
 
-    if (role === UserRole.THERAPIST) {
-      return [
-        { label: "Portal", href: "/portal", icon: "dashboard" },
-        { label: "Patients", href: "/patients", icon: "groups" },
-        { label: "Messages", href: "/messages", icon: "chat_bubble" },
-      ];
-    }
-
-    // Default to Patient links for USER/Patient role or during anonymous login
-    return [
-      { label: "Dashboard", href: "/dashboard", icon: "home" },
-      { label: "Momo", href: "/momo", icon: "cloud" },
-      { label: "Directory", href: "/therapy", icon: "groups" },
-      { label: "Vault", href: "/vault", icon: "shield_with_heart" },
-    ];
-  };
-
-  const navItems = getNavItems();
+  function navigation(mobile = false) {
+    return (
+      <>
+        <nav aria-label={mobile ? "Mobile navigation" : "Primary navigation"} className="flex flex-col gap-2">
+          {links.map((item) => {
+            const active = pathname === item.href || (item.href !== "/" && pathname?.startsWith(`${item.href}/`));
+            return <Link key={item.href} href={item.href} onClick={closeMenu} aria-current={active ? "page" : undefined}
+              className={`flex min-h-12 items-center gap-3 rounded-full px-4 py-3 text-sm font-medium transition-all active:scale-[.98] ${active ? "bg-[#c6ebda]/65 text-[#002117] shadow-[inset_0_2px_6px_#32534712]" : "text-[#596c60] hover:bg-[#fff1e8] hover:text-[#325347]"}`}>
+              <span aria-hidden="true" className="material-symbols-outlined text-[21px]">{item.icon}</span>{item.label}
+            </Link>;
+          })}
+        </nav>
+        {loading ? <p role="status" className="px-4 py-5 text-xs leading-6 text-[#596c60]">Preparing your space…</p> : error ? <div role="alert" className="mt-4 rounded-2xl bg-[#fff1e8] p-4 text-sm"><p>We couldn’t load your workspace.</p><button className="mt-2 underline" onClick={retry}>Try again</button></div> : user && !role ? <Link className="mt-4 px-4 text-sm underline" href="/auth/onboarding-patient" onClick={closeMenu}>Complete your profile</Link> : null}
+        <div className="mt-auto pt-6">
+          {!mobile && <div className="mb-6 rounded-[1.75rem] bg-[#fff1e8]/80 px-5 py-5 text-[#795841]"><span aria-hidden="true" className="material-symbols-outlined mb-2 text-xl">spa</span><p className="text-sm font-medium">{role === UserRole.THERAPIST ? "Care starts with you, too." : "At your own pace."}</p><p className="mt-2 text-xs font-light leading-5">{role === UserRole.THERAPIST ? "A little space to breathe between conversations." : "You don’t have to figure it all out today."}</p></div>}
+          <div className="border-t border-[#e9e4db] pt-5">
+            {user ? <>
+              <p className="mb-3 truncate px-2 text-sm font-medium text-[#325347]">{user.displayName || (role === UserRole.THERAPIST ? "Your practice" : "Your account")}</p>
+              <button onClick={signOut} disabled={signingOut} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-full bg-[#fff1e8] px-4 py-3 text-sm text-[#795841] transition hover:bg-[#ffe3cd] disabled:opacity-50"><span aria-hidden="true" className="material-symbols-outlined text-lg">logout</span>{signingOut ? "Signing out…" : "Sign out"}</button>
+              {signOutError && <p role="alert" className="mt-2 text-xs text-[#93000a]">Couldn’t sign out. Please try again.</p>}
+            </> : !loading ? <div className="grid gap-2">
+              <Link onClick={closeMenu} className="clay-link" href="/auth/signup">Create an account</Link>
+              <Link onClick={closeMenu} className="rounded-full px-4 py-3 text-center text-sm font-medium text-[#325347] hover:bg-[#c6ebda]/30" href="/auth/login">Sign in</Link>
+              <Link onClick={closeMenu} className="pt-2 text-center text-xs text-[#596c60] underline decoration-[#abcebf] underline-offset-4" href="/auth/provider/login">For practitioners</Link>
+            </div> : null}
+          </div>
+        </div>
+      </>
+    );
+  }
 
   return (
-    <aside className="hidden h-full w-64 flex-col border-r border-[#ffeada] bg-[#FDFCF8] p-5 font-['Plus_Jakarta_Sans'] text-[#325347] md:flex">
-      {/* Brand Logo Header */}
-      <div className="mb-10 mt-4 px-3">
-        <Link href="/" className="flex items-center gap-3 active:scale-95 transition-transform">
-          <div className="flex size-11 items-center justify-center rounded-full bg-[#c6ebda] text-[#325347] shadow-[0_8px_16px_-4px_rgba(50,83,71,0.15),inset_0_2px_4px_rgba(255,255,255,0.6)]">
-            <span className="text-base font-extrabold">RH</span>
-          </div>
-          <div>
-            <h2 className="text-lg font-bold leading-none text-emerald-900">Rant & Heal</h2>
-            <p className="mt-1 text-[10px] font-semibold text-[#414845]/70 uppercase tracking-wider">
-              {user ? (role === UserRole.THERAPIST ? "Practitioner Portal" : "Patient Sanctuary") : "Welcome"}
-            </p>
-          </div>
-        </Link>
-      </div>
-
-      {/* Navigation Links */}
-      <nav className="flex flex-1 flex-col gap-2">
-        {navItems.map((item) => {
-          const isActive = pathname === item.href || pathname?.startsWith(item.href + "/");
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`flex items-center gap-4 rounded-full px-4 py-3 text-sm font-medium transition-all active:scale-95 ${
-                isActive
-                  ? "bg-[#c6ebda]/50 text-emerald-900 shadow-inner"
-                  : "text-emerald-800/60 hover:translate-x-1 hover:bg-emerald-50/50"
-              }`}
-            >
-              <span aria-hidden="true" className="material-symbols-outlined text-lg">
-                {item.icon}
-              </span>
-              {item.label}
-            </Link>
-          );
-        })}
-      </nav>
-
-      {/* Footer Area with Auth actions */}
-      <div className="mt-auto border-t border-[#ffeada] pt-4 flex flex-col gap-2">
-        {user ? (
-          <button
-            onClick={handleSignOut}
-            className="flex w-full items-center justify-center gap-2 rounded-full bg-[#ffdad6] py-3 text-sm font-medium text-[#93000a] shadow-[0_8px_16px_-4px_rgba(186,26,26,0.16)] active:scale-95 transition-transform cursor-pointer"
-          >
-            <span aria-hidden="true" className="material-symbols-outlined text-lg">
-              logout
-            </span>
-            Sign Out
-          </button>
-        ) : (
-          <div className="flex flex-col gap-2">
-            <Link
-              href="/auth/login"
-              className="flex w-full items-center justify-center rounded-full border border-[#ffeada] bg-white py-3 text-sm font-medium text-[#325347] shadow-sm hover:bg-[#ffeada]/30 active:scale-95 transition-transform text-center"
-            >
-              Sign In
-            </Link>
-            <Link
-              href="/auth/signup"
-              className="flex w-full items-center justify-center rounded-full bg-[#325347] py-3 text-sm font-medium text-white shadow-[0_8px_16px_-4px_rgba(50,83,71,0.2)] hover:bg-[#325347]/95 active:scale-95 transition-transform text-center"
-            >
-              Sign Up
-            </Link>
-            <Link
-              href="/auth/provider/login"
-              className="mt-2 text-center text-xs font-semibold text-emerald-800/50 hover:text-emerald-800/80 transition-colors"
-            >
-              For Practitioners
-            </Link>
-          </div>
-        )}
-      </div>
-    </aside>
+    <>
+      <aside className="sticky top-6 my-6 ml-6 hidden h-[calc(100dvh-3rem)] w-64 shrink-0 flex-col overflow-y-auto rounded-[2.5rem] border border-white/80 bg-[#fdfcf8]/90 p-5 shadow-[12px_12px_48px_-24px_#4a6b5e40,inset_0_2px_4px_#ffffff] md:flex">
+        <div className="px-1 pb-9 pt-3">{brand}</div>
+        {navigation()}
+      </aside>
+      <header className="sticky top-0 z-40 border-b border-white/80 bg-[#fff8f5]/95 px-4 py-3 backdrop-blur-xl md:hidden">
+        <div className="pr-16">{brand}</div>
+        <details ref={mobileMenu} onKeyDown={(event) => { if (event.key === "Escape") { closeMenu(); mobileMenu.current?.querySelector("summary")?.focus(); } }} className="group">
+          <summary aria-label="Navigation menu" className="absolute right-4 top-3 flex size-11 list-none items-center justify-center rounded-full bg-white text-[#325347] shadow-sm [&::-webkit-details-marker]:hidden"><span className="group-open:hidden"><span aria-hidden="true" className="material-symbols-outlined">menu</span></span><span className="hidden group-open:block"><span aria-hidden="true" className="material-symbols-outlined">close</span></span></summary>
+          <div className="max-h-[calc(100dvh-6rem)] overflow-y-auto pb-2 pt-5">{navigation(true)}</div>
+        </details>
+      </header>
+    </>
   );
 }

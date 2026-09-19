@@ -11,7 +11,6 @@ export interface MarketingFooterProps {
 }
 
 const defaultLinks: MarketingFooterLink[] = [
-  { label: "Privacy", href: "/privacy" },
   { label: "Crisis Support", href: "/crisis" },
   { label: "For Practitioners", href: "/auth/provider/login" },
   { label: "Sign In", href: "/auth/login" },
@@ -22,7 +21,7 @@ export function MarketingFooter({
   links = defaultLinks,
 }: MarketingFooterProps) {
   return (
-    <footer className="bg-[#fff8f5] px-6 py-10 font-['Plus_Jakarta_Sans'] text-[#414845]">
+    <footer className="px-6 py-10 font-['Plus_Jakarta_Sans'] text-[#414845]">
       <div className="mx-auto flex max-w-6xl flex-col gap-6 rounded-[2.5rem] bg-white/60 p-6 shadow-[0_10px_30px_-15px_rgba(74,107,94,0.1),inset_0_2px_4px_rgba(255,255,255,0.5)] backdrop-blur-xl md:flex-row md:items-center md:justify-between">
         <div>
           <p className="text-xl font-extrabold italic text-[#4a6b5e]">{brandName}</p>
