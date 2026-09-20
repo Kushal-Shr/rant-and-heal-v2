@@ -43,15 +43,15 @@ export default function TherapistPortalPage() {
     };
   }, [user?.uid]);
 
-  async function respond(patientId: string, action: "accept" | "reject") {
-    setBusyPatientId(patientId);
+  async function respond(relationshipId: string, action: "accept" | "reject") {
+    setBusyPatientId(relationshipId);
 
     setActionError(null);
     try {
       if (action === "accept") {
-        await acceptConnection(patientId);
+        await acceptConnection(relationshipId);
       } else {
-        await rejectConnection(patientId);
+        await rejectConnection(relationshipId);
       }
     } catch {
       setActionError("The request couldn’t be updated. Please try again.");
@@ -98,10 +98,10 @@ export default function TherapistPortalPage() {
                   <p className="mt-1 text-sm font-light text-[#4a6b5e]">Connection request received</p>
                 </div>
                 <div className="flex gap-3">
-                  <Button disabled={busyPatientId !== null} isLoading={busyPatientId === connection.userId} onClick={() => respond(connection.userId, "accept")}>
+                  <Button disabled={busyPatientId !== null} isLoading={busyPatientId === connection.relationshipId} onClick={() => respond(connection.relationshipId, "accept")}>
                     Accept
                   </Button>
-                  <Button disabled={busyPatientId !== null} onClick={() => respond(connection.userId, "reject")} variant="danger">
+                  <Button disabled={busyPatientId !== null} onClick={() => respond(connection.relationshipId, "reject")} variant="danger">
                     Decline
                   </Button>
                 </div>

@@ -107,11 +107,12 @@ The project follows a hybrid directory layout:
 ### Therapy Connection MVP
 - Therapist directory profiles live at `therapists/{therapistUid}`. Public applicants may create and edit a `PENDING` profile, but cannot change `isVerified`, `verificationStatus`, or their account role. The patient directory only reads profiles where `isVerified == true`.
 - A Firebase Auth user with the `admin: true` custom claim approves or rejects applications through `POST /api/admin/therapists/[therapistId]/verification`. Approval uses the Admin SDK to atomically set `therapists/{therapistUid}.isVerified`, `verificationStatus`, and `users/{therapistUid}.role = THERAPIST`.
-- One-to-one patient/therapist relationship state lives at `connections/{patientUid}`, enforcing one active or pending therapist connection per patient.
+- `connections/{patientUid}` is a server-owned pointer enforcing one current active or pending therapist relationship. Each request creates an immutable `therapy_relationships/{relationshipId}` record.
 - Connection status values are `PENDING`, `ACTIVE`, `REJECTED`, and `REVOKED`.
-- Therapy messages live at `connections/{patientUid}/messages/{messageId}` and are separate from Momo session messages.
-- Therapy call sessions live at `connections/{patientUid}/call_sessions/{sessionId}` with signaling documents under `signals/{signalId}`. Each new session records `callerId`, `recipientId`, and explicit answer/decline/end fields.
-- Call creation and status transitions are authenticated Route Handlers. A server-owned `connections/{patientUid}/call_state/current` document is updated atomically with the session so only one ringing or active call can exist per connection.
+- Therapy messages live at `therapy_relationships/{relationshipId}/messages/{messageId}`; private identities remain in owner-only `users`, while therapists receive the explicit subset in `patient_profiles`.
+- Therapy call sessions live at `therapy_relationships/{relationshipId}/call_sessions/{sessionId}` with signaling documents under `signals/{signalId}`. Each session records participants, relationship ID, expiry, and explicit answer/decline/end fields.
+- Call creation and status transitions are authenticated Route Handlers. A server-owned per-relationship `call_state/current` lease is updated atomically with the session. Revocation ends any open call.
+- Consent acceptance is versioned and written as an immutable relationship event by the server. Browser clients cannot mutate relationship state.
 - The call room obtains STUN/TURN configuration through `/api/therapy/ice-servers`, which verifies the active session before returning optional server-only TURN credentials.
 - Shared UI components currently power both sides:
   - `TherapyChatRoom` is used by patient and therapist message routes.

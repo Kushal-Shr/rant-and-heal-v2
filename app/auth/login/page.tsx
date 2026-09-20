@@ -17,6 +17,9 @@ import { Label } from "@/src/components/forms/Label";
 import { ErrorMessage } from "@/src/components/forms/ErrorMessage";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { getAuthRedirectPath, type RoutableUserDoc } from "@/src/utils/authRouter";
+import { getSafeNextPath } from "@/src/utils/safeRedirect";
+
+const PATIENT_ROUTES = ["/dashboard", "/momo", "/therapy", "/vault", "/settings", "/crisis"] as const;
 
 function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
@@ -49,9 +52,8 @@ export default function LoginPage() {
       return;
     }
 
-    router.push(
-      getAuthRedirectPath(result.user, result.userDoc as RoutableUserDoc)
-    );
+    const fallback = getAuthRedirectPath(result.user, result.userDoc as RoutableUserDoc);
+    router.push(getSafeNextPath(fallback, PATIENT_ROUTES));
   };
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -74,9 +76,8 @@ export default function LoginPage() {
         throw new Error("User profile not found in database.");
       }
 
-      router.push(
-        getAuthRedirectPath(user, userDocSnap.data() as RoutableUserDoc)
-      );
+      const fallback = getAuthRedirectPath(user, userDocSnap.data() as RoutableUserDoc);
+      router.push(getSafeNextPath(fallback, PATIENT_ROUTES));
     } catch (error: unknown) {
       setError(getErrorMessage(error, "Invalid credentials. Please try again."));
     } finally {
@@ -184,7 +185,10 @@ export default function LoginPage() {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="password">Password</Label>
+            <div className="flex items-center justify-between gap-3">
+              <Label htmlFor="password">Password</Label>
+              <Link className="text-sm font-medium text-[#325347] underline" href="/auth/forgot-password">Forgot password?</Link>
+            </div>
             <Input
               id="password"
               type="password"
@@ -206,6 +210,8 @@ export default function LoginPage() {
           <Link href="/auth/signup" className="font-semibold text-[#325347] hover:underline">
             Create Account
           </Link>
+          <span className="mx-2">·</span>
+          <Link href="/auth/verify-email" className="font-semibold text-[#325347] hover:underline">Resend verification</Link>
         </footer>
       </Card>
     </div>

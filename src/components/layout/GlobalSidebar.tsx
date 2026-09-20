@@ -17,11 +17,15 @@ const patientLinks = [
   { label: "Talk to Momo", href: "/momo", icon: "cloud" },
   { label: "Journal", href: "/vault", icon: "menu_book" },
   { label: "Find a therapist", href: "/therapy", icon: "groups" },
+  { label: "Settings", href: "/settings", icon: "settings" },
 ];
 const therapistLinks = [
   { label: "Overview", href: "/portal", icon: "dashboard" },
   { label: "My patients", href: "/patients", icon: "groups" },
   { label: "Messages", href: "/messages", icon: "chat_bubble" },
+];
+const adminLinks = [
+  { label: "Therapist review", href: "/admin/therapists", icon: "verified_user" },
 ];
 
 export function GlobalSidebar() {
@@ -32,10 +36,10 @@ export function GlobalSidebar() {
   const [signingOut, setSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState(false);
   const role = profile?.role;
-  const workspaceLinks = role === UserRole.THERAPIST ? therapistLinks : role === UserRole.USER ? patientLinks : [];
+  const workspaceLinks = role === UserRole.ADMIN ? adminLinks : role === UserRole.THERAPIST ? therapistLinks : role === UserRole.USER ? patientLinks : [];
   const links = user ? [...workspaceLinks, publicLinks[1]] : publicLinks;
-  const home = role === UserRole.THERAPIST ? "/portal" : role === UserRole.USER ? "/dashboard" : "/";
-  const subtitle = loading ? "Preparing your space" : role === UserRole.THERAPIST ? "Practitioner workspace" : role === UserRole.USER ? "Your personal sanctuary" : "A soft space to begin";
+  const home = role === UserRole.ADMIN ? "/admin/therapists" : role === UserRole.THERAPIST ? "/portal" : role === UserRole.USER ? "/dashboard" : "/";
+  const subtitle = loading ? "Preparing your space" : role === UserRole.ADMIN ? "Reviewer workspace" : role === UserRole.THERAPIST ? "Practitioner workspace" : role === UserRole.USER ? "Your personal sanctuary" : "A soft space to begin";
   const closeMenu = () => { if (mobileMenu.current) mobileMenu.current.open = false; };
 
   async function signOut() {
@@ -76,7 +80,7 @@ export function GlobalSidebar() {
           {!mobile && <div className="mb-6 rounded-[1.75rem] bg-[#fff1e8]/80 px-5 py-5 text-[#795841]"><span aria-hidden="true" className="material-symbols-outlined mb-2 text-xl">spa</span><p className="text-sm font-medium">{role === UserRole.THERAPIST ? "Care starts with you, too." : "At your own pace."}</p><p className="mt-2 text-xs font-light leading-5">{role === UserRole.THERAPIST ? "A little space to breathe between conversations." : "You don’t have to figure it all out today."}</p></div>}
           <div className="border-t border-[#e9e4db] pt-5">
             {user ? <>
-              <p className="mb-3 truncate px-2 text-sm font-medium text-[#325347]">{user.displayName || (role === UserRole.THERAPIST ? "Your practice" : "Your account")}</p>
+              <p className="mb-3 truncate px-2 text-sm font-medium text-[#325347]">{profile?.displayName || (role === UserRole.THERAPIST ? "Your practice" : "Your account")}</p>
               <button onClick={signOut} disabled={signingOut} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-full bg-[#fff1e8] px-4 py-3 text-sm text-[#795841] transition hover:bg-[#ffe3cd] disabled:opacity-50"><span aria-hidden="true" className="material-symbols-outlined text-lg">logout</span>{signingOut ? "Signing out…" : "Sign out"}</button>
               {signOutError && <p role="alert" className="mt-2 text-xs text-[#93000a]">Couldn’t sign out. Please try again.</p>}
             </> : !loading ? <div className="grid gap-2">

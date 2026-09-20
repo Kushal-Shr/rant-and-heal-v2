@@ -17,7 +17,7 @@ import {
 } from "../types/database";
 import type { RTCIceServer } from "../types/therapy";
 
-export async function createCallSession(patientUid: string): Promise<string> {
+export async function createCallSession(relationshipId: string): Promise<string> {
   const caller = auth.currentUser;
 
   if (!caller) {
@@ -31,7 +31,7 @@ export async function createCallSession(patientUid: string): Promise<string> {
       Authorization: `Bearer ${idToken}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ patientId: patientUid }),
+    body: JSON.stringify({ relationshipId }),
   });
   const payload = (await response.json().catch(() => null)) as {
     sessionId?: string;
@@ -46,13 +46,13 @@ export async function createCallSession(patientUid: string): Promise<string> {
 }
 
 export function observeCallSession(
-  patientUid: string,
+  relationshipId: string,
   sessionId: string,
   onChange: (session: TherapyCallSession | null) => void,
   onError?: (error: Error) => void
 ): Unsubscribe {
   return onSnapshot(
-    doc(db, "connections", patientUid, "call_sessions", sessionId),
+    doc(db, "therapy_relationships", relationshipId, "call_sessions", sessionId),
     (snap) => {
       onChange(snap.exists() ? ({ id: snap.id, ...snap.data() } as TherapyCallSession) : null);
     },
@@ -61,7 +61,7 @@ export function observeCallSession(
 }
 
 export function observeOpenCallSessions(
-  patientUid: string,
+  relationshipId: string,
   participantUid: string,
   participantRole: TherapyMessageSenderRole,
   onChange: (sessions: TherapyCallSession[]) => void,
@@ -72,7 +72,7 @@ export function observeOpenCallSessions(
       ? "therapistId"
       : "patientId";
   const sessionsQuery = query(
-    collection(db, "connections", patientUid, "call_sessions"),
+    collection(db, "therapy_relationships", relationshipId, "call_sessions"),
     where(participantField, "==", participantUid)
   );
 
@@ -82,8 +82,9 @@ export function observeOpenCallSessions(
       const sessions = snap.docs
         .map((sessionDoc) => ({ id: sessionDoc.id, ...sessionDoc.data() } as TherapyCallSession))
         .filter((session) =>
-          session.status === TherapyCallStatus.RINGING ||
-          session.status === TherapyCallStatus.ACTIVE
+          (session.status === TherapyCallStatus.RINGING ||
+            session.status === TherapyCallStatus.ACTIVE) &&
+          ("toMillis" in session.expiresAt ? session.expiresAt.toMillis() > Date.now() : false)
         )
         .sort((left, right) => {
           const leftMillis = "toMillis" in left.createdAt ? left.createdAt.toMillis() : 0;
@@ -98,7 +99,7 @@ export function observeOpenCallSessions(
 }
 
 export async function sendSignal(
-  patientUid: string,
+  relationshipId: string,
   sessionId: string,
   signal: Pick<TherapyCallSignal, "type" | "payload">
 ): Promise<void> {
@@ -108,7 +109,7 @@ export async function sendSignal(
     throw new Error("You must be signed in to signal a call.");
   }
 
-  await addDoc(collection(db, "connections", patientUid, "call_sessions", sessionId, "signals"), {
+  await addDoc(collection(db, "therapy_relationships", relationshipId, "call_sessions", sessionId, "signals"), {
     ...signal,
     senderId,
     createdAt: serverTimestamp(),
@@ -116,13 +117,13 @@ export async function sendSignal(
 }
 
 export function observeSignals(
-  patientUid: string,
+  relationshipId: string,
   sessionId: string,
   onChange: (signals: TherapyCallSignal[]) => void,
   onError?: (error: Error) => void
 ): Unsubscribe {
   return onSnapshot(
-    collection(db, "connections", patientUid, "call_sessions", sessionId, "signals"),
+    collection(db, "therapy_relationships", relationshipId, "call_sessions", sessionId, "signals"),
     (snap) => {
       onChange(snap.docs.map((signalDoc) => ({ id: signalDoc.id, ...signalDoc.data() } as TherapyCallSignal)));
     },
@@ -130,17 +131,17 @@ export function observeSignals(
   );
 }
 
-export async function answerCallSession(patientUid: string, sessionId: string): Promise<void> {
-  await updateCallSession(patientUid, sessionId, "ANSWER");
+export async function answerCallSession(relationshipId: string, sessionId: string): Promise<void> {
+  await updateCallSession(relationshipId, sessionId, "ANSWER");
 }
 
-export async function declineCallSession(patientUid: string, sessionId: string): Promise<void> {
-  await updateCallSession(patientUid, sessionId, "DECLINE");
+export async function declineCallSession(relationshipId: string, sessionId: string): Promise<void> {
+  await updateCallSession(relationshipId, sessionId, "DECLINE");
 }
 
-export async function endCallSession(patientUid: string, sessionId: string): Promise<void> {
+export async function endCallSession(relationshipId: string, sessionId: string): Promise<void> {
   try {
-    await sendSignal(patientUid, sessionId, {
+    await sendSignal(relationshipId, sessionId, {
       type: "hangup",
       payload: {},
     });
@@ -150,11 +151,11 @@ export async function endCallSession(patientUid: string, sessionId: string): Pro
     console.warn("Could not send hangup signal:", signalError);
   }
 
-  await updateCallSession(patientUid, sessionId, "END");
+  await updateCallSession(relationshipId, sessionId, "END");
 }
 
 export async function getCallIceServers(
-  patientUid: string,
+  relationshipId: string,
   sessionId: string
 ): Promise<RTCIceServer[]> {
   const currentUser = auth.currentUser;
@@ -167,7 +168,7 @@ export async function getCallIceServers(
       Authorization: `Bearer ${idToken}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ patientId: patientUid, sessionId }),
+    body: JSON.stringify({ relationshipId, sessionId }),
   });
   const payload = (await response.json().catch(() => null)) as {
     iceServers?: RTCIceServer[];
@@ -181,7 +182,7 @@ export async function getCallIceServers(
 }
 
 async function updateCallSession(
-  patientUid: string,
+  relationshipId: string,
   sessionId: string,
   action: "ANSWER" | "DECLINE" | "END"
 ): Promise<void> {
@@ -195,7 +196,7 @@ async function updateCallSession(
       Authorization: `Bearer ${idToken}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ patientId: patientUid, action }),
+    body: JSON.stringify({ relationshipId, action }),
   });
   const payload = (await response.json().catch(() => null)) as { error?: string } | null;
   if (!response.ok) throw new Error(payload?.error ?? "Could not update the call.");

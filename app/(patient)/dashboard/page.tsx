@@ -60,12 +60,15 @@ export default function PatientDashboardPage() {
   async function refreshDashboard(uid: string) {
     try {
       setIsFetching(true);
-      const [moods, journals] = await Promise.all([listMoodEntries(uid, 7), listJournalEntries(uid)]);
-      setMoodEntries(moods);
-      setJournalEntries(journals.slice(0, 3));
+      const [moods, journals] = await Promise.allSettled([listMoodEntries(uid, 7), listJournalEntries(uid, 3)]);
+      if (moods.status === "fulfilled") setMoodEntries(moods.value);
+      if (journals.status === "fulfilled") setJournalEntries(journals.value);
+      if (moods.status === "rejected" || journals.status === "rejected") {
+        console.error("Failed to load some dashboard data:", { moods, journals });
+        setFeedback({ type: "error", message: "Some recent activity is temporarily unavailable." });
+      }
     } catch (error) {
-      console.error("Failed to load dashboard data:", error);
-      setFeedback({ type: "error", message: "Could not load your latest entries." });
+      console.error("Failed to load dashboard:", error);
     } finally {
       setIsFetching(false);
     }

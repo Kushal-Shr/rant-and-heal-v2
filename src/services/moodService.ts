@@ -28,6 +28,12 @@ export async function createMoodEntry(
   uid: string,
   input: CreateMoodEntryInput
 ): Promise<string> {
+  for (const value of [input.moodScore, input.anxietyScore, input.energyScore]) {
+    if (!Number.isFinite(value) || value < 1 || value > 10) {
+      throw new Error("Mood scores must be between 1 and 10.");
+    }
+  }
+  if ((input.note?.trim().length ?? 0) > 1000) throw new Error("Notes can be up to 1,000 characters.");
   const docRef = await addDoc(healthMetricsCollection(uid), {
     moodScore: input.moodScore,
     anxietyScore: input.anxietyScore,

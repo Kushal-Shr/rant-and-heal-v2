@@ -1,140 +1,132 @@
-import {
-  doc,
-  getDoc,
-  onSnapshot,
-  query,
-  serverTimestamp,
-  setDoc,
-  updateDoc,
-  where,
-  collection,
-  type Unsubscribe,
-} from "firebase/firestore";
-import { db } from "../config/firebase";
-import { Connection, ConnectionStatus } from "../types/database";
+import { collection, doc, getDoc, onSnapshot, query, where, type Unsubscribe } from "firebase/firestore";
+import { auth, db } from "../config/firebase";
+import type { Connection, SharedPatientProfile } from "../types/database";
+import { ConnectionStatus } from "../types/database";
+import { THERAPY_CONSENT_VERSION } from "../lib/therapy/consent";
 
-const COLLECTION_NAME = "connections";
+type ConnectionAction =
+  | { action: "REQUEST"; therapistId: string; consentAccepted: true; consentVersion: string }
+  | { action: "ACCEPT" | "REJECT" | "REVOKE"; relationshipId: string };
 
-/**
- * Initiates the patient-provider handshake.
- * This establishes the link and logs the cryptographic consent proof.
- * Uses the userId as the Document ID to strictly enforce a "One Therapist per Patient" rule.
- */
-export async function requestConnection(
-  patientUid: string, 
-  therapistUid: string, 
-  consentHash: string
-): Promise<void> {
-  const connectionRef = doc(db, COLLECTION_NAME, patientUid);
+const legacyMigrationsInFlight = new Set<string>();
 
-  // Check if an active connection already exists
-  const existingSnap = await getDoc(connectionRef);
-  if (existingSnap.exists()) {
-    const data = existingSnap.data() as Connection;
-    if (data.status === ConnectionStatus.ACTIVE || data.status === ConnectionStatus.PENDING) {
-      throw new Error("You already have a therapist connection in progress.");
+export async function migrateLegacyConnection(patientId: string): Promise<void> {
+  const user = auth.currentUser;
+  if (!user || legacyMigrationsInFlight.has(patientId)) return;
+  legacyMigrationsInFlight.add(patientId);
+  try {
+    const response = await fetch("/api/therapy/connections/migrate", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${await user.getIdToken()}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ patientId }),
+    });
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+      throw new Error(payload?.error ?? "Could not migrate the existing therapist connection.");
     }
+  } finally {
+    legacyMigrationsInFlight.delete(patientId);
   }
+}
 
-  const connectionData: Connection = {
-    userId: patientUid ?? "",
-    therapistId: therapistUid ?? "",
-    status: ConnectionStatus.PENDING,
-    consentHash: consentHash ?? "",
-    requestedAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  };
+async function mutateConnection(action: ConnectionAction): Promise<void> {
+  const user = auth.currentUser;
+  if (!user) throw new Error("You must be signed in to update a connection.");
+  const response = await fetch("/api/therapy/connections", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${await user.getIdToken()}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(action),
+  });
+  const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+  if (!response.ok) throw new Error(payload?.error ?? "Could not update this connection.");
+}
 
-  // We use setDoc here because a new request safely overwrites a PENDING or REVOKED state
-  await setDoc(connectionRef, connectionData);
+export function requestConnection(therapistId: string) {
+  return mutateConnection({
+    action: "REQUEST",
+    therapistId,
+    consentAccepted: true,
+    consentVersion: THERAPY_CONSENT_VERSION,
+  });
+}
+
+export function revokeConnection(relationshipId: string) {
+  return mutateConnection({ action: "REVOKE", relationshipId });
+}
+
+export function acceptConnection(relationshipId: string) {
+  return mutateConnection({ action: "ACCEPT", relationshipId });
+}
+
+export function rejectConnection(relationshipId: string) {
+  return mutateConnection({ action: "REJECT", relationshipId });
 }
 
 export function observePatientConnection(
-  patientUid: string,
+  patientId: string,
   onChange: (connection: Connection | null) => void,
   onError?: (error: Error) => void
 ): Unsubscribe {
-  const connectionRef = doc(db, COLLECTION_NAME, patientUid);
-
   return onSnapshot(
-    connectionRef,
-    (snap) => {
-      onChange(snap.exists() ? ({ id: snap.id, ...snap.data() } as Connection) : null);
+    doc(db, "connections", patientId),
+    (snapshot) => {
+      if (!snapshot.exists()) {
+        onChange(null);
+        return;
+      }
+      const connection = { id: snapshot.id, ...snapshot.data() } as Connection;
+      onChange(connection);
+      if (!connection.relationshipId) {
+        void migrateLegacyConnection(patientId).catch((error: unknown) => {
+          console.error("Unable to migrate legacy therapist connection", error);
+        });
+      }
     },
     onError
   );
 }
 
-export async function revokeConnection(patientUid: string): Promise<void> {
-  const connectionRef = doc(db, COLLECTION_NAME, patientUid);
-
-  await updateDoc(connectionRef, {
-    status: ConnectionStatus.REVOKED,
-    updatedAt: serverTimestamp(),
-  });
+function observeTherapistConnections(
+  therapistId: string,
+  status: ConnectionStatus,
+  onChange: (connections: Connection[]) => void,
+  onError?: (error: Error) => void
+): Unsubscribe {
+  const connectionQuery = query(
+    collection(db, "therapy_relationships"),
+    where("therapistId", "==", therapistId),
+    where("status", "==", status)
+  );
+  return onSnapshot(
+    connectionQuery,
+    (snapshot) => onChange(snapshot.docs.map((item) => ({ id: item.id, ...item.data() } as Connection))),
+    onError
+  );
 }
 
 export function observePendingConnections(
-  therapistUid: string,
+  therapistId: string,
   onChange: (connections: Connection[]) => void,
   onError?: (error: Error) => void
-): Unsubscribe {
-  const connectionsQuery = query(
-    collection(db, COLLECTION_NAME),
-    where("therapistId", "==", therapistUid),
-    where("status", "==", ConnectionStatus.PENDING)
-  );
-
-  return onSnapshot(
-    connectionsQuery,
-    (snap) => {
-      onChange(snap.docs.map((connectionDoc) => ({ id: connectionDoc.id, ...connectionDoc.data() } as Connection)));
-    },
-    onError
-  );
+) {
+  return observeTherapistConnections(therapistId, ConnectionStatus.PENDING, onChange, onError);
 }
 
 export function observeActiveConnections(
-  therapistUid: string,
+  therapistId: string,
   onChange: (connections: Connection[]) => void,
   onError?: (error: Error) => void
-): Unsubscribe {
-  const connectionsQuery = query(
-    collection(db, COLLECTION_NAME),
-    where("therapistId", "==", therapistUid),
-    where("status", "==", ConnectionStatus.ACTIVE)
-  );
-
-  return onSnapshot(
-    connectionsQuery,
-    (snap) => {
-      onChange(snap.docs.map((connectionDoc) => ({ id: connectionDoc.id, ...connectionDoc.data() } as Connection)));
-    },
-    onError
-  );
+) {
+  return observeTherapistConnections(therapistId, ConnectionStatus.ACTIVE, onChange, onError);
 }
 
-export async function acceptConnection(patientUid: string): Promise<void> {
-  await updateConnectionStatus(patientUid, ConnectionStatus.ACTIVE);
-}
-
-export async function rejectConnection(patientUid: string): Promise<void> {
-  await updateConnectionStatus(patientUid, ConnectionStatus.REJECTED);
-}
-
-/**
- * Updates the connection status (e.g., Therapist accepts -> ACTIVE, or either party -> REVOKED)
- */
-export async function updateConnectionStatus(
-  userId: string,
-  status: ConnectionStatus
-): Promise<void> {
-  const connectionRef = doc(db, COLLECTION_NAME, userId);
-
-  await updateDoc(connectionRef, {
-    status: status ?? ConnectionStatus.REVOKED,
-    respondedAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-    ...(status === ConnectionStatus.ACTIVE ? { connectedAt: serverTimestamp() } : {}),
-  });
+export async function getSharedPatientProfile(patientId: string): Promise<SharedPatientProfile | null> {
+  const snapshot = await getDoc(doc(db, "patient_profiles", patientId));
+  return snapshot.exists() ? (snapshot.data() as SharedPatientProfile) : null;
 }

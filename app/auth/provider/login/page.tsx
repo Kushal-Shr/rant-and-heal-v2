@@ -17,6 +17,9 @@ import { ErrorMessage } from "@/src/components/forms/ErrorMessage";
 import { UserRole } from "@/src/types/database";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { getAuthRedirectPath, type RoutableUserDoc } from "@/src/utils/authRouter";
+import { getSafeNextPath } from "@/src/utils/safeRedirect";
+
+const THERAPIST_ROUTES = ["/portal", "/messages", "/patients", "/session"] as const;
 
 function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
@@ -47,9 +50,7 @@ export default function ProviderLoginPage() {
       return;
     }
 
-    router.push(
-      getAuthRedirectPath(result.user, userData)
-    );
+    router.push(getSafeNextPath(getAuthRedirectPath(result.user, userData), THERAPIST_ROUTES));
   };
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -78,9 +79,7 @@ export default function ProviderLoginPage() {
         return;
       }
 
-      router.push(
-        getAuthRedirectPath(user, userData)
-      );
+      router.push(getSafeNextPath(getAuthRedirectPath(user, userData), THERAPIST_ROUTES));
     } catch (error: unknown) {
       setError(getErrorMessage(error, "Invalid credentials or unauthorized account."));
     } finally {
@@ -176,7 +175,10 @@ export default function ProviderLoginPage() {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="password">Password</Label>
+            <div className="flex items-center justify-between gap-3">
+              <Label htmlFor="password">Password</Label>
+              <Link className="text-sm font-medium text-[#325347] underline" href="/auth/forgot-password">Forgot password?</Link>
+            </div>
             <Input
               id="password"
               type="password"

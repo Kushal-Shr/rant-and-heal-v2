@@ -50,8 +50,10 @@ export function MomoVoiceCallPanel({ embedded = false, sessionId }: MomoVoiceCal
   const isBackendReadyRef = useRef(false);
   const intentionalCloseRef = useRef(false);
   const setupTimeoutRef = useRef<number | null>(null);
+  const generationRef = useRef(0);
 
   const cleanupCallResources = () => {
+    generationRef.current += 1;
     if (setupTimeoutRef.current) {
       window.clearTimeout(setupTimeoutRef.current);
       setupTimeoutRef.current = null;
@@ -126,6 +128,7 @@ export function MomoVoiceCallPanel({ embedded = false, sessionId }: MomoVoiceCal
         body: JSON.stringify({
           userId: user.uid,
           sessionId,
+          requestId: crypto.randomUUID(),
           sender,
           text,
         }),
@@ -134,6 +137,7 @@ export function MomoVoiceCallPanel({ embedded = false, sessionId }: MomoVoiceCal
       const payload = (await response.json().catch(() => null)) as TranscriptResponse | null;
       if (!response.ok) {
         console.error("MOMO TRANSCRIPT ERROR:", response.status, payload?.error ?? "Failed to save transcript.");
+        setErrorMessage("The voice transcript could not be saved. Please try the call again.");
         return;
       }
 
@@ -152,7 +156,13 @@ export function MomoVoiceCallPanel({ embedded = false, sessionId }: MomoVoiceCal
     if (!user) {
       return;
     }
+    if (!sessionId) {
+      setErrorMessage("Create or select a conversation before calling.");
+      return;
+    }
 
+    const generation = generationRef.current + 1;
+    generationRef.current = generation;
     setCallState("CONNECTING");
     setErrorMessage(null);
     intentionalCloseRef.current = false;
@@ -174,8 +184,13 @@ export function MomoVoiceCallPanel({ embedded = false, sessionId }: MomoVoiceCal
       if (!tokenResponse.ok || !tokenPayload?.token || !tokenPayload.model) {
         throw new Error(tokenPayload?.error ?? "Could not create a secure Momo voice token.");
       }
+      if (generationRef.current !== generation) return;
 
       await createPlaybackContext();
+      if (generationRef.current !== generation) {
+        cleanupCallResources();
+        return;
+      }
 
       setupTimeoutRef.current = window.setTimeout(() => {
         if (!isBackendReadyRef.current) {
@@ -189,6 +204,7 @@ export function MomoVoiceCallPanel({ embedded = false, sessionId }: MomoVoiceCal
         token: tokenPayload.token,
         model: tokenPayload.model,
         onReady: () => {
+          if (generationRef.current !== generation) return;
           if (setupTimeoutRef.current) {
             window.clearTimeout(setupTimeoutRef.current);
             setupTimeoutRef.current = null;
@@ -198,19 +214,27 @@ export function MomoVoiceCallPanel({ embedded = false, sessionId }: MomoVoiceCal
           setLiveStatus("ready");
         },
         onAudio: (base64Audio) => {
+          if (generationRef.current !== generation) return;
           streamerRef.current?.playBase64Pcm16(base64Audio);
         },
         onTranscript: (sender, text) => {
           void saveTranscript(sender, text);
         },
-        onTurnComplete: () => setLiveStatus("ready"),
+        onTurnComplete: () => {
+          if (generationRef.current === generation) setLiveStatus("ready");
+        },
+        onInterrupted: () => {
+          if (generationRef.current === generation) streamerRef.current?.reset();
+        },
         onError: (error) => {
+          if (generationRef.current !== generation) return;
           console.error("Gemini Live error:", error);
           setCallState("ERROR");
           setErrorMessage("Connection lost.");
           cleanupCallResources();
         },
         onClose: (event) => {
+          if (generationRef.current !== generation) return;
           console.log(
             `Gemini Live closed: code=${event.code}, reason=${event.reason}, wasClean=${event.wasClean}`
           );
@@ -228,6 +252,10 @@ export function MomoVoiceCallPanel({ embedded = false, sessionId }: MomoVoiceCal
       });
       liveClientRef.current = liveClient;
       await liveClient.connect();
+      if (generationRef.current !== generation) {
+        liveClient.close();
+        return;
+      }
 
       const recorder = new AudioRecorder();
       recorderRef.current = recorder;
@@ -237,6 +265,7 @@ export function MomoVoiceCallPanel({ embedded = false, sessionId }: MomoVoiceCal
           liveClientRef.current.sendAudio(base64Audio);
         }
       });
+      if (generationRef.current !== generation) recorder.close();
     } catch (err: unknown) {
       console.error(err);
       setCallState("ERROR");
@@ -257,7 +286,7 @@ export function MomoVoiceCallPanel({ embedded = false, sessionId }: MomoVoiceCal
     return null;
   }
 
-  const isCallable = Boolean(sessionId) || !embedded;
+  const isCallable = Boolean(sessionId);
   const statusText =
     callState === "IDLE"
       ? sessionId

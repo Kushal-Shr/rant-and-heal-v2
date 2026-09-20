@@ -12,6 +12,7 @@ interface MomoLiveClientOptions {
   onAudio: (base64Audio: string) => void;
   onTranscript?: (sender: "USER" | "MOMO", text: string) => void;
   onTurnComplete: () => void;
+  onInterrupted?: () => void;
   onError: (error: unknown) => void;
   onClose: (event: CloseEvent) => void;
 }
@@ -79,6 +80,11 @@ export class MomoLiveClient {
 
     this.handleTranscript("USER", message.serverContent?.inputTranscription);
     this.handleTranscript("MOMO", message.serverContent?.outputTranscription);
+
+    if (message.serverContent?.interrupted) {
+      this.outputTranscriptBuffer = "";
+      this.options.onInterrupted?.();
+    }
 
     if (message.serverContent?.turnComplete) {
       this.flushTranscript("USER");

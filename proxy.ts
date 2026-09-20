@@ -5,19 +5,21 @@ export function proxy(request: NextRequest) {
   const firebaseToken = request.cookies.get("firebaseToken")?.value;
   const pathname = request.nextUrl.pathname;
 
-  const patientRoutes = ["/dashboard", "/momo", "/therapy", "/vault"];
+  const patientRoutes = ["/dashboard", "/momo", "/therapy", "/vault", "/settings"];
   const therapistRoutes = ["/portal", "/messages", "/patients", "/session"];
+  const adminRoutes = ["/admin"];
 
   const isPatientRoute = patientRoutes.some(route => pathname.startsWith(route));
   const isTherapistRoute = therapistRoutes.some(route => pathname.startsWith(route));
+  const isAdminRoute = adminRoutes.some(route => pathname.startsWith(route));
 
-  if (!isPatientRoute && !isTherapistRoute) {
+  if (!isPatientRoute && !isTherapistRoute && !isAdminRoute) {
     return NextResponse.next();
   }
 
   // 1. If no valid token, redirect to login
   if (!firebaseToken) {
-    const loginUrl = new URL("/auth/login", request.url);
+    const loginUrl = new URL(isTherapistRoute ? "/auth/provider/login" : "/auth/login", request.url);
     loginUrl.searchParams.set("next", pathname);
     return NextResponse.redirect(loginUrl);
   }

@@ -4,12 +4,11 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { Spinner } from "@/src/components/ui/Spinner";
-import { getUserProfile } from "@/src/services/userService";
 import { EmptyState } from "@/src/components/shared/EmptyState";
 import { useAuth } from "@/src/context/AuthContext";
-import { observePatientConnection } from "@/src/services/connectionService";
+import { getSharedPatientProfile, observePatientConnection } from "@/src/services/connectionService";
 import { ConnectionStatus } from "@/src/types/database";
-import { UserProfile } from "@/src/types/database";
+import { SharedPatientProfile } from "@/src/types/database";
 
 export default function TherapistPatientDetailPage() {
   const params = useParams<{ patientId: string }>();
@@ -19,7 +18,7 @@ export default function TherapistPatientDetailPage() {
 }
 
 function PatientDetail({ patientId, therapistId }: { patientId: string; therapistId: string }) {
-  const [patient, setPatient] = useState<UserProfile | null>(null);
+  const [patient, setPatient] = useState<SharedPatientProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [connected, setConnected] = useState(false);
@@ -36,7 +35,7 @@ function PatientDetail({ patientId, therapistId }: { patientId: string; therapis
       setConnected(allowed);
       if (!allowed) { setPatient(null); setLoading(false); return; }
       try {
-        const profile = await getUserProfile(patientId);
+        const profile = await getSharedPatientProfile(patientId);
         if (active) { setPatient(profile); setError(!profile); }
       } catch {
         if (active) setError(true);

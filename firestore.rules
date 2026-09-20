@@ -1,184 +1,165 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    function isSignedIn() {
-      return request.auth != null;
+    function signedIn() { return request.auth != null; }
+    function owner(uid) { return signedIn() && request.auth.uid == uid; }
+    function rel(id) {
+      return get(/databases/$(database)/documents/therapy_relationships/$(id));
+    }
+    function activeParticipant(id) {
+      return signedIn() && rel(id).data.status == 'ACTIVE' &&
+        (request.auth.uid == rel(id).data.userId || request.auth.uid == rel(id).data.therapistId);
+    }
+    function currentTherapist(patientId) {
+      return signedIn() &&
+        get(/databases/$(database)/documents/connections/$(patientId)).data.therapistId == request.auth.uid &&
+        get(/databases/$(database)/documents/connections/$(patientId)).data.status in ['PENDING', 'ACTIVE'];
     }
 
-    function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
-    }
-
-    function isTherapist() {
-      return isSignedIn() &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'THERAPIST';
-    }
-
-    function isVerifiedTherapist() {
-      return isTherapist() &&
-        get(/databases/$(database)/documents/therapists/$(request.auth.uid)).data.isVerified == true;
-    }
-
-    function isVerifiedTherapistProfile(therapistId) {
-      return get(/databases/$(database)/documents/users/$(therapistId)).data.role == 'THERAPIST' &&
-        get(/databases/$(database)/documents/therapists/$(therapistId)).data.isVerified == true;
-    }
-
-    function activeConnection(userId) {
-      return get(/databases/$(database)/documents/connections/$(userId)).data.status == 'ACTIVE';
-    }
-    
-    // Identity Tier
     match /users/{userId} {
-      allow read: if isOwner(userId) ||
-        (isSignedIn() &&
-          get(/databases/$(database)/documents/connections/$(userId)).data.status == 'ACTIVE' &&
-          get(/databases/$(database)/documents/connections/$(userId)).data.therapistId == request.auth.uid);
-      // A public client may only create a patient identity. Practitioner and
-      // administrator roles are assigned by a privileged server workflow.
-      allow create: if isOwner(userId) &&
-        request.resource.data.uid == userId &&
-        request.resource.data.role == 'USER';
-      allow update: if isOwner(userId) && 
-                       request.resource.data.uid == resource.data.uid &&
-                       request.resource.data.role == resource.data.role;
-      allow delete: if isOwner(userId);
+      allow read: if owner(userId);
+      allow create: if owner(userId) && request.resource.data.uid == userId && request.resource.data.role == 'USER';
+      allow update: if owner(userId) &&
+        request.resource.data.uid == resource.data.uid &&
+        request.resource.data.role == resource.data.role;
+      allow delete: if false;
 
       match /sessions/{sessionId} {
-        allow read, create, delete: if isOwner(userId);
-        allow update: if isOwner(userId);
-
+        allow read, create, update, delete: if owner(userId);
         match /messages/{messageId} {
-          allow read: if isOwner(userId);
+          allow read: if owner(userId);
           allow write: if false;
         }
+        match /requests/{requestId} { allow read, write: if false; }
       }
+      match /usage/{usageId} { allow read, write: if false; }
+      match /safety_events/{eventId} { allow read, write: if false; }
 
       match /health_metrics/{entryId} {
-        allow read, write: if isOwner(userId);
-      }
-
-      // Safety events are written by authenticated server handlers only.
-      // They are intentionally not exposed to the browser while the clinical
-      // review and follow-up workflow is still being designed.
-      match /safety_events/{eventId} {
-        allow read, write: if false;
+        allow read: if owner(userId);
+        allow create: if owner(userId) &&
+          request.resource.data.keys().hasOnly(['moodScore', 'anxietyScore', 'energyScore', 'note', 'createdAt']) &&
+          request.resource.data.keys().hasAll(['moodScore', 'anxietyScore', 'energyScore', 'note', 'createdAt']) &&
+          request.resource.data.moodScore is number && request.resource.data.moodScore >= 1 && request.resource.data.moodScore <= 10 &&
+          request.resource.data.anxietyScore is number && request.resource.data.anxietyScore >= 1 && request.resource.data.anxietyScore <= 10 &&
+          request.resource.data.energyScore is number && request.resource.data.energyScore >= 1 && request.resource.data.energyScore <= 10 &&
+          request.resource.data.note is string && request.resource.data.note.size() <= 1000 &&
+          request.resource.data.createdAt == request.time;
+        allow update, delete: if false;
       }
 
       match /journals/{entryId} {
-        allow read, write: if isOwner(userId);
+        function validJournal() {
+          return request.resource.data.title is string &&
+            request.resource.data.title.size() > 0 && request.resource.data.title.size() <= 160 &&
+            request.resource.data.body is string &&
+            request.resource.data.body.size() > 0 && request.resource.data.body.size() <= 20000 &&
+            request.resource.data.moodTag is string && request.resource.data.moodTag.size() <= 40;
+        }
+        allow read: if owner(userId);
+        allow create: if owner(userId) && validJournal() &&
+          request.resource.data.keys().hasOnly(['title', 'body', 'moodTag', 'createdAt', 'updatedAt']) &&
+          request.resource.data.createdAt == request.time && request.resource.data.updatedAt == request.time;
+        allow update: if owner(userId) && validJournal() &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title', 'body', 'moodTag', 'updatedAt']) &&
+          request.resource.data.updatedAt == request.time;
+        allow delete: if owner(userId);
       }
     }
-    
+
+    match /patient_profiles/{patientId} {
+      allow read: if owner(patientId) || currentTherapist(patientId);
+      allow write: if false;
+    }
+
     match /therapists/{therapistId} {
-      allow read: if isSignedIn() &&
-        (resource.data.isVerified == true || request.auth.uid == therapistId);
-      // Public applicants can submit editable profiles, but cannot verify
-      // themselves or promote their account. Firebase Admin bypasses rules.
-      allow create: if isSignedIn() && request.auth.uid == therapistId &&
+      allow read: if signedIn() && (resource.data.isVerified == true || request.auth.uid == therapistId);
+      allow create: if owner(therapistId) &&
+        request.resource.data.keys().hasOnly([
+          'therapistId', 'name', 'specialty', 'licenseNo', 'bio', 'availability',
+          'isVerified', 'verificationStatus', 'createdAt'
+        ]) &&
         request.resource.data.therapistId == therapistId &&
         request.resource.data.isVerified == false &&
         request.resource.data.verificationStatus == 'PENDING' &&
-        request.resource.data.name is string &&
-        request.resource.data.specialty is string &&
-        request.resource.data.licenseNo is string &&
-        request.resource.data.bio is string &&
-        request.resource.data.availability is map;
-      allow update: if isSignedIn() && request.auth.uid == therapistId &&
+        request.resource.data.name is string && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 100 &&
+        request.resource.data.specialty is string && request.resource.data.specialty.size() > 0 && request.resource.data.specialty.size() <= 300 &&
+        request.resource.data.licenseNo is string && request.resource.data.licenseNo.size() > 0 && request.resource.data.licenseNo.size() <= 100 &&
+        request.resource.data.bio is string && request.resource.data.bio.size() <= 3000 &&
+        request.resource.data.availability is map &&
+        request.resource.data.createdAt == request.time;
+      allow update: if owner(therapistId) &&
         resource.data.verificationStatus in ['PENDING', 'REJECTED'] &&
         request.resource.data.therapistId == resource.data.therapistId &&
         request.resource.data.isVerified == resource.data.isVerified &&
         (request.resource.data.verificationStatus == resource.data.verificationStatus ||
-          (resource.data.verificationStatus == 'REJECTED' &&
-            request.resource.data.verificationStatus == 'PENDING')) &&
+          (resource.data.verificationStatus == 'REJECTED' && request.resource.data.verificationStatus == 'PENDING')) &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'name', 'specialty', 'licenseNo', 'bio', 'availability', 'verificationStatus'
-        ]);
+        ]) &&
+        request.resource.data.name is string && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 100 &&
+        request.resource.data.specialty is string && request.resource.data.specialty.size() > 0 && request.resource.data.specialty.size() <= 300 &&
+        request.resource.data.licenseNo is string && request.resource.data.licenseNo.size() > 0 && request.resource.data.licenseNo.size() <= 100 &&
+        request.resource.data.bio is string && request.resource.data.bio.size() <= 3000;
     }
 
-    // Relationship Tier
-    match /connections/{userId} {
-      allow create: if isOwner(userId) &&
-        request.resource.data.userId == userId &&
-        request.resource.data.therapistId is string &&
-        isVerifiedTherapistProfile(request.resource.data.therapistId) &&
-        request.resource.data.status == 'PENDING';
-      allow read: if isOwner(userId) ||
-        (isSignedIn() && request.auth.uid == resource.data.therapistId);
-      allow update: if (
-        isOwner(userId) &&
-        request.resource.data.userId == resource.data.userId &&
-        (
-          (
-            request.resource.data.therapistId == resource.data.therapistId &&
-            request.resource.data.status == 'REVOKED'
-          ) || (
-            resource.data.status in ['REJECTED', 'REVOKED'] &&
-            request.resource.data.therapistId is string &&
-            request.resource.data.status == 'PENDING'
-          )
-        )
-      ) || (
-        isVerifiedTherapist() &&
-        request.auth.uid == resource.data.therapistId &&
-        request.resource.data.userId == resource.data.userId &&
-        request.resource.data.therapistId == resource.data.therapistId &&
-        request.resource.data.status in ['ACTIVE', 'REJECTED']
-      ) || (
-        isSignedIn() &&
-        activeConnection(userId) &&
-        (request.auth.uid == userId || request.auth.uid == resource.data.therapistId) &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessageAt', 'updatedAt'])
-      );
-      allow delete: if false;
+    match /connections/{patientId} {
+      allow read: if owner(patientId) ||
+        (signedIn() && request.auth.uid == resource.data.therapistId && resource.data.status in ['PENDING', 'ACTIVE']);
+      allow write: if false;
+    }
+
+    match /therapy_relationships/{relationshipId} {
+      allow read: if signedIn() &&
+        (request.auth.uid == resource.data.userId ||
+          (request.auth.uid == resource.data.therapistId && resource.data.status in ['PENDING', 'ACTIVE']));
+      allow create, delete: if false;
+      allow update: if activeParticipant(relationshipId) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessageAt', 'updatedAt']) &&
+        request.resource.data.lastMessageAt == request.time && request.resource.data.updatedAt == request.time;
+
+      match /events/{eventId} {
+        allow read: if signedIn() &&
+          (request.auth.uid == rel(relationshipId).data.userId ||
+            (request.auth.uid == rel(relationshipId).data.therapistId && rel(relationshipId).data.status in ['PENDING', 'ACTIVE']));
+        allow write: if false;
+      }
 
       match /messages/{messageId} {
-        allow read: if isSignedIn() && activeConnection(userId) &&
-          (request.auth.uid == userId ||
-            request.auth.uid == get(/databases/$(database)/documents/connections/$(userId)).data.therapistId);
-        allow create: if isSignedIn() && activeConnection(userId) &&
+        allow read: if activeParticipant(relationshipId);
+        allow create: if activeParticipant(relationshipId) &&
+          request.resource.data.keys().hasOnly(['text', 'senderId', 'senderRole', 'createdAt']) &&
           request.resource.data.senderId == request.auth.uid &&
           request.resource.data.text is string &&
-          ((request.auth.uid == userId && request.resource.data.senderRole == 'USER') ||
-            (request.auth.uid == get(/databases/$(database)/documents/connections/$(userId)).data.therapistId &&
-              request.resource.data.senderRole == 'THERAPIST'));
+          request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 4000 &&
+          request.resource.data.createdAt == request.time &&
+          ((request.auth.uid == rel(relationshipId).data.userId && request.resource.data.senderRole == 'USER') ||
+            (request.auth.uid == rel(relationshipId).data.therapistId && request.resource.data.senderRole == 'THERAPIST'));
         allow update, delete: if false;
       }
 
       match /call_sessions/{sessionId} {
-        function isParticipant() {
-          return isSignedIn() && activeConnection(userId) &&
-            (request.auth.uid == resource.data.patientId ||
-              request.auth.uid == resource.data.therapistId);
+        function session() {
+          return get(/databases/$(database)/documents/therapy_relationships/$(relationshipId)/call_sessions/$(sessionId));
         }
-
-        allow read: if isParticipant();
-        // Sessions are created through the authenticated route handler so it
-        // can atomically prevent more than one ringing or active call.
-        allow create: if false;
-        // State transitions are server-owned so the call lock and session
-        // state remain atomic.
-        allow update: if false;
-        allow delete: if false;
-
+        allow read: if activeParticipant(relationshipId) &&
+          (request.auth.uid == resource.data.patientId || request.auth.uid == resource.data.therapistId);
+        allow create, update, delete: if false;
         match /signals/{signalId} {
-          function callSession() {
-            return get(/databases/$(database)/documents/connections/$(userId)/call_sessions/$(sessionId));
-          }
-
-          allow read: if isSignedIn() && activeConnection(userId) &&
-            (request.auth.uid == get(/databases/$(database)/documents/connections/$(userId)).data.userId ||
-              request.auth.uid == get(/databases/$(database)/documents/connections/$(userId)).data.therapistId);
-          allow create: if isSignedIn() && activeConnection(userId) &&
+          allow read: if activeParticipant(relationshipId) &&
+            (request.auth.uid == session().data.patientId || request.auth.uid == session().data.therapistId);
+          allow create: if activeParticipant(relationshipId) &&
+            request.resource.data.keys().hasOnly(['senderId', 'type', 'payload', 'createdAt']) &&
             request.resource.data.senderId == request.auth.uid &&
             request.resource.data.type in ['offer', 'answer', 'ice-candidate', 'hangup'] &&
             request.resource.data.payload is map &&
-            callSession().data.status in ['RINGING', 'ACTIVE'] &&
-            (request.auth.uid == callSession().data.patientId ||
-              request.auth.uid == callSession().data.therapistId);
+            request.resource.data.createdAt == request.time &&
+            session().data.status in ['RINGING', 'ACTIVE'] && session().data.expiresAt > request.time &&
+            (request.auth.uid == session().data.patientId || request.auth.uid == session().data.therapistId);
           allow update, delete: if false;
         }
       }
+      match /call_state/{stateId} { allow read, write: if false; }
     }
   }
 }

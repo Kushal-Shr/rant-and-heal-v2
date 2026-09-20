@@ -1,38 +1,39 @@
 import {
-  addDoc,
   collection,
   doc,
+  limit,
   onSnapshot,
   orderBy,
   query,
   serverTimestamp,
-  updateDoc,
+  writeBatch,
   type Unsubscribe,
 } from "firebase/firestore";
 import { auth, db } from "../config/firebase";
 import { TherapyMessage, TherapyMessageSenderRole } from "../types/database";
 
 export function observeTherapyMessages(
-  patientUid: string,
+  relationshipId: string,
   onChange: (messages: TherapyMessage[]) => void,
   onError?: (error: Error) => void
 ): Unsubscribe {
   const messagesQuery = query(
-    collection(db, "connections", patientUid, "messages"),
-    orderBy("createdAt", "asc")
+    collection(db, "therapy_relationships", relationshipId, "messages"),
+    orderBy("createdAt", "desc"),
+    limit(100)
   );
 
   return onSnapshot(
     messagesQuery,
     (snap) => {
-      onChange(snap.docs.map((messageDoc) => ({ id: messageDoc.id, ...messageDoc.data() } as TherapyMessage)));
+      onChange(snap.docs.map((messageDoc) => ({ id: messageDoc.id, ...messageDoc.data() } as TherapyMessage)).reverse());
     },
     onError
   );
 }
 
 export async function sendTherapyMessage(
-  patientUid: string,
+  relationshipId: string,
   text: string,
   senderRole: TherapyMessageSenderRole
 ): Promise<void> {
@@ -46,16 +47,21 @@ export async function sendTherapyMessage(
   if (!trimmedText) {
     throw new Error("Message cannot be empty.");
   }
+  if (trimmedText.length > 4000) throw new Error("Messages can be up to 4,000 characters.");
 
-  await addDoc(collection(db, "connections", patientUid, "messages"), {
+  const relationshipRef = doc(db, "therapy_relationships", relationshipId);
+  const messageRef = doc(collection(relationshipRef, "messages"), crypto.randomUUID());
+  const batch = writeBatch(db);
+  batch.set(messageRef, {
     text: trimmedText,
     senderId,
     senderRole,
     createdAt: serverTimestamp(),
   });
 
-  await updateDoc(doc(db, "connections", patientUid), {
+  batch.update(relationshipRef, {
     lastMessageAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
+  await batch.commit();
 }

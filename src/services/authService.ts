@@ -10,6 +10,7 @@ import {
   deleteUser,
   linkWithCredential,
   sendEmailVerification,
+  sendPasswordResetEmail,
   AuthError,
   UserCredential,
   User,
@@ -47,17 +48,9 @@ async function buildUniversalAuthResult(user: User): Promise<UniversalAuthResult
     ? buildAnonymousUserProfile(user)
     : buildRoleBridgeUserProfile(user);
 
-  try {
-    await setDoc(userDocRef, userProfile);
-  } catch (error) {
-    // Rollback ghost account if Firestore write fails
-    try {
-      await deleteUser(user);
-    } catch (rollbackError) {
-      console.error("Failed to rollback auth creation:", rollbackError);
-    }
-    throw error;
-  }
+  // This may be an existing OAuth identity with a missing profile. Repair it
+  // without deleting the Auth account if the Firestore write fails.
+  await setDoc(userDocRef, userProfile);
 
   return {
     status: "NEW_USER",
@@ -102,6 +95,9 @@ export function buildRoleBridgeUserProfile(user: User) {
 
 // Custom error mapping for user-friendly messages
 export const mapAuthError = (error: unknown): string => {
+  if (error instanceof Error && !("code" in error)) {
+    return error.message;
+  }
   if (typeof error !== "object" || error === null || !("code" in error)) {
     return "An unknown error occurred. Please try again.";
   }
@@ -232,6 +228,25 @@ export const authService = {
     try {
       await firebaseSignOut(auth);
     } catch (error) {
+      throw new Error(mapAuthError(error));
+    }
+  },
+
+  async sendPasswordReset(email: string): Promise<void> {
+    try {
+      await sendPasswordResetEmail(auth, email.trim());
+    } catch (error) {
+      throw new Error(mapAuthError(error));
+    }
+  },
+
+  async resendEmailVerification(email: string, password: string): Promise<void> {
+    try {
+      const credential = await signInWithEmailAndPassword(auth, email.trim(), password);
+      if (!credential.user.emailVerified) await sendEmailVerification(credential.user);
+      await firebaseSignOut(auth);
+    } catch (error) {
+      await firebaseSignOut(auth).catch(() => undefined);
       throw new Error(mapAuthError(error));
     }
   },

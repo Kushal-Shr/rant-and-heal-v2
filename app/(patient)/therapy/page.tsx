@@ -8,14 +8,12 @@ import { Button } from "@/src/components/ui/Button";
 import { Input } from "@/src/components/forms/Input";
 import { Spinner } from "@/src/components/ui/Spinner";
 import { TherapistProfileCard } from "@/src/components/shared/TherapistProfileCard";
+import { Modal } from "@/src/components/ui/Modal";
 import { useAuth } from "@/src/context/AuthContext";
 import { observePatientConnection, requestConnection, revokeConnection } from "@/src/services/connectionService";
 import { listVerifiedTherapists } from "@/src/services/therapistService";
 import { Connection, ConnectionStatus, TherapistProfile } from "@/src/types/database";
-
-function consentHashFor(patientUid: string, therapistUid: string) {
-  return `mvp-consent:${patientUid}:${therapistUid}`;
-}
+import { THERAPY_CONSENT_DISCLOSURE } from "@/src/lib/therapy/consent";
 
 export default function TherapyPage() {
   const { user } = useAuth();
@@ -26,6 +24,8 @@ export default function TherapyPage() {
   const [busyTherapistId, setBusyTherapistId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const [consentTherapistId, setConsentTherapistId] = useState<string | null>(null);
+  const [consentAccepted, setConsentAccepted] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -71,15 +71,21 @@ export default function TherapyPage() {
     if (!user) return;
     setBusyTherapistId(connection?.therapistId ?? null);
     try {
-      await revokeConnection(user.uid);
-      setFeedback("Your connection has been ended.");
+      if (!connection?.relationshipId) throw new Error("Connection details are unavailable.");
+      await revokeConnection(connection.relationshipId);
+      setFeedback(
+        connection.status === ConnectionStatus.PENDING
+          ? "Your connection request has been cancelled."
+          : "Your connection has been ended."
+      );
     } catch {
       setFeedback("Could not end this connection. Please try again.");
     } finally { setBusyTherapistId(null); }
   }
 
-  async function handleRequest(therapistId: string) {
-    if (!user?.uid) {
+  async function handleRequest() {
+    const therapistId = consentTherapistId;
+    if (!user?.uid || !therapistId || !consentAccepted) {
       return;
     }
 
@@ -87,8 +93,10 @@ export default function TherapyPage() {
     setFeedback(null);
 
     try {
-      await requestConnection(user.uid, therapistId, consentHashFor(user.uid, therapistId));
+      await requestConnection(therapistId);
       setFeedback("Request sent. You will see the status here.");
+      setConsentTherapistId(null);
+      setConsentAccepted(false);
     } catch (error) {
       console.error("Failed to request therapist:", error);
       setFeedback(error instanceof Error ? error.message : "Could not request this therapist.");
@@ -128,7 +136,12 @@ export default function TherapyPage() {
               </Button>
             </div>
           ) : connection.status === ConnectionStatus.PENDING ? (
-            <p className="mt-3 text-sm leading-6 text-[#2d4d41]">Your request is waiting for therapist review.</p>
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <p className="text-sm leading-6 text-[#2d4d41]">Your request is waiting for therapist review.</p>
+              <Button isLoading={busyTherapistId === connection.therapistId} onClick={handleRevoke} variant="outline">
+                Cancel request
+              </Button>
+            </div>
           ) : (
             <p className="mt-3 text-sm leading-6 text-[#2d4d41]">This request was not accepted. You can choose another therapist.</p>
           )}
@@ -152,12 +165,15 @@ export default function TherapyPage() {
             return (
               <TherapistProfileCard
                 bio={therapist.bio || "A verified therapist available for secure one-to-one support."}
-                ctaLabel={isSelected && hasBlockingConnection ? (connection?.status === ConnectionStatus.ACTIVE ? "Connected" : "Request pending") : hasBlockingConnection ? "Unavailable" : "Request connection"}
+                ctaLabel={isSelected && hasBlockingConnection ? (connection?.status === ConnectionStatus.ACTIVE ? "Connected" : "Request pending") : hasBlockingConnection ? "End current connection first" : "Request connection"}
                 disabled={hasBlockingConnection}
                 isLoading={busyTherapistId === therapist.therapistId}
                 key={therapist.therapistId}
                 name={therapist.name}
-                onConnect={() => handleRequest(therapist.therapistId)}
+                onConnect={() => {
+                  setConsentAccepted(false);
+                  setConsentTherapistId(therapist.therapistId);
+                }}
                 specialties={specialties.length ? specialties : ["General therapy"]}
                 title={therapist.licenseNo || "Verified therapist"}
               />
@@ -166,6 +182,20 @@ export default function TherapyPage() {
           {therapists.length > 0 && visibleTherapists.length === 0 ? <div className="rounded-[2rem] bg-white/75 p-7 text-sm text-[#414845] xl:col-span-2 2xl:col-span-3">No verified therapists match that search yet. Try another specialty or name.</div> : null}
         </section>
       )}
+      <Modal description="Review what this therapist can access before sending your request." isOpen={Boolean(consentTherapistId)} onClose={() => { if (!busyTherapistId) setConsentTherapistId(null); }} title="Share with this therapist">
+        <div className="space-y-5">
+          <p className="rounded-[1.5rem] bg-[#fff1e8] p-5 text-sm font-light leading-6 text-[#414845]">{THERAPY_CONSENT_DISCLOSURE}</p>
+          <p className="text-sm leading-6 text-[#4a6b5e]">Your email, emergency contact, journals, mood check-ins, and Momo conversations remain private.</p>
+          <label className="flex cursor-pointer items-start gap-3 rounded-[1.5rem] border border-[#c6ebda] bg-[#eefaf5] p-4 text-sm text-[#325347]">
+            <input checked={consentAccepted} className="mt-1 size-4 accent-[#325347]" onChange={(event) => setConsentAccepted(event.target.checked)} type="checkbox" />
+            <span>I understand and consent to this sharing.</span>
+          </label>
+          <div className="flex justify-end gap-3">
+            <Button disabled={Boolean(busyTherapistId)} onClick={() => setConsentTherapistId(null)} variant="outline">Cancel</Button>
+            <Button disabled={!consentAccepted} isLoading={Boolean(busyTherapistId)} onClick={handleRequest}>Send request</Button>
+          </div>
+        </div>
+      </Modal>
       </div>
     </div>
   );

@@ -21,7 +21,7 @@ import {
 } from "@/src/types/database";
 
 interface TherapyChatRoomProps {
-  patientUid: string;
+  relationshipId: string;
   senderRole: TherapyMessageSenderRole;
   title: string;
   subtitle: string;
@@ -43,7 +43,7 @@ function formatMessageTime(message: TherapyMessage) {
 export function TherapyChatRoom({
   backHref,
   callHrefForSession,
-  patientUid,
+  relationshipId,
   senderRole,
   subtitle,
   title,
@@ -61,7 +61,7 @@ export function TherapyChatRoom({
 
   useEffect(() => {
     return observeTherapyMessages(
-      patientUid,
+      relationshipId,
       (nextMessages) => {
         setMessages(nextMessages);
         setIsLoading(false);
@@ -72,7 +72,7 @@ export function TherapyChatRoom({
         setIsLoading(false);
       }
     );
-  }, [patientUid]);
+  }, [relationshipId]);
 
   useEffect(() => {
     if (!user?.uid) {
@@ -80,7 +80,7 @@ export function TherapyChatRoom({
     }
 
     return observeOpenCallSessions(
-      patientUid,
+      relationshipId,
       user.uid,
       senderRole,
       (sessions) => {
@@ -95,7 +95,7 @@ export function TherapyChatRoom({
         console.error("Failed to observe therapy calls:", snapshotError);
       }
     );
-  }, [patientUid, senderRole, user?.uid]);
+  }, [relationshipId, senderRole, user?.uid]);
 
   useEffect(() => {
     const container = messagesRef.current;
@@ -113,7 +113,7 @@ export function TherapyChatRoom({
     setError(null);
 
     try {
-      await sendTherapyMessage(patientUid, inputValue, senderRole);
+      await sendTherapyMessage(relationshipId, inputValue, senderRole);
       setInputValue("");
     } catch (sendError) {
       console.error("Failed to send therapy message:", sendError);
@@ -128,7 +128,7 @@ export function TherapyChatRoom({
     setError(null);
 
     try {
-      const sessionId = await createCallSession(patientUid);
+      const sessionId = await createCallSession(relationshipId);
       window.location.href = callHrefForSession(sessionId);
     } catch (callError) {
       console.error("Failed to start therapy call:", callError);
@@ -147,7 +147,7 @@ export function TherapyChatRoom({
     setError(null);
 
     try {
-      await declineCallSession(patientUid, openCall.id);
+      await declineCallSession(relationshipId, openCall.id);
     } catch (callError) {
       console.error("Failed to decline therapy call:", callError);
       setError(callError instanceof Error ? callError.message : "Could not decline the call.");
@@ -165,7 +165,7 @@ export function TherapyChatRoom({
     setError(null);
 
     try {
-      await endCallSession(patientUid, openCall.id);
+      await endCallSession(relationshipId, openCall.id);
     } catch (callError) {
       console.error("Failed to end therapy call:", callError);
       setError(callError instanceof Error ? callError.message : "Could not end the call.");

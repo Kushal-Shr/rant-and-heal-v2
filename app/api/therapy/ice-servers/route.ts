@@ -4,39 +4,41 @@ import { getErrorMessage } from "@/src/server/errors";
 import { getAdminDb } from "@/src/server/firebaseAdmin";
 import { ConnectionStatus, TherapyCallStatus } from "@/src/types/database";
 import { getTherapyIceServers } from "@/src/server/therapy/iceServers";
+import { z } from "zod";
+import { Timestamp } from "firebase-admin/firestore";
 
 export const runtime = "nodejs";
 
-interface IceServerRequestBody {
-  patientId?: string;
-  sessionId?: string;
-}
+const schema = z.object({
+  relationshipId: z.string().trim().min(1).max(128),
+  sessionId: z.string().trim().min(1).max(128),
+}).strict();
 
 export async function POST(request: NextRequest) {
   try {
     const decodedToken = await verifyFirebaseBearerToken(request);
     if (!decodedToken) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const body = (await request.json()) as IceServerRequestBody;
-    const patientId = body.patientId?.trim();
-    const sessionId = body.sessionId?.trim();
-    if (!patientId || !sessionId) {
-      return NextResponse.json({ error: "A patient ID and session ID are required" }, { status: 400 });
-    }
+    const parsed = schema.safeParse(await request.json().catch(() => null));
+    if (!parsed.success) return NextResponse.json({ error: "A relationship ID and session ID are required" }, { status: 400 });
+    const { relationshipId, sessionId } = parsed.data;
 
     const adminDb = getAdminDb();
-    const connectionRef = adminDb.collection("connections").doc(patientId);
-    const [connectionSnapshot, sessionSnapshot] = await Promise.all([
-      connectionRef.get(),
-      connectionRef.collection("call_sessions").doc(sessionId).get(),
+    const relationshipRef = adminDb.collection("therapy_relationships").doc(relationshipId);
+    const [relationshipSnapshot, sessionSnapshot] = await Promise.all([
+      relationshipRef.get(),
+      relationshipRef.collection("call_sessions").doc(sessionId).get(),
     ]);
-    const connection = connectionSnapshot.data();
+    const relationship = relationshipSnapshot.data();
     const session = sessionSnapshot.data();
 
     if (
-      !connection ||
-      connection.status !== ConnectionStatus.ACTIVE ||
+      !relationship ||
+      relationship.status !== ConnectionStatus.ACTIVE ||
       !session ||
+      session.relationshipId !== relationshipId ||
+      !(session.expiresAt instanceof Timestamp) ||
+      session.expiresAt.toMillis() <= Date.now() ||
       (session.status !== TherapyCallStatus.RINGING && session.status !== TherapyCallStatus.ACTIVE) ||
       (decodedToken.uid !== session.patientId && decodedToken.uid !== session.therapistId)
     ) {

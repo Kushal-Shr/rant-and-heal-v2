@@ -9,6 +9,7 @@ import {
   onSnapshot,
   orderBy,
   query,
+  limit,
   serverTimestamp,
   type FirestoreError,
   type Timestamp,
@@ -28,12 +29,14 @@ interface MomoMessage {
   sender: MessageSender;
   text: string;
   timestamp: Timestamp | null;
+  order: number;
 }
 
 interface FirestoreMomoMessage {
   sender?: MessageSender;
   text?: string;
   timestamp?: Timestamp | null;
+  order?: number;
 }
 
 interface ChatSession {
@@ -72,7 +75,7 @@ export default function MomoPage() {
     }
 
     const sessionsRef = collection(db, "users", user.uid, "sessions");
-    const sessionsQuery = query(sessionsRef, orderBy("createdAt", "desc"));
+    const sessionsQuery = query(sessionsRef, orderBy("createdAt", "desc"), limit(30));
 
     const unsubscribe = onSnapshot(
       sessionsQuery,
@@ -117,7 +120,7 @@ export default function MomoPage() {
     }
 
     const messagesRef = collection(db, "users", user.uid, "sessions", sessionId, "messages");
-    const messagesQuery = query(messagesRef, orderBy("timestamp", "asc"));
+    const messagesQuery = query(messagesRef, orderBy("timestamp", "desc"), limit(100));
 
     const unsubscribe = onSnapshot(messagesQuery, (snapshot) => {
       const nextMessages = snapshot.docs.map((messageDoc) => {
@@ -128,7 +131,11 @@ export default function MomoPage() {
           sender: (data.sender === "USER" ? "USER" : "MOMO") as MessageSender,
           text: typeof data.text === "string" ? data.text : "",
           timestamp: data.timestamp ?? null,
+          order: typeof data.order === "number" ? data.order : 0,
         };
+      }).sort((left, right) => {
+        const time = (left.timestamp?.toMillis() ?? 0) - (right.timestamp?.toMillis() ?? 0);
+        return time || left.order - right.order;
       });
 
       setMessages(nextMessages);
@@ -176,6 +183,7 @@ export default function MomoPage() {
         body: JSON.stringify({
           userId: user.uid,
           sessionId,
+          requestId: crypto.randomUUID(),
           messageText: userMessageText,
         }),
       });

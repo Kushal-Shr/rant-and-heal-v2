@@ -10,6 +10,7 @@ export class AudioStreamer {
   private nextPlayTime = 0;
   private onPlaybackStart?: () => void;
   private onPlaybackEnd?: () => void;
+  private sources = new Set<AudioBufferSourceNode>();
 
   constructor(audioContext: AudioContext, options: AudioStreamerOptions = {}) {
     this.audioContext = audioContext;
@@ -30,6 +31,7 @@ export class AudioStreamer {
     buffer.copyToChannel(float32, 0);
 
     const source = this.audioContext.createBufferSource();
+    this.sources.add(source);
     source.buffer = buffer;
     source.connect(this.audioContext.destination);
 
@@ -42,6 +44,7 @@ export class AudioStreamer {
     this.onPlaybackStart?.();
 
     source.onended = () => {
+      this.sources.delete(source);
       if (this.audioContext.currentTime >= this.nextPlayTime) {
         this.onPlaybackEnd?.();
       }
@@ -49,6 +52,11 @@ export class AudioStreamer {
   }
 
   reset(): void {
+    for (const source of this.sources) {
+      try { source.stop(); } catch { /* Source may already have ended. */ }
+    }
+    this.sources.clear();
     this.nextPlayTime = 0;
+    this.onPlaybackEnd?.();
   }
 }

@@ -1,124 +1,72 @@
+import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { NextResponse, type NextRequest } from "next/server";
-import { FieldValue } from "firebase-admin/firestore";
+import { z } from "zod";
 import { verifyFirebaseBearerToken } from "@/src/server/auth";
 import { getErrorMessage } from "@/src/server/errors";
 import { getAdminDb } from "@/src/server/firebaseAdmin";
 import { ConnectionStatus, TherapyCallStatus } from "@/src/types/database";
 
 export const runtime = "nodejs";
+const schema = z.object({
+  relationshipId: z.string().trim().min(1).max(128),
+  action: z.enum(["ANSWER", "DECLINE", "END"]),
+}).strict();
+const ACTIVE_LEASE_MS = 2 * 60 * 60 * 1000;
 
-type CallAction = "ANSWER" | "DECLINE" | "END";
-
-interface CallActionRequestBody {
-  patientId?: string;
-  action?: CallAction;
+class CallError extends Error {
+  constructor(message: string, readonly status: number) { super(message); }
 }
 
-class CallActionError extends Error {
-  constructor(message: string, readonly status: number) {
-    super(message);
-  }
-}
-
-export async function POST(
-  request: NextRequest,
-  context: { params: Promise<{ sessionId: string }> }
-) {
+export async function POST(request: NextRequest, context: { params: Promise<{ sessionId: string }> }) {
   try {
-    const decodedToken = await verifyFirebaseBearerToken(request);
-    if (!decodedToken) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
+    const token = await verifyFirebaseBearerToken(request);
+    if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     const { sessionId } = await context.params;
-    const body = (await request.json()) as CallActionRequestBody;
-    const patientId = body.patientId?.trim();
-    if (!patientId || !sessionId || !body.action) {
-      return NextResponse.json({ error: "A session ID, patient ID, and action are required" }, { status: 400 });
-    }
+    const parsed = schema.safeParse(await request.json().catch(() => null));
+    if (!sessionId || !parsed.success) return NextResponse.json({ error: "Invalid call action" }, { status: 400 });
 
-    const adminDb = getAdminDb();
-    const connectionRef = adminDb.collection("connections").doc(patientId);
-    const sessionRef = connectionRef.collection("call_sessions").doc(sessionId);
-    const callStateRef = connectionRef.collection("call_state").doc("current");
-
-    await adminDb.runTransaction(async (transaction) => {
-      const [connectionSnapshot, sessionSnapshot] = await Promise.all([
-        transaction.get(connectionRef),
+    const db = getAdminDb();
+    const relationshipRef = db.collection("therapy_relationships").doc(parsed.data.relationshipId);
+    const sessionRef = relationshipRef.collection("call_sessions").doc(sessionId);
+    const lockRef = relationshipRef.collection("call_state").doc("current");
+    await db.runTransaction(async (transaction) => {
+      const [relationshipSnap, sessionSnap, lockSnap] = await Promise.all([
+        transaction.get(relationshipRef),
         transaction.get(sessionRef),
+        transaction.get(lockRef),
       ]);
-      const connection = connectionSnapshot.data();
-      const session = sessionSnapshot.data();
+      const relationship = relationshipSnap.data();
+      const session = sessionSnap.data();
+      const lock = lockSnap.data();
+      if (!relationship || !session || session.relationshipId !== relationshipRef.id) throw new CallError("Call session was not found", 404);
+      if (relationship.status !== ConnectionStatus.ACTIVE) throw new CallError("This relationship is no longer active", 409);
+      if (token.uid !== session.patientId && token.uid !== session.therapistId) throw new CallError("Forbidden", 403);
+      if (lock?.sessionId !== sessionId) throw new CallError("This call is no longer current", 409);
 
-      if (!connection || connection.status !== ConnectionStatus.ACTIVE || !session) {
-        throw new CallActionError("Call session was not found", 404);
-      }
-      if (decodedToken.uid !== session.patientId && decodedToken.uid !== session.therapistId) {
-        throw new CallActionError("You are not a participant in this call", 403);
-      }
-
-      if (body.action === "ANSWER") {
-        if (session.status !== TherapyCallStatus.RINGING || decodedToken.uid !== session.recipientId) {
-          throw new CallActionError("This call can no longer be answered", 409);
-        }
-        transaction.update(sessionRef, {
-          status: TherapyCallStatus.ACTIVE,
-          answeredBy: decodedToken.uid,
-          answeredAt: FieldValue.serverTimestamp(),
-        });
-        transaction.set(callStateRef, {
-          sessionId,
-          status: TherapyCallStatus.ACTIVE,
-          updatedAt: FieldValue.serverTimestamp(),
-        });
+      if (parsed.data.action === "ANSWER") {
+        const expiry = session.expiresAt instanceof Timestamp ? session.expiresAt.toMillis() : 0;
+        if (session.status !== TherapyCallStatus.RINGING || token.uid !== session.recipientId || expiry <= Date.now()) throw new CallError("This call can no longer be answered", 409);
+        const expiresAt = Timestamp.fromMillis(Date.now() + ACTIVE_LEASE_MS);
+        transaction.update(sessionRef, { status: TherapyCallStatus.ACTIVE, answeredBy: token.uid, answeredAt: FieldValue.serverTimestamp(), expiresAt });
+        transaction.set(lockRef, { sessionId, status: TherapyCallStatus.ACTIVE, expiresAt, updatedAt: FieldValue.serverTimestamp() });
         return;
       }
-
-      if (body.action === "DECLINE") {
-        if (session.status !== TherapyCallStatus.RINGING || decodedToken.uid !== session.recipientId) {
-          throw new CallActionError("This call can no longer be declined", 409);
-        }
-        transaction.update(sessionRef, {
-          status: TherapyCallStatus.DECLINED,
-          declinedBy: decodedToken.uid,
-          declinedAt: FieldValue.serverTimestamp(),
-        });
-        transaction.set(callStateRef, {
-          sessionId,
-          status: TherapyCallStatus.DECLINED,
-          updatedAt: FieldValue.serverTimestamp(),
-        });
+      if (parsed.data.action === "DECLINE") {
+        if (session.status !== TherapyCallStatus.RINGING || token.uid !== session.recipientId) throw new CallError("This call can no longer be declined", 409);
+        transaction.update(sessionRef, { status: TherapyCallStatus.DECLINED, declinedBy: token.uid, declinedAt: FieldValue.serverTimestamp() });
+        transaction.set(lockRef, { sessionId, status: TherapyCallStatus.DECLINED, expiresAt: Timestamp.now(), updatedAt: FieldValue.serverTimestamp() });
         return;
       }
-
-      // Either participant may hang up while the other tab is responding to
-      // the session update. Ending is therefore intentionally idempotent.
-      if (session.status === TherapyCallStatus.ENDED || session.status === TherapyCallStatus.DECLINED) {
-        return;
-      }
-      if (session.status !== TherapyCallStatus.RINGING && session.status !== TherapyCallStatus.ACTIVE) {
-        throw new CallActionError("This call cannot be ended", 409);
-      }
-      transaction.update(sessionRef, {
-        status: TherapyCallStatus.ENDED,
-        endedBy: decodedToken.uid,
-        endedAt: FieldValue.serverTimestamp(),
-      });
-      transaction.set(callStateRef, {
-        sessionId,
-        status: TherapyCallStatus.ENDED,
-        updatedAt: FieldValue.serverTimestamp(),
-      });
+      if ([TherapyCallStatus.ENDED, TherapyCallStatus.DECLINED].includes(session.status)) return;
+      if (![TherapyCallStatus.RINGING, TherapyCallStatus.ACTIVE].includes(session.status)) throw new CallError("This call cannot be ended", 409);
+      transaction.update(sessionRef, { status: TherapyCallStatus.ENDED, endedBy: token.uid, endedAt: FieldValue.serverTimestamp() });
+      transaction.set(lockRef, { sessionId, status: TherapyCallStatus.ENDED, expiresAt: Timestamp.now(), updatedAt: FieldValue.serverTimestamp() });
     });
-
-    return NextResponse.json({ ok: true }, { status: 200 });
+    return NextResponse.json({ ok: true });
   } catch (error) {
-    if (error instanceof CallActionError) {
-      return NextResponse.json({ error: error.message }, { status: error.status });
-    }
+    if (error instanceof CallError) return NextResponse.json({ error: error.message }, { status: error.status });
     const detail = getErrorMessage(error);
-    console.error("THERAPY CALL ACTION API ERROR:", detail, error);
-    return NextResponse.json(
-      { error: process.env.NODE_ENV === "production" ? "Could not update the call" : detail },
-      { status: 500 }
-    );
+    console.error("THERAPY CALL ACTION API ERROR:", detail);
+    return NextResponse.json({ error: process.env.NODE_ENV === "production" ? "Could not update the call" : detail }, { status: 500 });
   }
 }
