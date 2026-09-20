@@ -1,53 +1,8 @@
 import { FieldValue, Timestamp, type Firestore } from "firebase-admin/firestore";
 import { SAFETY_POLICY_VERSION } from "@/src/server/safety/classifier";
-
-export type MomoSafetyCategory = "SELF_HARM" | "HARM_TO_OTHERS";
-export type MomoSafetyLanguage = "EN" | "NE";
-
-export interface MomoSafetyAssessment {
-  level: "SAFE" | "CONCERNING" | "IMMINENT";
-  category?: MomoSafetyCategory;
-  language?: MomoSafetyLanguage;
-  matchedSignals: string[];
-}
-
-interface SafetyPattern {
-  id: string;
-  category: MomoSafetyCategory;
-  language: MomoSafetyLanguage;
-  expression: RegExp;
-}
-
-// This is a deliberately narrow, conservative first-pass screen. It is not a
-// clinical assessment and must be expanded/reviewed with the clinical team.
-const URGENT_PATTERNS: SafetyPattern[] = [
-  { id: "self-harm-direct", category: "SELF_HARM", language: "EN", expression: /\b(?:kill|hurt|harm|cut)\s+myself\b/i },
-  { id: "self-harm-intent", category: "SELF_HARM", language: "EN", expression: /\b(?:want|plan|going|about)\s+to\s+(?:die|end\s+my\s+life)\b/i },
-  { id: "suicide-intent", category: "SELF_HARM", language: "EN", expression: /\b(?:suicidal\s+(?:thoughts?|ideas?|intent|plan)|(?:commit|attempt)\s+suicide)\b/i },
-  { id: "harm-others-direct", category: "HARM_TO_OTHERS", language: "EN", expression: /\b(?:kill|hurt|harm|attack|shoot)\s+(?:him|her|them|someone|people|my\s+(?:partner|family|friend|boss))\b/i },
-  { id: "harm-others-intent", category: "HARM_TO_OTHERS", language: "EN", expression: /\b(?:going|plan(?:ning)?|want)\s+to\s+(?:kill|hurt|harm|attack|shoot)\b/i },
-  { id: "self-harm-nepali", category: "SELF_HARM", language: "NE", expression: /(?:आत्महत्या|आफैलाई\s*मार|आफ्नो\s*ज्यान|मर्न\s*मन|बाँच्न\s*मन\s*छैन)/i },
-  { id: "harm-others-nepali", category: "HARM_TO_OTHERS", language: "NE", expression: /(?:उसलाई\s*मार|मान्छे\s*मार|कसैलाई\s*मार|हान्न\s*जान्छु)/i },
-  { id: "self-harm-romanized-nepali", category: "SELF_HARM", language: "NE", expression: /\b(?:aatmahatya|afulai\s*mar|aafailai\s*mar|aafno\s*jyan|marna\s*man|bachna\s*man\s*chaina)\b/i },
-  { id: "harm-others-romanized-nepali", category: "HARM_TO_OTHERS", language: "NE", expression: /\b(?:uslai\s*mar|manche\s*mar|kasailai\s*mar|hanne\s*janxu)\b/i },
-];
-
-export function assessMomoSafety(text: string): MomoSafetyAssessment {
-  const normalizedText = text.normalize("NFKC").trim();
-  const matchedPatterns = URGENT_PATTERNS.filter((pattern) => pattern.expression.test(normalizedText));
-
-  if (matchedPatterns.length === 0) {
-    return { level: "SAFE", matchedSignals: [] };
-  }
-
-  const primaryMatch = matchedPatterns[0];
-  return {
-    level: "IMMINENT",
-    category: primaryMatch.category,
-    language: primaryMatch.language,
-    matchedSignals: matchedPatterns.map((pattern) => pattern.id),
-  };
-}
+import type { MomoSafetyAssessment } from "./safetyAssessment";
+export { assessMomoSafety } from "./safetyAssessment";
+export type { MomoSafetyAssessment, MomoSafetyCategory, MomoSafetyLanguage } from "./safetyAssessment";
 
 export function crisisReplyFor(assessment: MomoSafetyAssessment): string {
   if (assessment.language === "NE") {
@@ -86,12 +41,16 @@ export async function recordMomoSafetyEvent({
     text: userText,
     sender: "USER",
     source,
+    provenance: "SERVER",
+    order: 0,
     timestamp: FieldValue.serverTimestamp(),
   });
   batch.set(messagesRef.doc(), {
     text: crisisReplyFor(assessment),
     sender: "MOMO",
     source: "SAFETY",
+    provenance: "SERVER",
+    order: 1,
     timestamp: FieldValue.serverTimestamp(),
   });
   batch.set(

@@ -17,20 +17,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
+    let generation = 0;
     // The onAuthStateChanged observer manages the perfectly synced loading state
     const unsubscribe = onAuthStateChanged(
       auth,
       async (firebaseUser: User | null) => {
+        const currentGeneration = ++generation;
+        setLoading(true);
+        setError(null);
         try {
           if (firebaseUser) {
             // Preserve the Firebase User instance so auth methods like getIdToken remain available.
             setUser(firebaseUser as AppUser);
             
             const token = await firebaseUser.getIdToken();
+            if (currentGeneration !== generation) return;
             Cookies.set("firebaseToken", token, { expires: 14, sameSite: "lax" });
             
             try {
               const profile = await getUserProfile(firebaseUser.uid);
+              if (currentGeneration !== generation) return;
               if (profile?.role) {
                 Cookies.set("userRole", profile.role, { expires: 14, sameSite: "lax" });
               }
@@ -48,10 +54,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             Cookies.remove("userRole");
           }
         } catch (err) {
+          if (currentGeneration !== generation) return;
           setError(err instanceof Error ? err : new Error(String(err)));
         } finally {
           // Resolve the perfectly-handled loading state
-          setLoading(false);
+          if (currentGeneration === generation) setLoading(false);
         }
       },
       (error) => {
@@ -60,7 +67,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     );
 
-    return () => unsubscribe();
+    return () => {
+      generation += 1;
+      unsubscribe();
+    };
   }, []);
 
   const value = useMemo(

@@ -6,7 +6,12 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "test": "node --no-warnings --experimental-strip-types --test tests/*.test.mjs",
+    "check": "npm run lint && npm run typecheck && npm test",
+    "migrate:therapy": "node scripts/migrate-therapy-relationships.mjs",
+    "set-admin": "node scripts/set-admin-claim.mjs"
   },
   "dependencies": {
     "@google/genai": "^1.33.0",

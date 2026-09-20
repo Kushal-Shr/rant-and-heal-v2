@@ -52,16 +52,24 @@ export enum ConnectionStatus {
 
 export interface Connection {
   id?: string;
-  // Document ID is the patient UID, enforcing one therapist connection at a time.
+  // The current pointer uses the patient UID; history uses relationshipId.
+  relationshipId: string;
   userId: string;
   therapistId: string;
   status: ConnectionStatus;
-  consentHash: string; // Proof of cryptographic consent
+  consentHash: string; // Hash of the versioned disclosure text; the event holds actor/time/scope.
   requestedAt: ServerTime;
   respondedAt?: ServerTime;
   updatedAt: ServerTime;
   lastMessageAt?: ServerTime;
   connectedAt?: ServerTime;
+}
+
+export interface SharedPatientProfile {
+  patientId: string;
+  displayName: string;
+  isIncognito: boolean;
+  updatedAt: ServerTime;
 }
 
 export enum TherapyMessageSenderRole {
@@ -92,6 +100,7 @@ export interface TherapyCallSession {
   recipientId: string;
   status: TherapyCallStatus;
   createdAt: ServerTime;
+  expiresAt: ServerTime;
   answeredBy?: string;
   answeredAt?: ServerTime;
   declinedBy?: string;

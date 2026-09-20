@@ -139,6 +139,7 @@ export default function VaultPage() {
     if (!user) {
       return;
     }
+    if (!window.confirm("Delete this journal entry permanently? This cannot be undone.")) return;
 
     setDeletingId(entryId);
     setFeedback(null);

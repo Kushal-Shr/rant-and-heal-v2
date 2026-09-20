@@ -20,5 +20,5 @@ Before making sweeping changes, planning architecture, or doing deep investigati
 
 ## 3. Architecture & Style Adherence
 - **Service-Oriented Architecture**: Privileged Firebase Admin logic belongs in `src/server/` or Next.js Route Handlers (`app/api/`). Client Firebase logic belongs in `src/services/`.
-- **UI Components**: Adhere to the "Radiant Brutalism" design system. Use the established atomic structure in `src/components/`. Do not introduce ad-hoc styling that breaks the design system.
+- **UI Components**: Adhere to the Soft Clay Realism system in `stitch_rant_and_heal_ui/soft_clay_realism/DESIGN.md`. Use the established atomic structure in `src/components/` and shared design tokens.
 <!-- END:rant-and-heal-agent-rules -->

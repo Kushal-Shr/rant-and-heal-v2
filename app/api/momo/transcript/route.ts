@@ -1,111 +1,74 @@
-import { NextResponse, type NextRequest } from "next/server";
 import { FieldValue } from "firebase-admin/firestore";
+import { after, NextResponse, type NextRequest } from "next/server";
+import { z } from "zod";
 import { verifyFirebaseBearerToken } from "@/src/server/auth";
 import { getErrorMessage } from "@/src/server/errors";
 import { getAdminDb } from "@/src/server/firebaseAdmin";
+import { MomoAccessError, consumeQuota, requireOwnedSession } from "@/src/server/momo/access";
 import { assessMomoSafety, recordMomoSafetyEvent } from "@/src/server/momo/safety";
 import { classifySafetyRisk } from "@/src/server/safety/classifier";
 import { notifySafetySupport } from "@/src/server/safety/notifications";
 
 export const runtime = "nodejs";
-
-interface TranscriptRequestBody {
-  userId?: string;
-  sessionId?: string;
-  sender?: "USER" | "MOMO";
-  text?: string;
-}
+const schema = z.object({
+  userId: z.string().trim().min(1).max(128),
+  sessionId: z.string().trim().min(1).max(128),
+  requestId: z.string().uuid(),
+  sender: z.enum(["USER", "MOMO"]),
+  text: z.string().trim().min(1).max(8000),
+}).strict();
 
 export async function POST(request: NextRequest) {
   try {
-    const decodedToken = await verifyFirebaseBearerToken(request);
+    const token = await verifyFirebaseBearerToken(request);
+    if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const parsed = schema.safeParse(await request.json().catch(() => null));
+    if (!parsed.success) return NextResponse.json({ error: "Invalid transcript request" }, { status: 400 });
+    const { userId, sessionId, requestId, sender, text } = parsed.data;
+    if (token.uid !== userId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    if (!decodedToken) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const db = getAdminDb();
+    const sessionRef = await requireOwnedSession(db, userId, sessionId);
+    await consumeQuota({ db, userId, key: "momo_transcript_minute", limit: 60, windowMs: 60_000 });
+    const safety = sender === "USER" ? assessMomoSafety(text) : { level: "SAFE" as const, matchedSignals: [] };
+
+    if (safety.level === "IMMINENT") {
+      after(async () => {
+        try {
+          const [eventId, model] = await Promise.all([
+            recordMomoSafetyEvent({ db, userId, sessionId, userText: text, source: "VOICE", assessment: safety }),
+            classifySafetyRisk(text),
+          ]);
+          if (model?.level === "IMMINENT" && model.category === safety.category) {
+            const status = await notifySafetySupport({ eventId, category: safety.category, source: "VOICE", state: "IMMINENT_RULE_AND_MODEL_AGREE" });
+            await db.collection("users").doc(userId).collection("safety_events").doc(eventId).update({
+              supportNotificationStatus: status,
+              supportNotificationUpdatedAt: FieldValue.serverTimestamp(),
+            });
+          }
+        } catch (error) {
+          console.error("MOMO VOICE SAFETY FOLLOW-UP ERROR:", getErrorMessage(error));
+        }
+      });
+      return NextResponse.json({ ok: true, safety: { level: "IMMINENT", category: safety.category } });
     }
 
-    const body = (await request.json()) as TranscriptRequestBody;
-    const userId = body.userId?.trim();
-    const sessionId = body.sessionId?.trim();
-    const text = body.text?.trim();
-    const sender = body.sender;
-
-    if (!userId || !sessionId || !text || (sender !== "USER" && sender !== "MOMO")) {
-      return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
-    }
-
-    if (decodedToken.uid !== userId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
-    const adminDb = getAdminDb();
-    const safetyAssessment = sender === "USER" ? assessMomoSafety(text) : { level: "SAFE" as const, matchedSignals: [] };
-
-    if (safetyAssessment.level === "IMMINENT") {
-      const [eventId, modelAssessment] = await Promise.all([
-        recordMomoSafetyEvent({
-          db: adminDb,
-          userId,
-          sessionId,
-          userText: text,
-          source: "VOICE",
-          assessment: safetyAssessment,
-        }),
-        classifySafetyRisk(text),
-      ]);
-      const hasClassifierAgreement = modelAssessment?.level === "IMMINENT" &&
-        modelAssessment.category === safetyAssessment.category;
-
-      if (hasClassifierAgreement) {
-        const notificationStatus = await notifySafetySupport({
-          eventId,
-          category: safetyAssessment.category,
-          source: "VOICE",
-          state: "IMMINENT_RULE_AND_MODEL_AGREE",
-        });
-        await adminDb.collection("users").doc(userId).collection("safety_events").doc(eventId).update({
-          supportNotificationStatus: notificationStatus,
-          supportNotificationUpdatedAt: FieldValue.serverTimestamp(),
-        });
-      }
-
-      return NextResponse.json(
-        {
-          ok: true,
-          safety: {
-            level: safetyAssessment.level,
-            category: safetyAssessment.category,
-          },
-        },
-        { status: 200 }
-      );
-    }
-
-    const sessionRef = adminDb.collection("users").doc(userId).collection("sessions").doc(sessionId);
-    const messageRef = await sessionRef.collection("messages").add({
+    const batch = db.batch();
+    const messageRef = sessionRef.collection("messages").doc(requestId);
+    batch.set(messageRef, {
       text,
       sender,
       source: "VOICE",
+      provenance: "CLIENT_LIVE_TRANSCRIPT",
       timestamp: FieldValue.serverTimestamp(),
     });
-
-    await sessionRef.set(
-      {
-        updatedAt: FieldValue.serverTimestamp(),
-      },
-      { merge: true }
-    );
-
-    return NextResponse.json({ ok: true, messageId: messageRef.id }, { status: 200 });
+    batch.set(sessionRef, { updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+    await batch.commit();
+    return NextResponse.json({ ok: true, messageId: messageRef.id });
   } catch (error) {
+    if (error instanceof MomoAccessError) return NextResponse.json({ error: error.message }, { status: error.status });
     const detail = getErrorMessage(error);
-    console.error("MOMO TRANSCRIPT API ERROR:", detail, error);
-
-    return NextResponse.json(
-      {
-        error: process.env.NODE_ENV === "production" ? "Failed to save transcript" : detail,
-      },
-      { status: 500 }
-    );
+    console.error("MOMO TRANSCRIPT API ERROR:", detail);
+    return NextResponse.json({ error: process.env.NODE_ENV === "production" ? "Failed to save transcript" : detail }, { status: 500 });
   }
 }

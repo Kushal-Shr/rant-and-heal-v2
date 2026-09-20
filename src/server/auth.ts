@@ -19,5 +19,9 @@ export async function verifyFirebaseBearerToken(request: NextRequest): Promise<D
     return null;
   }
 
-  return getAdminAuth().verifyIdToken(token);
+  try {
+    return await getAdminAuth().verifyIdToken(token);
+  } catch {
+    return null;
+  }
 }

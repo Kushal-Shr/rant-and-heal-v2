@@ -9,11 +9,10 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Spinner } from "@/src/components/ui/Spinner";
 import { useAuth } from "@/src/context/AuthContext";
-import { observeActiveConnections } from "@/src/services/connectionService";
-import { getUserProfile } from "@/src/services/userService";
-import { Connection, UserProfile } from "@/src/types/database";
+import { getSharedPatientProfile, observeActiveConnections } from "@/src/services/connectionService";
+import { Connection, SharedPatientProfile } from "@/src/types/database";
 
-type RosterItem = Connection & { patient?: UserProfile | null };
+type RosterItem = Connection & { patient?: SharedPatientProfile | null };
 
 export default function TherapistPatientsPage() {
   const { user } = useAuth();
@@ -31,7 +30,7 @@ export default function TherapistPatientsPage() {
       const enriched = await Promise.all(
         connections.map(async (connection) => ({
           ...connection,
-          patient: await getUserProfile(connection.userId).catch(() => null),
+          patient: await getSharedPatientProfile(connection.userId).catch(() => null),
         }))
       );
       setPatients(enriched);
@@ -58,7 +57,7 @@ export default function TherapistPatientsPage() {
         <section className="space-y-4">
           {visiblePatients.length === 0 && <EmptyState icon="search" title="No matching patients" description="Try another name or clear your search." />}
           {visiblePatients.map((connection) => (
-            <article className="flex flex-wrap items-center justify-between gap-4 rounded-[2rem] border border-white/80 bg-white/75 p-6 shadow-[0_18px_36px_-22px_rgba(74,107,94,0.2),inset_0_2px_4px_rgba(255,255,255,0.8)]" key={connection.userId}>
+            <article className="flex flex-wrap items-center justify-between gap-4 rounded-[2rem] border border-white/80 bg-white/75 p-6 shadow-[0_18px_36px_-22px_rgba(74,107,94,0.2),inset_0_2px_4px_rgba(255,255,255,0.8)]" key={connection.relationshipId}>
               <div className="flex min-w-0 items-center gap-4">
                 <Avatar initials={connection.patient?.displayName?.slice(0, 1) || "P"} />
                 <div className="min-w-0"><h2 className="text-xl font-medium text-[#325347]">{connection.patient?.displayName || `Patient ${connection.userId.slice(0, 8)}`}</h2>

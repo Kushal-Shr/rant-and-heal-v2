@@ -19,7 +19,7 @@ const modelAssessmentSchema = z.object({
 // has no tool/function access; application code owns every safety action.
 export async function classifySafetyRisk(text: string): Promise<ModelRiskAssessment | null> {
   try {
-    const result = await getGeminiClient().models.generateContent({
+    const generation = getGeminiClient().models.generateContent({
       model: MOMO_TEXT_MODEL,
       contents: [{ role: "user", parts: [{ text }]}],
       config: {
@@ -37,6 +37,12 @@ export async function classifySafetyRisk(text: string): Promise<ModelRiskAssessm
         systemInstruction: "Classify only the immediate risk in the user's message. Do not diagnose or offer advice. IMMINENT means direct, credible current intent to harm self or others. CONCERNING means distress or ideation without clear imminent intent. SAFE means neither. Return JSON only.",
       },
     });
+    const result = await Promise.race([
+      generation,
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("Safety classifier timed out")), 4_000)
+      ),
+    ]);
     const parsed = modelAssessmentSchema.safeParse(JSON.parse(result.text ?? ""));
     if (!parsed.success) return null;
     return {

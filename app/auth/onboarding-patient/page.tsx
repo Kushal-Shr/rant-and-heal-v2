@@ -3,14 +3,14 @@
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { doc, updateDoc } from "firebase/firestore";
 import { ErrorMessage } from "@/src/components/forms/ErrorMessage";
 import { Input } from "@/src/components/forms/Input";
 import { Label } from "@/src/components/forms/Label";
 import { Button } from "@/src/components/ui/Button";
 import { Card } from "@/src/components/ui/Card";
-import { db } from "@/src/config/firebase";
 import { useAuth } from "@/src/context/AuthContext";
+import { syncUserProfile } from "@/src/services/userService";
+import { UserRole } from "@/src/types/database";
 
 function generateAnonymousHandle() {
   return `Patient-${Math.floor(1000 + Math.random() * 9000)}`;
@@ -69,10 +69,13 @@ export default function PatientOnboardingPage() {
     setError(null);
 
     try {
-      await updateDoc(doc(db, "users", user.uid), {
+      await syncUserProfile(user.uid, {
+        email: user.email ?? "",
         displayName: finalDisplayName,
+        role: UserRole.USER,
         isIncognito,
         onboardingComplete: true,
+        mfaEnabled: false,
       });
 
       router.push("/dashboard");

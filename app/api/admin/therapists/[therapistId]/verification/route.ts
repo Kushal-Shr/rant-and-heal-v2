@@ -7,14 +7,16 @@ import {
   TherapistVerificationStatus,
   UserRole,
 } from "@/src/types/database";
+import { z } from "zod";
 
 export const runtime = "nodejs";
 
-type VerificationAction = "VERIFY" | "REJECT";
-
-interface VerificationRequestBody {
-  action?: VerificationAction;
-}
+const schema = z.object({
+  action: z.enum(["VERIFY", "REJECT"]),
+  rejectionReason: z.string().trim().min(3).max(500).optional(),
+}).strict().refine((value) => value.action !== "REJECT" || Boolean(value.rejectionReason), {
+  message: "A rejection reason is required",
+});
 
 function isAdmin(decodedToken: Awaited<ReturnType<typeof verifyFirebaseBearerToken>>): boolean {
   return decodedToken?.admin === true;
@@ -36,9 +38,9 @@ export async function POST(
     }
 
     const { therapistId } = await context.params;
-    const body = (await request.json()) as VerificationRequestBody;
+    const parsed = schema.safeParse(await request.json().catch(() => null));
 
-    if (!therapistId || (body.action !== "VERIFY" && body.action !== "REJECT")) {
+    if (!therapistId || !parsed.success) {
       return NextResponse.json({ error: "A valid therapist ID and action are required" }, { status: 400 });
     }
 
@@ -62,12 +64,13 @@ export async function POST(
         throw new Error("Only pending therapist applications can be reviewed.");
       }
 
-      if (body.action === "VERIFY") {
+      if (parsed.data.action === "VERIFY") {
         transaction.update(profileRef, {
           isVerified: true,
           verificationStatus: TherapistVerificationStatus.VERIFIED,
           reviewedAt: FieldValue.serverTimestamp(),
           reviewedBy: decodedToken.uid,
+          rejectionReason: FieldValue.delete(),
         });
         transaction.update(userRef, {
           role: UserRole.THERAPIST,
@@ -81,6 +84,7 @@ export async function POST(
         verificationStatus: TherapistVerificationStatus.REJECTED,
         reviewedAt: FieldValue.serverTimestamp(),
         reviewedBy: decodedToken.uid,
+        rejectionReason: parsed.data.rejectionReason,
       });
     });
 

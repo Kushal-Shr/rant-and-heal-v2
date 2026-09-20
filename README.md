@@ -55,7 +55,7 @@ Never commit `.env.local` or Firebase service-account JSON files.
 
 ## Firebase Rules
 
-Firestore rules live in `firestore.rules` and are wired through `firebase.json`.
+Firestore rules and indexes live in `firestore.rules` and `firestore.indexes.json`, wired through `firebase.json`.
 
 ```bash
 firebase deploy --only firestore:rules
@@ -77,9 +77,11 @@ Verification atomically marks the directory profile as verified and changes the 
 
 ## Momo Architecture
 
-Momo text chat is server-owned: the client calls `/api/momo/chat`, the route verifies the Firebase ID token, fetches session history, calls Gemini, then writes both USER and MOMO messages with the Admin SDK.
+Momo text chat is server-owned: the client calls `/api/momo/chat`, the route verifies the Firebase ID token and session, enforces bounded quotas, serializes/idempotently records the turn, calls Gemini, then writes ordered USER and MOMO messages with the Admin SDK.
 
 Momo voice uses `/api/momo/live-token` to mint a short-lived Gemini Live token. Browser code captures microphone PCM audio and streams it directly to Gemini Live with the ephemeral token.
+
+Authenticated patient and anonymous Firebase sessions use the same application quotas: 20 text turns per minute, 5 live-token grants per 10 minutes, and 60 transcript writes per minute. Infrastructure-level budgets and alerts should still be configured in Google Cloud.
 
 ### Momo safety interceptor v0.1
 
@@ -102,16 +104,18 @@ Configure Firestore TTL for `safety_events.expireAt` before relying on the 30-da
 Completed so far:
 - Patients can browse verified therapist profiles from `therapists/{therapistUid}` on `/therapy`.
 - Therapist onboarding at `/auth/onboarding-therapist` creates a pending practitioner application. Staff approval is required before it appears in the verified directory.
-- Patients can request one therapist connection at a time through `connections/{patientUid}`.
+- Patients can request one therapist connection at a time. `connections/{patientUid}` is a current pointer; each request creates a new immutable `therapy_relationships/{relationshipId}` record.
 - Therapists can review pending requests on `/portal` and accept or reject them.
 - Accepted patients appear in the therapist roster on `/patients`.
 - Patient and therapist chat routes share the same real-time chat component:
   - Patient: `/therapy/chat/[therapistId]`
   - Therapist: `/messages/[patientId]`
 - Therapist `/messages` now shows active patient conversation threads.
-- Therapy messages are stored separately from Momo messages under `connections/{patientUid}/messages`.
+- Therapy messages, calls, signals, consent events, and call locks are scoped under `therapy_relationships/{relationshipId}`, so a future therapist cannot read a previous relationship.
 - Therapy calls use explicit `callerId` and `recipientId` fields. Authenticated server routes create, answer, decline, and end calls, with a transaction-backed per-connection call lock.
-- Firestore rules restrict call-session creation and state transitions to server routes; client-side Firestore is used only for participant-scoped signaling.
+- Firestore rules restrict relationship/call state transitions to server routes; client-side Firestore is used only for active relationship messages and participant-scoped signaling.
+
+Before deploying these schema changes, run `npm run migrate:therapy` to preview legacy records, then `npm run migrate:therapy -- --apply` after reviewing the output. The migration copies legacy chat/call history into a stable relationship without deleting the old records, repairs an orphaned relationship pointer when one exists, and marks legacy `isVerified` therapist profiles as `VERIFIED`. The scripts load Firebase Admin credentials from `.env.local`, the same way the local Next.js app does. Deploy Firestore rules and indexes only after the migration succeeds.
 
 Known follow-up:
 - Calls currently use a public STUN server only. Configure authenticated TURN credentials before relying on calls across restrictive or mobile networks.

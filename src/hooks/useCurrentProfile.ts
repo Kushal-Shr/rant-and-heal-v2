@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/src/context/AuthContext";
-import { getUserProfile } from "@/src/services/userService";
+import { observeUserProfile } from "@/src/services/userService";
 import type { UserProfile } from "@/src/types/database";
 
 // Bind the result to its owner so an account switch cannot reuse another role.
@@ -16,13 +16,12 @@ export function useCurrentProfile() {
 
   useEffect(() => {
     if (!user || authLoading) return;
-    let active = true;
     const uid = user.uid;
-    getUserProfile(uid).then(
-      (profile) => { if (active) setResult({ uid, attempt, profile, error: false }); },
-      () => { if (active) setResult({ uid, attempt, profile: null, error: true }); },
+    return observeUserProfile(
+      uid,
+      (profile) => setResult({ uid, attempt, profile, error: false }),
+      () => setResult({ uid, attempt, profile: null, error: true }),
     );
-    return () => { active = false; };
   }, [user, authLoading, attempt]);
 
   const current = user && result?.uid === user.uid && result.attempt === attempt ? result : null;

@@ -21,12 +21,12 @@ import {
 } from "@/src/types/database";
 
 interface TherapyCallRoomProps {
-  patientUid: string;
+  relationshipId: string;
   sessionId: string;
   backHref: string;
 }
 
-export function TherapyCallRoom({ backHref, patientUid, sessionId }: TherapyCallRoomProps) {
+export function TherapyCallRoom({ backHref, relationshipId, sessionId }: TherapyCallRoomProps) {
   const { user } = useAuth();
   const router = useRouter();
   const [status, setStatus] = useState<"waiting" | "connecting" | "connected" | "ended" | "failed">("waiting");
@@ -57,13 +57,13 @@ export function TherapyCallRoom({ backHref, patientUid, sessionId }: TherapyCall
 
   const createPeer = useCallback(async () => {
     isClosedRef.current = false;
-    const iceServers = await getCallIceServers(patientUid, sessionId);
+    const iceServers = await getCallIceServers(relationshipId, sessionId);
     const peer = new RTCPeerConnection({ iceServers });
     peerRef.current = peer;
 
     peer.onicecandidate = (event) => {
       if (event.candidate) {
-        void sendSignal(patientUid, sessionId, {
+        void sendSignal(relationshipId, sessionId, {
           type: "ice-candidate",
           payload: event.candidate.toJSON() as Record<string, unknown>,
         });
@@ -88,7 +88,7 @@ export function TherapyCallRoom({ backHref, patientUid, sessionId }: TherapyCall
     if (localVideoRef.current) localVideoRef.current.srcObject = stream;
     stream.getTracks().forEach((track) => peer.addTrack(track, stream));
     return peer;
-  }, [patientUid, sessionId]);
+  }, [relationshipId, sessionId]);
 
   const ensurePeer = useCallback(async () => {
     if (peerRef.current && peerRef.current.signalingState !== "closed") return peerRef.current;
@@ -113,10 +113,11 @@ export function TherapyCallRoom({ backHref, patientUid, sessionId }: TherapyCall
   useEffect(() => cleanup, [cleanup]);
 
   useEffect(() => observeCallSession(
-    patientUid,
+    relationshipId,
     sessionId,
     (nextSession) => {
       if (!nextSession) {
+        cleanup();
         setError("This call session could not be found.");
         setStatus("failed");
         return;
@@ -128,11 +129,12 @@ export function TherapyCallRoom({ backHref, patientUid, sessionId }: TherapyCall
       }
     },
     (snapshotError) => {
+      cleanup();
       console.error("Failed to observe therapy call:", snapshotError);
       setError("Could not load this call.");
       setStatus("failed");
     }
-  ), [cleanup, patientUid, sessionId]);
+  ), [cleanup, relationshipId, sessionId]);
 
   const handleSignal = useCallback(async (
     signal: TherapyCallSignal,
@@ -150,7 +152,7 @@ export function TherapyCallRoom({ backHref, patientUid, sessionId }: TherapyCall
       await flushPendingIceCandidates(peer);
       const answer = await peer.createAnswer();
       await peer.setLocalDescription(answer);
-      await sendSignal(patientUid, sessionId, { type: "answer", payload: answer as unknown as Record<string, unknown> });
+      await sendSignal(relationshipId, sessionId, { type: "answer", payload: answer as unknown as Record<string, unknown> });
       return;
     }
     if (signal.type === "answer" && isCaller && peer.signalingState !== "stable") {
@@ -161,7 +163,7 @@ export function TherapyCallRoom({ backHref, patientUid, sessionId }: TherapyCall
     if (signal.type === "ice-candidate") {
       await addIceCandidate(peer, signal.payload as RTCIceCandidateInit);
     }
-  }, [addIceCandidate, cleanup, flushPendingIceCandidates, patientUid, sessionId]);
+  }, [addIceCandidate, cleanup, flushPendingIceCandidates, relationshipId, sessionId]);
 
   useEffect(() => {
     if (!user?.uid || !session) return;
@@ -169,6 +171,7 @@ export function TherapyCallRoom({ backHref, patientUid, sessionId }: TherapyCall
     const isCaller = user.uid === session.callerId;
     const isRecipient = user.uid === session.recipientId;
     if (!isCaller && !isRecipient) {
+      cleanup();
       queueMicrotask(() => {
         setError("You are not a participant in this call.");
         setStatus("failed");
@@ -180,7 +183,7 @@ export function TherapyCallRoom({ backHref, patientUid, sessionId }: TherapyCall
     if (session.status === TherapyCallStatus.RINGING && isRecipient) {
       if (!isAnsweringRef.current) {
         isAnsweringRef.current = true;
-        void answerCallSession(patientUid, sessionId).catch((answerError) => {
+        void answerCallSession(relationshipId, sessionId).catch((answerError) => {
           console.error("Could not answer therapy call:", answerError);
           setError("Could not join this call.");
           setStatus("failed");
@@ -199,17 +202,18 @@ export function TherapyCallRoom({ backHref, patientUid, sessionId }: TherapyCall
           hasOfferedRef.current = true;
           const offer = await peer.createOffer();
           await peer.setLocalDescription(offer);
-          await sendSignal(patientUid, sessionId, { type: "offer", payload: offer as unknown as Record<string, unknown> });
+          await sendSignal(relationshipId, sessionId, { type: "offer", payload: offer as unknown as Record<string, unknown> });
         }
       }).catch((mediaError) => {
         console.error("Could not access camera or microphone:", mediaError);
+        cleanup();
         setError("Could not access your camera or microphone.");
         setStatus("failed");
       });
     });
 
     const unsubscribe = observeSignals(
-      patientUid,
+      relationshipId,
       sessionId,
       (signals) => {
         if (isClosedRef.current) return;
@@ -223,12 +227,14 @@ export function TherapyCallRoom({ backHref, patientUid, sessionId }: TherapyCall
         }).catch((signalError) => {
           if (cancelled) return;
           console.error("Failed to handle call signals:", signalError);
+          cleanup();
           setError("Call signaling failed.");
           setStatus("failed");
         });
       },
       (signalError) => {
         console.error("Failed to observe call signals:", signalError);
+        cleanup();
         setError("Call signaling failed.");
         setStatus("failed");
       }
@@ -238,13 +244,13 @@ export function TherapyCallRoom({ backHref, patientUid, sessionId }: TherapyCall
       cancelled = true;
       unsubscribe();
     };
-  }, [ensurePeer, handleSignal, patientUid, session, sessionId, user?.uid]);
+  }, [cleanup, ensurePeer, handleSignal, relationshipId, session, sessionId, user?.uid]);
 
   async function handleHangup() {
     setStatus("ended");
     cleanup();
     try {
-      await endCallSession(patientUid, sessionId);
+      await endCallSession(relationshipId, sessionId);
       router.push(backHref);
     } catch (hangupError) {
       console.error("Failed to end call:", hangupError);

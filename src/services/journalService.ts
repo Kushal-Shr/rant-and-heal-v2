@@ -4,6 +4,7 @@ import {
   deleteDoc,
   doc,
   getDocs,
+  limit,
   orderBy,
   query,
   serverTimestamp,
@@ -46,8 +47,8 @@ export async function createJournalEntry(
   return docRef.id;
 }
 
-export async function listJournalEntries(uid: string): Promise<JournalEntry[]> {
-  const entriesQuery = query(journalsCollection(uid), orderBy("createdAt", "desc"));
+export async function listJournalEntries(uid: string, entryLimit = 50): Promise<JournalEntry[]> {
+  const entriesQuery = query(journalsCollection(uid), orderBy("createdAt", "desc"), limit(entryLimit));
   const snapshot = await getDocs(entriesQuery);
 
   return snapshot.docs.map((entryDoc) => ({

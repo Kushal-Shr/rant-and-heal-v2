@@ -4,12 +4,13 @@ import { verifyFirebaseBearerToken } from "@/src/server/auth";
 import { getErrorMessage } from "@/src/server/errors";
 import { getRequiredEnv, MOMO_LIVE_MODEL } from "@/src/server/momo/gemini";
 import { MOMO_SYSTEM_INSTRUCTION } from "@/src/server/momo/persona";
+import { getAdminDb } from "@/src/server/firebaseAdmin";
+import { MomoAccessError, consumeQuota, requireOwnedSession } from "@/src/server/momo/access";
+import { z } from "zod";
 
 export const runtime = "nodejs";
 
-interface LiveTokenRequestBody {
-  sessionId?: string;
-}
+const schema = z.object({ sessionId: z.string().trim().min(1).max(128) }).strict();
 
 export async function POST(request: NextRequest) {
   try {
@@ -19,8 +20,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const body = (await request.json().catch(() => ({}))) as LiveTokenRequestBody;
-    const sessionId = body.sessionId?.trim();
+    const parsed = schema.safeParse(await request.json().catch(() => null));
+    if (!parsed.success) return NextResponse.json({ error: "A valid conversation is required" }, { status: 400 });
+    const sessionId = parsed.data.sessionId;
+    const adminDb = getAdminDb();
+    await requireOwnedSession(adminDb, decodedToken.uid, sessionId);
+    await consumeQuota({ db: adminDb, userId: decodedToken.uid, key: "momo_live_ten_minutes", limit: 5, windowMs: 10 * 60_000 });
     const gemini = new GoogleGenAI({
       apiKey: getRequiredEnv("GEMINI_API_KEY"),
     });
@@ -54,6 +59,9 @@ export async function POST(request: NextRequest) {
       sessionId: sessionId ?? null,
     });
   } catch (error) {
+    if (error instanceof MomoAccessError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
     const detail = getErrorMessage(error);
     console.error("MOMO LIVE TOKEN ERROR:", detail, error);
 

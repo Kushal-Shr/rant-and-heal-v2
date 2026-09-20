@@ -3,13 +3,11 @@ import {
   getDoc,
   getDocs,
   query,
-  serverTimestamp,
-  setDoc,
   updateDoc,
   where,
   collection,
 } from "firebase/firestore";
-import { db } from "../config/firebase";
+import { auth, db } from "../config/firebase";
 import {
   TherapistProfile,
   TherapistVerificationStatus,
@@ -25,46 +23,23 @@ export async function submitTherapistApplication(
   therapistId: string,
   data: Pick<TherapistProfile, "name" | "specialty" | "licenseNo" | "bio" | "availability">
 ): Promise<TherapistVerificationStatus> {
-  const therapistRef = doc(db, COLLECTION_NAME, therapistId);
-  const profileFields = {
-    name: data.name || "Anonymous Therapist",
-    specialty: data.specialty || "General",
-    licenseNo: data.licenseNo || "",
-    bio: data.bio || "",
-    availability: data.availability || {},
-  };
-
-  const currentProfile = await getDoc(therapistRef);
-
-  if (currentProfile.exists()) {
-    const currentData = currentProfile.data() as TherapistProfile;
-    const currentStatus = currentData.verificationStatus ?? (
-      currentData.isVerified
-        ? TherapistVerificationStatus.VERIFIED
-        : TherapistVerificationStatus.PENDING
-    );
-
-    await updateDoc(therapistRef, {
-      ...profileFields,
-      ...(currentStatus === TherapistVerificationStatus.REJECTED
-        ? { verificationStatus: TherapistVerificationStatus.PENDING }
-        : {}),
-    });
-
-    return currentStatus === TherapistVerificationStatus.REJECTED
-      ? TherapistVerificationStatus.PENDING
-      : currentStatus;
-  }
-
-  await setDoc(therapistRef, {
-    therapistId,
-    ...profileFields,
-    isVerified: false,
-    verificationStatus: TherapistVerificationStatus.PENDING,
-    createdAt: serverTimestamp(),
+  const user = auth.currentUser;
+  if (!user || user.uid !== therapistId) throw new Error("You must be signed in to submit a therapist application.");
+  const response = await fetch("/api/therapists/application", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${await user.getIdToken()}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(data),
   });
-
-  return TherapistVerificationStatus.PENDING;
+  const payload = (await response.json().catch(() => null)) as {
+    verificationStatus?: TherapistVerificationStatus;
+    error?: string;
+  } | null;
+  if (!response.ok) throw new Error(payload?.error ?? "Could not save therapist application.");
+  if (!payload?.verificationStatus) throw new Error("The therapist application status was not returned.");
+  return payload.verificationStatus;
 }
 
 /**
@@ -88,7 +63,19 @@ export async function listVerifiedTherapists(): Promise<TherapistProfile[]> {
   );
   const snap = await getDocs(therapistsQuery);
 
-  return snap.docs.map((therapistDoc) => therapistDoc.data() as TherapistProfile);
+  return snap.docs.flatMap((therapistDoc) => {
+    const data = therapistDoc.data();
+    if (
+      typeof data.therapistId !== "string" ||
+      typeof data.name !== "string" ||
+      typeof data.specialty !== "string" ||
+      typeof data.licenseNo !== "string" ||
+      typeof data.bio !== "string" ||
+      data.isVerified !== true ||
+      data.verificationStatus !== TherapistVerificationStatus.VERIFIED
+    ) return [];
+    return [data as TherapistProfile];
+  });
 }
 
 /**

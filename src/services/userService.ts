@@ -1,4 +1,4 @@
-import { doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore";
+import { doc, setDoc, getDoc, onSnapshot, serverTimestamp, type Unsubscribe } from "firebase/firestore";
 import { db } from "../config/firebase";
 import { UserProfile, UserRole } from "../types/database";
 
@@ -50,4 +50,16 @@ export async function getUserProfile(uid: string): Promise<UserProfile | null> {
   }
   
   return null;
+}
+
+export function observeUserProfile(
+  uid: string,
+  onChange: (profile: UserProfile | null) => void,
+  onError?: (error: Error) => void
+): Unsubscribe {
+  return onSnapshot(
+    doc(db, COLLECTION_NAME, uid),
+    (snapshot) => onChange(snapshot.exists() ? (snapshot.data() as UserProfile) : null),
+    onError
+  );
 }

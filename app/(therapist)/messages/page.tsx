@@ -9,11 +9,10 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Spinner } from "@/src/components/ui/Spinner";
 import { useAuth } from "@/src/context/AuthContext";
-import { observeActiveConnections } from "@/src/services/connectionService";
-import { getUserProfile } from "@/src/services/userService";
-import { Connection, UserProfile } from "@/src/types/database";
+import { getSharedPatientProfile, observeActiveConnections } from "@/src/services/connectionService";
+import { Connection, SharedPatientProfile } from "@/src/types/database";
 
-type MessageThread = Connection & { patient?: UserProfile | null };
+type MessageThread = Connection & { patient?: SharedPatientProfile | null };
 
 export default function TherapistMessagesPage() {
   const { user } = useAuth();
@@ -33,7 +32,7 @@ export default function TherapistMessagesPage() {
         const enriched = await Promise.all(
           connections.map(async (connection) => ({
             ...connection,
-            patient: await getUserProfile(connection.userId).catch(() => null),
+            patient: await getSharedPatientProfile(connection.userId).catch(() => null),
           }))
         );
 
@@ -70,7 +69,7 @@ export default function TherapistMessagesPage() {
             <Link
               className="block rounded-[2rem] border border-white/80 bg-white/75 p-6 shadow-[0_18px_36px_-22px_rgba(74,107,94,0.2),inset_0_2px_4px_rgba(255,255,255,0.8)] transition-all hover:-translate-y-1 hover:bg-white"
               href={`/messages/${thread.userId}`}
-              key={thread.userId}
+              key={thread.relationshipId}
             >
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex min-w-0 items-center gap-4">
