@@ -256,41 +256,41 @@ export function TherapyCallRoom({ backHref, patientUid, sessionId }: TherapyCall
   const waitingForRecipient = session?.status === TherapyCallStatus.RINGING && session.callerId === user?.uid;
 
   return (
-    <div className="min-h-[calc(100vh-3rem)] border-2 border-[#2c1601] bg-[#111814] font-['Plus_Jakarta_Sans'] text-white shadow-[8px_8px_0_#abcebf]">
-      <header className="flex flex-wrap items-center justify-between gap-4 border-b-2 border-[#2c1601] bg-[#fff8f5] p-5 text-[#2c1601]">
+    <div className="min-h-[calc(100dvh-4rem)] overflow-hidden rounded-[2.5rem] border border-white/70 bg-[#442b10] font-['Plus_Jakarta_Sans'] text-[#ffeee1] shadow-[0_24px_48px_-24px_rgba(74,43,16,0.4)]">
+      <header className="flex flex-wrap items-center justify-between gap-4 border-b border-[#795841]/35 bg-[#fff8f5] p-5 text-[#2c1601] sm:p-6">
         <div>
-          <Link className="text-sm font-black text-[#4a6b5e] underline" href={backHref}>Back</Link>
-          <h1 className="mt-2 text-2xl font-black">Therapy call</h1>
-          <p className="text-sm font-bold capitalize text-[#4a6b5e]">
+          <Link className="inline-flex items-center gap-1 rounded-full bg-[#fff1e8] px-3 py-1.5 text-sm font-medium text-[#325347]" href={backHref}><span aria-hidden="true" className="material-symbols-outlined text-base">arrow_back</span> Back</Link>
+          <h1 className="mt-3 text-2xl font-medium text-[#325347]">Therapy call</h1>
+          <p className="mt-1 text-sm font-light capitalize text-[#4a6b5e]">
             {waitingForRecipient ? "Waiting for the other participant" : status}
           </p>
         </div>
-        <Button className="rounded-none border-2 border-[#2c1601] shadow-[4px_4px_0_#2c1601]" onClick={handleHangup} variant="danger">
+        <Button onClick={handleHangup} variant="danger">
           End call
         </Button>
       </header>
 
-      {error ? <p className="m-5 border-2 border-[#2c1601] bg-[#ffdad6] p-4 font-bold text-[#93000a]">{error}</p> : null}
+      {error ? <p className="m-5 rounded-[1.5rem] bg-[#ffdad6] p-4 text-sm text-[#93000a]">{error}</p> : null}
 
-      <main className="grid min-h-[68vh] gap-4 p-5 lg:grid-cols-[1fr_320px]">
-        <section className="relative min-h-[48vh] overflow-hidden border-2 border-white/30 bg-black">
+      <div className="grid min-h-[68vh] gap-4 p-5 lg:grid-cols-[1fr_320px]">
+        <section className="relative min-h-[48vh] overflow-hidden rounded-[2rem] border border-white/20 bg-[#2c1601] shadow-[inset_0_2px_8px_rgba(0,0,0,0.3)]">
           <video ref={remoteVideoRef} autoPlay className="h-full min-h-[48vh] w-full object-cover" playsInline />
           {status !== "connected" ? (
             <div className="absolute inset-0 flex items-center justify-center bg-black/70">
               <div className="text-center">
                 <Spinner label="Connecting call" />
-                <p className="mt-4 font-black capitalize">{waitingForRecipient ? "Waiting for the other participant" : status}</p>
+                <p className="mt-4 font-medium capitalize">{waitingForRecipient ? "Waiting for the other participant" : status}</p>
               </div>
             </div>
           ) : null}
         </section>
         <aside className="space-y-4">
-          <video ref={localVideoRef} autoPlay className="aspect-video w-full border-2 border-white/30 bg-black object-cover" muted playsInline />
-          <div className="border-2 border-white/30 bg-white/10 p-4 text-sm leading-6">
+          <video ref={localVideoRef} autoPlay className="aspect-video w-full rounded-[1.5rem] border border-white/20 bg-[#2c1601] object-cover" muted playsInline />
+          <div className="rounded-[1.5rem] border border-white/15 bg-white/10 p-4 text-sm font-light leading-6 text-[#ffeee1]/80">
             Calls use Firestore signaling. TURN relay settings are supplied securely when configured; without them, some restrictive networks may not connect.
           </div>
         </aside>
-      </main>
+      </div>
     </div>
   );
 }

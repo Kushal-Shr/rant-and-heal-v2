@@ -87,13 +87,13 @@ export default function ProviderSignupPage() {
   };
 
   return (
-    <main className="min-h-screen bg-[#f4fcf8] flex items-center justify-center p-6 font-['Plus_Jakarta_Sans'] text-[#2d4d41]">
+    <div className="min-h-[calc(100dvh-5rem)] md:min-h-dvh flex items-center justify-center p-6 font-['Plus_Jakarta_Sans'] text-[#2d4d41]">
       <Card variant="solid" className="w-full max-w-md p-8 sm:p-10 border-2 border-[#abcebf] bg-white">
         <header className="mb-8 text-center">
-          <Link href="/" className="text-2xl font-extrabold italic text-[#325347]">
+          <Link href="/" className="text-2xl font-semibold text-[#325347]">
             Rant & Heal
           </Link>
-          <h1 className="mt-4 text-2xl font-bold uppercase tracking-tight text-[#325347]">
+          <h1 className="mt-4 text-2xl font-medium tracking-tight text-[#325347]">
             Practitioner Registration
           </h1>
           <p className="mt-2 text-sm text-[#717974]">
@@ -105,7 +105,7 @@ export default function ProviderSignupPage() {
           <Button
             type="button"
             variant="secondary"
-            className="w-full justify-between px-5 py-4 text-left uppercase tracking-[0.14em] bg-[#c6ebda]/30 text-[#325347] border border-[#abcebf]"
+            className="w-full justify-between px-5 py-4 text-left bg-[#c6ebda]/30 text-[#325347] border border-[#abcebf]"
             onClick={() => handleProviderAuth("google")}
             isLoading={activeAction === "google"}
             disabled={loading}
@@ -119,7 +119,7 @@ export default function ProviderSignupPage() {
           <Button
             type="button"
             variant="outline"
-            className="w-full justify-between px-5 py-4 text-left uppercase tracking-[0.14em]"
+            className="w-full justify-between px-5 py-4 text-left"
             onClick={() => handleProviderAuth("apple")}
             isLoading={activeAction === "apple"}
             disabled={loading}
@@ -190,7 +190,7 @@ export default function ProviderSignupPage() {
             />
           </div>
 
-            <Button type="submit" variant="primary" className="w-full py-4 tracking-wider uppercase mt-8 bg-[#325347] hover:bg-[#325347]/90" isLoading={loading}>
+            <Button type="submit" variant="primary" className="w-full py-4 mt-8 bg-[#325347] hover:bg-[#325347]/90" isLoading={loading}>
               Create Professional Profile
             </Button>
           </form>
@@ -203,6 +203,6 @@ export default function ProviderSignupPage() {
           </Link>
         </footer>
       </Card>
-    </main>
+    </div>
   );
 }

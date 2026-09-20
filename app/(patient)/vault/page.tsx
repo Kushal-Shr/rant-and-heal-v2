@@ -171,22 +171,23 @@ export default function VaultPage() {
   }
 
   return (
-    <div className="space-y-6 font-['Plus_Jakarta_Sans'] text-[#2c1601]">
-      <header className="border-2 border-[#2c1601] bg-[#fff8f5] p-6 shadow-[8px_8px_0_#e1d4ff]">
-        <p className="text-sm font-bold uppercase text-[#4a6b5e]">Plaintext journal</p>
-        <h1 className="mt-2 text-3xl font-black">Write what happened. Keep what matters.</h1>
+    <div className="min-w-0">
+
+      <div className="mx-auto max-w-6xl space-y-6 pb-10">
+      <header className="flex flex-wrap items-end justify-between gap-5 px-3 pt-3 sm:px-1">
+        <div><p className="text-xs font-medium uppercase tracking-[0.12em] text-[#4a6b5e]/70">Private by design</p><h1 className="mt-2 text-4xl font-medium tracking-[-0.04em] text-[#2c1601] sm:text-5xl">Your journal</h1><p className="mt-3 text-base font-light text-[#414845]">Capture your thoughts. Keep what matters.</p></div>
+        <Button onClick={cancelEditing}><span aria-hidden="true" className="material-symbols-outlined text-lg">edit</span>New entry</Button>
       </header>
 
-      <section className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
+      <section className="grid gap-6 xl:grid-cols-[minmax(0,1.45fr)_minmax(18rem,0.6fr)]">
         <form
-          className="space-y-4 border-2 border-[#2c1601] bg-white p-6 shadow-[8px_8px_0_#abcebf]"
+          className="space-y-5 rounded-[2.5rem] border border-white/80 bg-white/75 p-6 shadow-[0_20px_40px_-20px_rgba(121,88,65,0.24),inset_0_2px_4px_rgba(255,255,255,0.85)] backdrop-blur-xl sm:p-8"
           onSubmit={handleSubmit}
         >
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 className="text-xl font-black">{editingId ? "Edit entry" : "New entry"}</h2>
+            <div><p className="text-sm font-light text-[#717974]">{formatDate(undefined)}</p><h2 className="mt-1 text-2xl font-medium text-[#325347]">{editingId ? "Edit this entry" : "Let it out"}</h2></div>
             {editingId ? (
               <Button
-                className="rounded-none border-2 border-[#2c1601] px-4 py-2 shadow-[3px_3px_0_#2c1601]"
                 onClick={cancelEditing}
                 variant="ghost"
               >
@@ -196,9 +197,9 @@ export default function VaultPage() {
           </div>
 
           <label className="block">
-            <span className="text-sm font-extrabold">Title</span>
+            <span className="text-sm font-medium text-[#414845]">Title</span>
             <Input
-              className="mt-2 rounded-none border-2 border-[#2c1601] bg-[#fff8f5] shadow-none"
+              className="mt-2 bg-[#fff1e8] shadow-[inset_0_3px_8px_rgba(44,22,1,0.04)]"
               onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
               placeholder="Name the feeling"
               value={form.title}
@@ -206,9 +207,9 @@ export default function VaultPage() {
           </label>
 
           <label className="block">
-            <span className="text-sm font-extrabold">Mood tag</span>
+            <span className="text-sm font-medium text-[#414845]">Mood tag <span className="font-light text-[#717974]">(optional)</span></span>
             <Input
-              className="mt-2 rounded-none border-2 border-[#2c1601] bg-[#e1d4ff] shadow-none"
+              className="mt-2 bg-[#fff1e8] shadow-[inset_0_3px_8px_rgba(44,22,1,0.04)]"
               onChange={(event) =>
                 setForm((current) => ({ ...current, moodTag: event.target.value }))
               }
@@ -218,21 +219,22 @@ export default function VaultPage() {
           </label>
 
           <label className="block">
-            <span className="text-sm font-extrabold">Body</span>
+            <span className="text-sm font-medium text-[#414845]">What&apos;s on your mind?</span>
             <Textarea
-              className="mt-2 rounded-none border-2 border-[#2c1601] bg-[#fff8f5] shadow-none"
+              className="mt-2 min-h-72 rounded-[2rem] bg-[#fff1e8] px-6 py-5 text-base shadow-[inset_0_3px_10px_rgba(44,22,1,0.035)]"
               lined
               onChange={(event) => setForm((current) => ({ ...current, body: event.target.value }))}
               placeholder="No polish. Just the truth."
-              rows={10}
+              rows={13}
               value={form.body}
             />
           </label>
 
           {feedback ? (
             <p
-              className={`border-2 border-[#2c1601] px-4 py-3 text-sm font-bold ${
-                feedback.type === "success" ? "bg-[#abcebf]" : "bg-[#ffdad6]"
+              role="status"
+              className={`rounded-2xl px-4 py-3 text-sm ${
+                feedback.type === "success" ? "bg-[#c6ebda] text-[#002117]" : "bg-[#ffdad6] text-[#93000a]"
               }`}
             >
               {feedback.message}
@@ -240,7 +242,6 @@ export default function VaultPage() {
           ) : null}
 
           <Button
-            className="rounded-none border-2 border-[#2c1601] shadow-[4px_4px_0_#2c1601]"
             isLoading={isSaving}
             type="submit"
           >
@@ -248,10 +249,10 @@ export default function VaultPage() {
           </Button>
         </form>
 
-        <div className="border-2 border-[#2c1601] bg-[#ffd86b] p-6 shadow-[8px_8px_0_#2c1601]">
+        <aside className="rounded-[2.5rem] border border-white/75 bg-[#ffe3cd]/70 p-6 shadow-[0_20px_40px_-20px_rgba(121,88,65,0.2),inset_0_2px_4px_rgba(255,255,255,0.7)] sm:p-7">
           <div className="flex items-center justify-between gap-3">
-            <h2 className="text-xl font-black">Your entries</h2>
-            <span className="border-2 border-[#2c1601] bg-white px-3 py-1 text-sm font-black">
+            <div><p className="text-xs font-medium uppercase tracking-[0.12em] text-[#795841]/70">Past entries</p><h2 className="mt-2 text-2xl font-medium text-[#795841]">Your notes</h2></div>
+            <span className="rounded-full bg-white/80 px-3 py-1 text-sm font-medium text-[#795841]">
               {entries.length}
             </span>
           </div>
@@ -261,33 +262,33 @@ export default function VaultPage() {
               <Spinner label="Loading journal entries" />
             </div>
           ) : entries.length > 0 ? (
-            <div className="mt-5 space-y-4">
+            <div className="mt-6 space-y-4">
               {entries.map((entry) => (
-                <article className="border-2 border-[#2c1601] bg-white p-4" key={entry.id}>
+                <article className="rounded-[1.75rem] bg-white/80 p-5 shadow-[0_12px_25px_-20px_rgba(121,88,65,0.35)]" key={entry.id}>
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                      <h3 className="text-lg font-black">{entry.title}</h3>
-                      <p className="mt-1 text-xs font-bold uppercase text-[#4a6b5e]">
+                      <h3 className="text-lg font-medium text-[#2c1601]">{entry.title}</h3>
+                      <p className="mt-1 text-xs font-medium uppercase tracking-[0.1em] text-[#4a6b5e]">
                         {formatDate(entry.createdAt)}
                       </p>
                     </div>
                     {entry.moodTag ? (
-                      <span className="border-2 border-[#2c1601] bg-[#e1d4ff] px-2 py-1 text-xs font-black">
+                      <span className="rounded-full bg-[#c6ebda] px-2.5 py-1 text-xs text-[#2d4d41]">
                         {entry.moodTag}
                       </span>
                     ) : null}
                   </div>
-                  <p className="mt-3 whitespace-pre-wrap text-sm leading-6">{entry.body}</p>
+                  <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-[#414845]">{entry.body}</p>
                   <div className="mt-4 flex flex-wrap gap-3">
                     <Button
-                      className="rounded-none border-2 border-[#2c1601] px-4 py-2 shadow-[3px_3px_0_#2c1601]"
+                      className="px-4 py-2"
                       onClick={() => startEditing(entry)}
                       variant="secondary"
                     >
                       Edit
                     </Button>
                     <Button
-                      className="rounded-none border-2 border-[#2c1601] px-4 py-2 shadow-[3px_3px_0_#2c1601]"
+                      className="px-4 py-2"
                       isLoading={deletingId === entry.id}
                       onClick={() => entry.id && void handleDelete(entry.id)}
                       variant="danger"
@@ -299,12 +300,13 @@ export default function VaultPage() {
               ))}
             </div>
           ) : (
-            <p className="mt-5 border-2 border-[#2c1601] bg-white p-4 font-bold">
-              No entries yet. Start with one honest sentence.
+            <p className="mt-6 rounded-[1.75rem] bg-white/80 p-5 text-sm leading-6 text-[#795841]">
+              Nothing written yet. This space is here whenever the words arrive.
             </p>
           )}
-        </div>
+        </aside>
       </section>
+      </div>
     </div>
   );
 }

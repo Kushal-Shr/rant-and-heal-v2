@@ -1,9 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { EmptyState } from "@/src/components/shared/EmptyState";
+
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/src/components/ui/Button";
+import { Input } from "@/src/components/forms/Input";
 import { Spinner } from "@/src/components/ui/Spinner";
+import { TherapistProfileCard } from "@/src/components/shared/TherapistProfileCard";
 import { useAuth } from "@/src/context/AuthContext";
 import { observePatientConnection, requestConnection, revokeConnection } from "@/src/services/connectionService";
 import { listVerifiedTherapists } from "@/src/services/therapistService";
@@ -17,9 +21,11 @@ export default function TherapyPage() {
   const { user } = useAuth();
   const [therapists, setTherapists] = useState<TherapistProfile[]>([]);
   const [connection, setConnection] = useState<Connection | null>(null);
+  const [directoryError, setDirectoryError] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busyTherapistId, setBusyTherapistId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
 
   useEffect(() => {
     let mounted = true;
@@ -32,7 +38,8 @@ export default function TherapyPage() {
       })
       .catch((error) => {
         console.error("Failed to load therapists:", error);
-        setFeedback("Could not load verified therapists.");
+        setDirectoryError(true);
+        setFeedback("Could not load verified therapists. Please refresh to try again.");
       })
       .finally(() => {
         if (mounted) {
@@ -60,6 +67,17 @@ export default function TherapyPage() {
     );
   }, [user?.uid]);
 
+  async function handleRevoke() {
+    if (!user) return;
+    setBusyTherapistId(connection?.therapistId ?? null);
+    try {
+      await revokeConnection(user.uid);
+      setFeedback("Your connection has been ended.");
+    } catch {
+      setFeedback("Could not end this connection. Please try again.");
+    } finally { setBusyTherapistId(null); }
+  }
+
   async function handleRequest(therapistId: string) {
     if (!user?.uid) {
       return;
@@ -81,92 +99,74 @@ export default function TherapyPage() {
 
   const activeTherapist = therapists.find((therapist) => therapist.therapistId === connection?.therapistId);
   const hasBlockingConnection = connection?.status === ConnectionStatus.PENDING || connection?.status === ConnectionStatus.ACTIVE;
+  const visibleTherapists = useMemo(() => {
+    const normalizedTerm = searchTerm.trim().toLowerCase();
+    if (!normalizedTerm) return therapists;
+    return therapists.filter((therapist) => [therapist.name, therapist.specialty, therapist.licenseNo, therapist.bio].some((value) => value.toLowerCase().includes(normalizedTerm)));
+  }, [searchTerm, therapists]);
 
   return (
-    <div className="space-y-6 font-['Plus_Jakarta_Sans'] text-[#2c1601]">
-      <header className="border-2 border-[#2c1601] bg-[#fff8f5] p-6 shadow-[8px_8px_0_#abcebf]">
-        <p className="text-sm font-bold uppercase text-[#4a6b5e]">Verified therapy</p>
-        <h1 className="mt-2 text-3xl font-black">Choose one therapist connection</h1>
+    <div className="min-w-0">
+
+      <div className="mx-auto max-w-7xl space-y-6 pb-10">
+      <header className="flex flex-col justify-between gap-6 px-3 pt-3 lg:flex-row lg:items-end lg:px-1">
+        <div className="max-w-2xl"><p className="text-xs font-medium uppercase tracking-[0.12em] text-[#4a6b5e]/70">Verified professionals</p><h1 className="mt-2 text-4xl font-medium tracking-[-0.04em] text-[#2c1601] sm:text-5xl">Find your match</h1><p className="mt-3 text-base font-light leading-7 text-[#414845]">Connect with verified professionals. Take your time browsing and choose one connection at a time.</p></div>
+        <div className="w-full lg:max-w-sm"><Input aria-label="Search verified therapists" className="bg-white/85 pr-4" leftIcon={<span aria-hidden="true" className="material-symbols-outlined">search</span>} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search by name or specialty" value={searchTerm} /></div>
       </header>
 
       {connection && connection.status !== ConnectionStatus.REVOKED ? (
-        <section className="border-2 border-[#2c1601] bg-[#ffd86b] p-5 shadow-[8px_8px_0_#2c1601]">
-          <p className="text-sm font-black uppercase">Current status: {connection.status}</p>
-          <h2 className="mt-2 text-xl font-black">{activeTherapist?.name ?? "Selected therapist"}</h2>
+        <section className="rounded-[2rem] border border-white/75 bg-[#c6ebda]/70 p-5 shadow-[0_15px_30px_-20px_rgba(74,107,94,0.25),inset_0_2px_4px_rgba(255,255,255,0.65)] sm:p-6">
+          <p className="text-xs font-medium uppercase tracking-[0.12em] text-[#2d4d41]/70">Current status · {connection.status.toLowerCase()}</p>
+          <h2 className="mt-2 text-2xl font-medium text-[#2d4d41]">{activeTherapist?.name ?? "Selected therapist"}</h2>
           {connection.status === ConnectionStatus.ACTIVE ? (
             <div className="mt-4 flex flex-wrap gap-3">
-              <Link className="border-2 border-[#2c1601] bg-white px-5 py-3 font-black shadow-[4px_4px_0_#2c1601]" href={`/therapy/chat/${connection.therapistId}`}>
+              <Link className="rounded-full bg-[#325347] px-5 py-3 text-sm font-medium text-white shadow-[0_8px_16px_-6px_rgba(50,83,71,0.3)] transition hover:bg-[#4a6b5e]" href={`/therapy/chat/${connection.therapistId}`}>
                 Message
               </Link>
-              <Button className="rounded-none border-2 border-[#2c1601] shadow-[4px_4px_0_#2c1601]" onClick={() => user?.uid && revokeConnection(user.uid)} variant="outline">
-                Revoke
+              <Button isLoading={busyTherapistId === connection.therapistId} onClick={handleRevoke} variant="outline">
+                End connection
               </Button>
             </div>
           ) : connection.status === ConnectionStatus.PENDING ? (
-            <p className="mt-3 font-bold">Your request is waiting for therapist review.</p>
+            <p className="mt-3 text-sm leading-6 text-[#2d4d41]">Your request is waiting for therapist review.</p>
           ) : (
-            <p className="mt-3 font-bold">This request was not accepted. You can choose another therapist.</p>
+            <p className="mt-3 text-sm leading-6 text-[#2d4d41]">This request was not accepted. You can choose another therapist.</p>
           )}
         </section>
       ) : null}
 
-      {feedback ? <p className="border-2 border-[#2c1601] bg-white p-4 font-bold">{feedback}</p> : null}
+      {feedback ? <p className="rounded-[1.5rem] bg-white/80 px-5 py-4 text-sm text-[#414845] shadow-sm" role="status">{feedback}</p> : null}
 
       {loading ? (
         <div className="flex min-h-[30vh] items-center justify-center">
           <Spinner label="Loading therapists" />
         </div>
-      ) : (
-        <section className="grid gap-5 md:grid-cols-2">
+      ) : directoryError ? null : (
+        <section className="grid gap-6 xl:grid-cols-2 2xl:grid-cols-3">
           {therapists.length === 0 ? (
-            <div className="border-2 border-[#2c1601] bg-white p-6 shadow-[8px_8px_0_#e1d4ff] md:col-span-2">
-              <p className="text-sm font-black uppercase text-[#4a6b5e]">No verified therapists yet</p>
-              <h2 className="mt-2 text-2xl font-black">The directory is waiting for practitioner profiles.</h2>
-              <p className="mt-3 max-w-2xl text-sm font-bold leading-6 text-[#414845]">
-                Sign in as a practitioner and complete therapist onboarding to publish a verified MVP profile here.
-              </p>
-              <Link
-                className="mt-5 inline-flex border-2 border-[#2c1601] bg-[#ffd86b] px-5 py-3 font-black shadow-[4px_4px_0_#2c1601]"
-                href="/auth/provider/signup"
-              >
-                Create practitioner profile
-              </Link>
-            </div>
-          ) : therapists.map((therapist) => {
+            <div className="xl:col-span-2 2xl:col-span-3"><EmptyState icon="spa" title="More support is on its way" description="There aren’t any verified therapists listed yet. You can keep journaling or talk with Momo while you check back." href="/momo" action="Talk to Momo" /></div>
+          ) : visibleTherapists.map((therapist) => {
             const isSelected = connection?.therapistId === therapist.therapistId;
             const specialties = therapist.specialty.split(",").map((item) => item.trim()).filter(Boolean);
 
             return (
-              <article className="border-2 border-[#2c1601] bg-white p-5 shadow-[8px_8px_0_#abcebf]" key={therapist.therapistId}>
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <h2 className="text-2xl font-black">{therapist.name}</h2>
-                    <p className="mt-1 text-sm font-bold text-[#4a6b5e]">{therapist.licenseNo}</p>
-                  </div>
-                  <span className="border-2 border-[#2c1601] bg-[#abcebf] px-3 py-1 text-xs font-black">Verified</span>
-                </div>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {(specialties.length ? specialties : ["General therapy"]).map((specialty) => (
-                    <span className="border-2 border-[#2c1601] bg-[#e1d4ff] px-3 py-1 text-xs font-black" key={specialty}>
-                      {specialty}
-                    </span>
-                  ))}
-                </div>
-                <p className="mt-4 min-h-20 text-sm leading-6">{therapist.bio || "A verified therapist available for secure one-to-one support."}</p>
-                <Button
-                  className="mt-5 w-full rounded-none border-2 border-[#2c1601] shadow-[4px_4px_0_#2c1601]"
-                  disabled={hasBlockingConnection && !isSelected}
-                  isLoading={busyTherapistId === therapist.therapistId}
-                  onClick={() => handleRequest(therapist.therapistId)}
-                  variant={isSelected ? "secondary" : "primary"}
-                >
-                  {isSelected ? connection?.status ?? "Selected" : hasBlockingConnection ? "Unavailable" : "Request connection"}
-                </Button>
-              </article>
+              <TherapistProfileCard
+                bio={therapist.bio || "A verified therapist available for secure one-to-one support."}
+                ctaLabel={isSelected && hasBlockingConnection ? (connection?.status === ConnectionStatus.ACTIVE ? "Connected" : "Request pending") : hasBlockingConnection ? "Unavailable" : "Request connection"}
+                disabled={hasBlockingConnection}
+                isLoading={busyTherapistId === therapist.therapistId}
+                key={therapist.therapistId}
+                name={therapist.name}
+                onConnect={() => handleRequest(therapist.therapistId)}
+                specialties={specialties.length ? specialties : ["General therapy"]}
+                title={therapist.licenseNo || "Verified therapist"}
+              />
             );
           })}
+          {therapists.length > 0 && visibleTherapists.length === 0 ? <div className="rounded-[2rem] bg-white/75 p-7 text-sm text-[#414845] xl:col-span-2 2xl:col-span-3">No verified therapists match that search yet. Try another specialty or name.</div> : null}
         </section>
       )}
+      </div>
     </div>
   );
 }

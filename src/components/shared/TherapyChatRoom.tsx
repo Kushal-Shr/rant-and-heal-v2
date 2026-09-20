@@ -57,7 +57,7 @@ export function TherapyChatRoom({
   const [isUpdatingCall, setIsUpdatingCall] = useState(false);
   const [openCall, setOpenCall] = useState<TherapyCallSession | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const bottomRef = useRef<HTMLDivElement | null>(null);
+  const messagesRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     return observeTherapyMessages(
@@ -98,7 +98,8 @@ export function TherapyChatRoom({
   }, [patientUid, senderRole, user?.uid]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    const container = messagesRef.current;
+    if (container) container.scrollTo({ top: container.scrollHeight, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
   }, [messages]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -180,26 +181,25 @@ export function TherapyChatRoom({
   const callActionLabel = callInProgress || callStartedByMe ? "Return to call" : "Join call";
 
   return (
-    <div className="flex min-h-[calc(100vh-3rem)] flex-col border-2 border-[#2c1601] bg-[#fff8f5] font-['Plus_Jakarta_Sans'] text-[#2c1601] shadow-[8px_8px_0_#abcebf]">
-      <header className="flex flex-wrap items-center justify-between gap-4 border-b-2 border-[#2c1601] bg-white p-5">
+    <div className="flex h-[calc(100dvh-7rem)] min-h-[36rem] md:h-[calc(100dvh-4rem)] flex-col overflow-hidden rounded-[2.5rem] border border-white/80 bg-white/70 font-['Plus_Jakarta_Sans'] text-[#2c1601] shadow-[0_24px_48px_-24px_rgba(121,88,65,0.24),inset_0_2px_4px_rgba(255,255,255,0.85)]">
+      <header className="flex shrink-0 flex-wrap items-center justify-between gap-4 border-b border-[#ffeada] bg-[#fff8f5]/80 p-5 sm:p-6">
         <div>
-          <Link className="text-sm font-black text-[#4a6b5e] underline" href={backHref}>
-            Back
+          <Link className="inline-flex items-center gap-1 rounded-full bg-[#fff1e8] px-3 py-1.5 text-sm font-medium text-[#325347] transition hover:bg-[#ffe3cd]" href={backHref}>
+            <span aria-hidden="true" className="material-symbols-outlined text-base">arrow_back</span> Back
           </Link>
-          <h1 className="mt-2 text-2xl font-black">{title}</h1>
-          <p className="text-sm font-bold text-[#4a6b5e]">{subtitle}</p>
+          <h1 className="mt-3 text-2xl font-medium tracking-[-0.02em] text-[#325347]">{title}</h1>
+          <p className="mt-1 text-sm font-light text-[#4a6b5e]">{subtitle}</p>
         </div>
         <div className="flex flex-wrap gap-3">
           {callActionHref ? (
             <Link
-              className="border-2 border-[#2c1601] bg-[#abcebf] px-5 py-3 font-black shadow-[4px_4px_0_#2c1601]"
+              className="rounded-full bg-[#c6ebda] px-5 py-3 text-sm font-medium text-[#325347] shadow-[0_8px_16px_-6px_rgba(50,83,71,0.2),inset_0_1px_3px_rgba(255,255,255,0.8)] transition hover:bg-[#abcebf] active:scale-95"
               href={callActionHref}
             >
               {callActionLabel}
             </Link>
           ) : (
             <Button
-              className="rounded-none border-2 border-[#2c1601] shadow-[4px_4px_0_#2c1601]"
               isLoading={isStartingCall}
               onClick={handleStartCall}
             >
@@ -210,17 +210,17 @@ export function TherapyChatRoom({
       </header>
 
       {openCall ? (
-        <section className="border-b-2 border-[#2c1601] bg-[#ffd86b] p-4">
+        <section className="border-b border-[#ffeada] bg-[#ffe3cd]/75 p-4 sm:px-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="text-sm font-black uppercase">
+              <p className="text-xs font-medium uppercase tracking-[0.12em] text-[#795841]">
                 {callInProgress ? "Call in progress" : callStartedByMe ? "You started a call" : "Incoming call"}
               </p>
-              <p className="text-sm font-bold text-[#4a6b5e]">Status: {openCall.status}</p>
+              <p className="mt-1 text-sm font-light text-[#795841]">Status: {openCall.status.toLowerCase()}</p>
             </div>
             {callActionHref ? (
               <Link
-                className="border-2 border-[#2c1601] bg-white px-4 py-2 font-black shadow-[3px_3px_0_#2c1601]"
+                className="rounded-full bg-white/85 px-4 py-2 text-sm font-medium text-[#795841] shadow-sm transition hover:bg-white"
                 href={callActionHref}
               >
                 {callInProgress || callStartedByMe ? "Return" : "Join"}
@@ -228,7 +228,7 @@ export function TherapyChatRoom({
             ) : null}
             {isIncomingCall ? (
               <Button
-                className="rounded-none border-2 border-[#2c1601] px-4 py-2 shadow-[3px_3px_0_#2c1601]"
+                className="px-4 py-2"
                 isLoading={isUpdatingCall}
                 onClick={handleDeclineCall}
                 variant="danger"
@@ -238,7 +238,7 @@ export function TherapyChatRoom({
             ) : null}
             {callStartedByMe || callInProgress ? (
               <Button
-                className="rounded-none border-2 border-[#2c1601] px-4 py-2 shadow-[3px_3px_0_#2c1601]"
+                className="px-4 py-2"
                 isLoading={isUpdatingCall}
                 onClick={handleEndCall}
                 variant="danger"
@@ -250,14 +250,15 @@ export function TherapyChatRoom({
         </section>
       ) : null}
 
-      <main className="flex-1 overflow-y-auto p-5">
+      <div ref={messagesRef} className="min-h-0 flex-1 overflow-y-auto bg-[#fff8f5]/45 p-5 sm:p-6">
         {isLoading ? (
           <div className="flex min-h-[40vh] items-center justify-center">
             <Spinner label="Loading chat" />
           </div>
         ) : messages.length === 0 ? (
-          <div className="border-2 border-[#2c1601] bg-[#e1d4ff] p-5 font-bold">
-            No messages yet.
+          <div className="mx-auto flex max-w-md flex-col items-center rounded-[2rem] bg-[#fff1e8] p-7 text-center shadow-[inset_0_3px_8px_rgba(44,22,1,0.04)]">
+            <span aria-hidden="true" className="material-symbols-outlined text-3xl text-[#4a6b5e]/65">waving_hand</span>
+            <p className="mt-3 text-sm font-light leading-6 text-[#414845]">No messages yet. A gentle hello is enough to begin.</p>
           </div>
         ) : (
           <div className="space-y-4">
@@ -270,35 +271,35 @@ export function TherapyChatRoom({
                   key={message.id}
                 >
                   <div
-                    className={`max-w-[78%] border-2 border-[#2c1601] p-4 shadow-[4px_4px_0_#2c1601] ${
-                      isMine ? "bg-[#abcebf]" : "bg-white"
+                    className={`max-w-[78%] rounded-2xl p-4 shadow-[0_10px_20px_-14px_rgba(44,22,1,0.24)] ${
+                      isMine ? "rounded-br-md bg-[#c6ebda]/70 text-[#2d4d41]" : "rounded-bl-md bg-white text-[#2c1601]"
                     }`}
                   >
                     <p className="whitespace-pre-wrap text-sm leading-6">{message.text}</p>
-                    <p className="mt-2 text-xs font-black uppercase text-[#4a6b5e]">
+                    <p className="mt-2 text-xs font-medium text-[#4a6b5e]/75">
                       {isMine ? "You" : message.senderRole === TherapyMessageSenderRole.THERAPIST ? "Therapist" : "Patient"} · {formatMessageTime(message)}
                     </p>
                   </div>
                 </article>
               );
             })}
-            <div ref={bottomRef} />
+
           </div>
         )}
-      </main>
+      </div>
 
-      <form className="border-t-2 border-[#2c1601] bg-white p-4" onSubmit={handleSubmit}>
-        {error ? <p className="mb-3 border-2 border-[#2c1601] bg-[#ffdad6] p-3 text-sm font-bold">{error}</p> : null}
+      <form className="shrink-0 border-t border-[#ffeada] bg-white/85 p-4 sm:p-5" onSubmit={handleSubmit}>
+        {error ? <p className="mb-3 rounded-[1rem] bg-[#ffdad6] p-3 text-sm text-[#93000a]">{error}</p> : null}
         <div className="flex flex-col gap-3 sm:flex-row">
           <Textarea
-            className="min-h-16 flex-1 rounded-none border-2 border-[#2c1601] bg-[#fff8f5] p-4 shadow-none"
+            aria-label="Message"
+            className="min-h-16 flex-1 rounded-[1.5rem] bg-[#fff1e8] p-4 shadow-[inset_0_3px_8px_rgba(44,22,1,0.04)]"
             onChange={(event) => setInputValue(event.target.value)}
             placeholder="Type a message..."
             rows={2}
             value={inputValue}
           />
           <Button
-            className="rounded-none border-2 border-[#2c1601] shadow-[4px_4px_0_#2c1601]"
             isLoading={isSending}
             type="submit"
           >

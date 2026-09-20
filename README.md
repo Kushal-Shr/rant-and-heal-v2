@@ -127,3 +127,11 @@ npm run build
 ```
 
 See [ARCHITECTURE.md](./ARCHITECTURE.md) and [docs/SYSTEM_MAP.md](./docs/SYSTEM_MAP.md) for the broader product architecture.
+
+## Interface and chart data
+
+All pages share the Soft Clay Realism canvas and responsive navigation from the root layout. The design reference is `stitch_rant_and_heal_ui/soft_clay_realism/DESIGN.md`. Signed-out navigation exposes Home and Crisis Support, plus sign-in/account creation. Patient and practitioner links appear only after the current account’s role resolves.
+
+The patient mood chart uses the existing latest seven `health_metrics` entries, including real dates and a values table; it does not represent seven calendar days. This redesign requires no database, API, or Firestore-rule changes. Sleep tracking would need its own data fields and validation. Therapist access to mood or journal data would require a separately designed consent and authorization flow; those records remain private.
+
+See `docs/soft-clay-ui.md` for implementation, graphics provenance, and validation notes.

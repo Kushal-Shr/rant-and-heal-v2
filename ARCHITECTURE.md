@@ -15,13 +15,13 @@ The project follows a hybrid directory layout:
 │   ├── page.tsx                      # Landing Page (public facing)
 │   ├── layout.tsx                    # Root Layout
 │   ├── (patient)/                    # Patient-specific routes (authenticated)
-│   │   ├── layout.tsx                # Patient shell with sidebar
+│   │   ├── layout.tsx                # Patient spacing and role guard
 │   │   ├── dashboard/
 │   │   ├── momo/                     # AI Guide ("Momo") text and video calls
 │   │   ├── therapy/                  # Therapist chat and sessions
 │   │   └── vault/                    # Patient secure journal/data vault
 │   ├── (therapist)/                  # Therapist-specific routes (authenticated)
-│   │   ├── layout.tsx                # Therapist shell with sidebar
+│   │   ├── layout.tsx                # Therapist spacing and role guard
 │   │   ├── portal/                   # Therapist portal dashboard
 │   │   ├── patients/                 # Patient list and patient detail pages
 │   │   ├── messages/                 # Therapist-patient messaging
@@ -69,12 +69,12 @@ The project follows a hybrid directory layout:
 - User sign-ups require atomic syncing between Firebase Auth and Firestore.
 - In `signUpWithEmail`, if an account is successfully registered in Firebase Auth but the corresponding identity record (`/users/{uid}`) fails to write in Firestore, a **ghost rollback** executes automatically, deleting the Auth user representation to maintain state consistency.
 
-### Component Design (Radiant Brutalism)
+### Component Design (Soft Clay Realism)
 - UI primitives are organized into an atomic structure:
   - **Atoms (`ui/`)**: Basic interactive elements (e.g. `Button`, `Badge`, `Avatar`) that enforce visual tokens.
   - **Forms (`forms/`)**: Accessible fields with consistent focus outlines, error wrappers, and labels.
   - **Shared Blocks (`shared/`)**: Assembled compound blocks like `ChatBubble` and `TherapistProfileCard`.
-  - **Layout (`layout/`)**: Structural components like `PatientSidebar` and `TherapistSidebar`.
+  - **Layout (`layout/`)**: The root `GlobalSidebar` supplies persistent navigation, with a mobile disclosure menu. The root layout owns the cream/sage/peach canvas; route groups own spacing and role guards.
 
 ---
 
@@ -82,8 +82,11 @@ The project follows a hybrid directory layout:
 
 ### Route Groups
 - **`app/page.tsx`**: Public landing page.
-- **`app/(patient)`**: Layout wraps patient navigation and implements route guarding restricting to the `PATIENT` role.
+- **`app/(patient)`**: Layout implements route guarding restricting to the `USER` role.
 - **`app/(therapist)`**: Layout wraps clinical tools and implements route guarding restricting to the `THERAPIST` role.
+
+- `useCurrentProfile` associates each profile result with its UID and lookup attempt. Navigation and role guards do not reuse another account’s role; failed lookups offer a retry. This UI guard does not replace Firestore or API authorization.
+- `MoodTrend` renders the latest seven dated mood entries with a 1–10 axis, equal check-in spacing, and a values table. It uses the existing owner-only `users/{uid}/health_metrics` query. No backend migration is needed.
 
 ### Firestore Rules matching
 - The document ID inside the `users` collection matches the authenticated user UID exactly. This allows secure, owner-only read/write operations via:

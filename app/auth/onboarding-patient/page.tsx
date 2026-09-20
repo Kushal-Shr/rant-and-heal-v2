@@ -89,11 +89,8 @@ export default function PatientOnboardingPage() {
 
   if (authLoading || !user) {
     return (
-      <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#fff8f5] px-6 py-10 font-['Plus_Jakarta_Sans'] text-[#2c1601]">
-        <div className="absolute inset-0 -z-10 overflow-hidden">
-          <div className="absolute left-[-10%] top-[-12%] h-[28rem] w-[28rem] rounded-full bg-[#fed1b4]/60 blur-3xl" />
-          <div className="absolute bottom-[-18%] right-[-8%] h-[30rem] w-[30rem] rounded-full bg-[#c6ebda]/50 blur-3xl" />
-        </div>
+      <div className="relative flex min-h-[calc(100dvh-5rem)] md:min-h-dvh items-center justify-center overflow-hidden px-6 py-10 font-['Plus_Jakarta_Sans'] text-[#2c1601]">
+
         <Card variant="solid" className="w-full max-w-md p-8 text-center sm:p-10">
           <div className="mx-auto mb-5 h-12 w-12 animate-spin rounded-full border-4 border-[#abcebf] border-t-[#325347]" />
           <p className="text-sm font-medium uppercase tracking-[0.18em] text-[#4a6b5e]">
@@ -103,26 +100,22 @@ export default function PatientOnboardingPage() {
             We&apos;re checking your session and setting up your onboarding.
           </p>
         </Card>
-      </main>
+      </div>
     );
   }
 
   return (
-    <main className="relative min-h-screen overflow-hidden bg-[#fff8f5] px-6 py-10 font-['Plus_Jakarta_Sans'] text-[#2c1601] sm:px-8 lg:px-12">
-      <div className="absolute inset-0 -z-10 overflow-hidden">
-        <div className="absolute left-[-8%] top-[-10%] h-[24rem] w-[24rem] rounded-full bg-[#fed1b4]/70 blur-3xl sm:h-[32rem] sm:w-[32rem]" />
-        <div className="absolute bottom-[-18%] right-[-10%] h-[26rem] w-[26rem] rounded-full bg-[#c6ebda]/60 blur-3xl sm:h-[34rem] sm:w-[34rem]" />
-        <div className="absolute right-[12%] top-[42%] h-[16rem] w-[16rem] rounded-full bg-[#ffe3cd]/70 blur-3xl" />
-      </div>
+    <div className="relative min-h-[calc(100dvh-5rem)] md:min-h-dvh overflow-hidden px-6 py-10 font-['Plus_Jakarta_Sans'] text-[#2c1601] sm:px-8 lg:px-12">
+
 
       <div className="mx-auto flex min-h-[calc(100vh-5rem)] w-full max-w-6xl items-center">
-        <div className="grid w-full gap-8 lg:grid-cols-[1.05fr_0.95fr] lg:gap-10">
+        <div className="grid w-full gap-8 xl:grid-cols-[1.05fr_0.95fr] lg:gap-10">
           <section className="flex flex-col justify-center">
             <Link href="/" className="mb-6 inline-flex items-center gap-3 self-start">
-              <span className="flex h-11 w-11 items-center justify-center rounded-full bg-[#c6ebda] text-lg font-black text-[#325347] shadow-[0_12px_30px_-12px_rgba(50,83,71,0.35)]">
+              <span className="flex h-11 w-11 items-center justify-center rounded-full bg-[#c6ebda] text-lg font-medium text-[#325347] shadow-[0_12px_30px_-12px_rgba(50,83,71,0.35)]">
                 R
               </span>
-              <span className="text-xl font-extrabold italic text-[#4a6b5e]">Rant & Heal</span>
+              <span className="text-xl font-semibold text-[#4a6b5e]">Rant & Heal</span>
             </Link>
 
             <div className="max-w-xl">
@@ -258,7 +251,7 @@ export default function PatientOnboardingPage() {
                   variant="primary"
                   size="lg"
                   isLoading={isSubmitting}
-                  className="mt-2 w-full uppercase tracking-[0.16em]"
+                  className="mt-2 w-full"
                 >
                   Complete Onboarding
                 </Button>
@@ -267,6 +260,6 @@ export default function PatientOnboardingPage() {
           </Card>
         </div>
       </div>
-    </main>
+    </div>
   );
 }
