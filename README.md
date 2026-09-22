@@ -31,6 +31,7 @@ FIREBASE_ADMIN_PRIVATE_KEY=
 GEMINI_API_KEY=
 GEMINI_MODEL=gemini-2.5-flash
 GEMINI_LIVE_MODEL=gemini-3.1-flash-live-preview
+GEMINI_WEEKLY_REPORT_MODEL=gemini-3.8-flash
 
 # Optional TURN relay for therapist video calls. Keep these server-only.
 TURN_URLS=turn:turn.example.com:3478,turns:turn.example.com:5349
@@ -52,6 +53,23 @@ SAFETY_SUPPORT_ALERT_EMAIL=
 ```
 
 Never commit `.env.local` or Firebase service-account JSON files.
+
+## Encrypted journal Vault
+
+Journal titles, bodies, and migrated free-text tags are encrypted in the browser with AES-256-GCM before Firestore receives them. The encryption key is derived with PBKDF2-SHA-256 (600,000 iterations) from a Vault passphrase and a random 256-bit salt. AES-GCM uses a fresh 96-bit IV for every encryption. The passphrase is never persisted. After a successful unlock, the browser may structured-clone the non-extractable `CryptoKey` into IndexedDB for up to 14 days. Explicit locking, logout, expiry, or clearing site data removes access and requires the passphrase again. The pilot has no passphrase recovery.
+
+Firestore data is separated as follows:
+
+- `users/{uid}/vault/config`: KDF salt/settings and encrypted verification sentinel; never the passphrase or key.
+- `users/{uid}/journals/{entryId}`: `userId`, `ciphertext`, `iv`, `cryptoVersion`, and timestamps only.
+- `users/{uid}/journal_metrics/{entryId}`: coarse length/time/local-day/edit behavior and optional user-selected emotion/context/intent values.
+- `weekly_reports/{reportId}`: server-owned aggregate output that is readable by the patient and, only when explicitly shared, their current active therapist.
+
+Length buckets are `SHORT` (up to 100 words), `MEDIUM` (101–400), and `LONG` (over 400). Time buckets use the browser's local time: `MORNING` (05:00–11:59), `AFTERNOON` (12:00–16:59), `EVENING` (17:00–21:59), and `LATE_NIGHT` (22:00–04:59). These are behavioral observations, not clinical inferences.
+
+Legacy plaintext entries migrate only after the user creates or unlocks the Vault. Each entry is replaced atomically with ciphertext while its safe metric is created. Failed IDs are reported in the UI and remain recoverable for retry. No Gemini call or semantic analysis occurs during migration.
+
+Weekly journal aggregation queries only `journal_metrics`. Gemini receives counts/distributions and explicit user selections, never journal documents, ciphertext, decrypted text, excerpts, titles, embeddings, or semantic derivatives. The repository provides the aggregation/request contract; a scheduled weekly-report job did not previously exist and is not introduced implicitly here.
 
 ## Firebase Rules
 
@@ -128,7 +146,11 @@ Known follow-up:
 npx tsc --noEmit
 npm run lint
 npm run build
+npm test
+npm run test:rules
 ```
+
+`npm run test:rules` requires a Java runtime for the Firebase Firestore emulator.
 
 See [ARCHITECTURE.md](./ARCHITECTURE.md) and [docs/SYSTEM_MAP.md](./docs/SYSTEM_MAP.md) for the broader product architecture.
 
@@ -136,6 +158,6 @@ See [ARCHITECTURE.md](./ARCHITECTURE.md) and [docs/SYSTEM_MAP.md](./docs/SYSTEM_
 
 All pages share the Soft Clay Realism canvas and responsive navigation from the root layout. The design reference is `stitch_rant_and_heal_ui/soft_clay_realism/DESIGN.md`. Signed-out navigation exposes Home and Crisis Support, plus sign-in/account creation. Patient and practitioner links appear only after the current account’s role resolves.
 
-The patient mood chart uses the existing latest seven `health_metrics` entries, including real dates and a values table; it does not represent seven calendar days. This redesign requires no database, API, or Firestore-rule changes. Sleep tracking would need its own data fields and validation. Therapist access to mood or journal data would require a separately designed consent and authorization flow; those records remain private.
+The patient mood chart uses the existing latest seven `health_metrics` entries, including real dates and a values table; it does not represent seven calendar days. Journal text remains private to the patient; raw per-entry journal metrics are also patient-only. A therapist can read only a user-shared weekly report while the current relationship remains active.
 
 See `docs/soft-clay-ui.md` for implementation, graphics provenance, and validation notes.

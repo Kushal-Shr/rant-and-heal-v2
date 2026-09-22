@@ -139,6 +139,9 @@ export default function MomoPage() {
       });
 
       setMessages(nextMessages);
+    }, (error) => {
+      console.error("FIRESTORE MESSAGE LISTENER ERROR:", error.code);
+      setSendError("Could not load this conversation. Check your connection and reload the page.");
     });
 
     return () => unsubscribe();

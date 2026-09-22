@@ -1,5 +1,6 @@
 import "./globals.css";
 import { AuthProvider } from "@/src/context/AuthContext";
+import { VaultProvider } from "@/src/context/VaultContext";
 import { GlobalSidebar } from "@/src/components/layout/GlobalSidebar";
 
 export default function RootLayout({
@@ -19,10 +20,12 @@ export default function RootLayout({
         <div aria-hidden="true" className="app-canvas" />
         <a href="#main-content" className="skip-link">Skip to content</a>
         <AuthProvider>
-          <GlobalSidebar />
-          <main id="main-content" tabIndex={-1} className="app-main">
-            {children}
-          </main>
+          <VaultProvider>
+            <GlobalSidebar />
+            <main id="main-content" tabIndex={-1} className="app-main">
+              {children}
+            </main>
+          </VaultProvider>
         </AuthProvider>
       </body>
     </html>

@@ -19,7 +19,6 @@ export interface UserProfile {
   emergencyContact?: string;
   isIncognito?: boolean;
   mfaEnabled: boolean;
-  encryptionKeyHash?: string; // Optional for users who haven't initialized their vault
   createdAt: ServerTime;
 }
 
@@ -126,13 +125,4 @@ export interface MoodEntry {
   energyScore: number;
   note?: string;
   createdAt: ServerTime;
-}
-
-export interface JournalEntry {
-  id?: string;
-  title: string;
-  body: string;
-  moodTag?: string;
-  createdAt: ServerTime;
-  updatedAt: ServerTime;
 }

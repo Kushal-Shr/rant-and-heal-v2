@@ -31,7 +31,6 @@ export async function syncUserProfile(
       role: data.role || UserRole.USER,
       onboardingComplete: data.onboardingComplete ?? false,
       mfaEnabled: data.mfaEnabled ?? false,
-      encryptionKeyHash: data.encryptionKeyHash || "",
       createdAt: serverTimestamp(),
     };
     await setDoc(userRef, newUserProfile);

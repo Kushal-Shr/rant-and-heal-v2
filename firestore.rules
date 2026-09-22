@@ -15,6 +15,11 @@ service cloud.firestore {
         get(/databases/$(database)/documents/connections/$(patientId)).data.therapistId == request.auth.uid &&
         get(/databases/$(database)/documents/connections/$(patientId)).data.status in ['PENDING', 'ACTIVE'];
     }
+    function activeReportTherapist(patientId) {
+      return signedIn() &&
+        get(/databases/$(database)/documents/connections/$(patientId)).data.therapistId == request.auth.uid &&
+        get(/databases/$(database)/documents/connections/$(patientId)).data.status == 'ACTIVE';
+    }
 
     match /users/{userId} {
       allow read: if owner(userId);
@@ -49,19 +54,92 @@ service cloud.firestore {
       }
 
       match /journals/{entryId} {
-        function validJournal() {
-          return request.resource.data.title is string &&
-            request.resource.data.title.size() > 0 && request.resource.data.title.size() <= 160 &&
-            request.resource.data.body is string &&
-            request.resource.data.body.size() > 0 && request.resource.data.body.size() <= 20000 &&
-            request.resource.data.moodTag is string && request.resource.data.moodTag.size() <= 40;
+        function validEncryptedJournal() {
+          return request.resource.data.keys().hasOnly([
+              'userId', 'ciphertext', 'iv', 'cryptoVersion', 'createdAt', 'updatedAt'
+            ]) &&
+            request.resource.data.keys().hasAll([
+              'userId', 'ciphertext', 'iv', 'cryptoVersion', 'createdAt', 'updatedAt'
+            ]) &&
+            request.resource.data.userId == userId &&
+            request.resource.data.ciphertext is string &&
+            request.resource.data.ciphertext.size() > 0 && request.resource.data.ciphertext.size() <= 50000 &&
+            request.resource.data.iv is string && request.resource.data.iv.size() == 16 &&
+            request.resource.data.cryptoVersion == 1 &&
+            request.resource.data.createdAt is timestamp && request.resource.data.updatedAt is timestamp;
         }
         allow read: if owner(userId);
-        allow create: if owner(userId) && validJournal() &&
-          request.resource.data.keys().hasOnly(['title', 'body', 'moodTag', 'createdAt', 'updatedAt']) &&
+        allow create: if owner(userId) && validEncryptedJournal() &&
           request.resource.data.createdAt == request.time && request.resource.data.updatedAt == request.time;
-        allow update: if owner(userId) && validJournal() &&
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title', 'body', 'moodTag', 'updatedAt']) &&
+        allow update: if owner(userId) && validEncryptedJournal() &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'userId', 'ciphertext', 'iv', 'cryptoVersion', 'title', 'body', 'moodTag', 'updatedAt'
+          ]) &&
+          request.resource.data.createdAt == resource.data.createdAt &&
+          request.resource.data.updatedAt == request.time;
+        allow delete: if owner(userId);
+      }
+
+      match /vault/{metadataId} {
+        allow read: if owner(userId) && metadataId == 'config';
+        allow create: if owner(userId) && metadataId == 'config' &&
+          request.resource.data.keys().hasOnly(['version', 'kdf', 'verification', 'createdAt']) &&
+          request.resource.data.version == 1 &&
+          request.resource.data.kdf is map &&
+          request.resource.data.kdf.keys().hasOnly(['algorithm', 'hash', 'iterations', 'salt']) &&
+          request.resource.data.kdf.algorithm == 'PBKDF2' &&
+          request.resource.data.kdf.hash == 'SHA-256' &&
+          request.resource.data.kdf.iterations is int &&
+          request.resource.data.kdf.iterations >= 210000 && request.resource.data.kdf.iterations <= 2000000 &&
+          request.resource.data.kdf.salt is string && request.resource.data.kdf.salt.size() >= 24 &&
+          request.resource.data.verification is map &&
+          request.resource.data.verification.keys().hasOnly(['ciphertext', 'iv']) &&
+          request.resource.data.verification.ciphertext is string &&
+          request.resource.data.verification.iv is string && request.resource.data.verification.iv.size() == 16 &&
+          request.resource.data.createdAt == request.time;
+        allow update, delete: if false;
+      }
+
+      match /journal_metrics/{entryId} {
+        function validUserReported() {
+          return !request.resource.data.keys().hasAny(['userReported']) ||
+            (request.resource.data.userReported is map &&
+             request.resource.data.userReported.keys().hasOnly(['emotions', 'contexts', 'intent']) &&
+             (!request.resource.data.userReported.keys().hasAny(['emotions']) ||
+               (request.resource.data.userReported.emotions is list && request.resource.data.userReported.emotions.size() <= 8 &&
+                request.resource.data.userReported.emotions.hasOnly(['ANXIOUS', 'SAD', 'ANGRY', 'LONELY', 'CALM', 'HAPPY', 'OVERWHELMED', 'OTHER']))) &&
+             (!request.resource.data.userReported.keys().hasAny(['contexts']) ||
+               (request.resource.data.userReported.contexts is list && request.resource.data.userReported.contexts.size() <= 9 &&
+                request.resource.data.userReported.contexts.hasOnly(['ACADEMIC', 'FAMILY', 'RELATIONSHIP', 'WORK', 'HEALTH', 'FINANCIAL', 'PERSONAL', 'SOCIAL', 'OTHER']))) &&
+             (!request.resource.data.userReported.keys().hasAny(['intent']) ||
+               request.resource.data.userReported.intent in ['VENT', 'UNDERSTAND', 'MAKE_DECISION', 'CALM_DOWN', 'REFLECT', 'OTHER']));
+        }
+        function validJournalMetric() {
+          return request.resource.data.keys().hasOnly([
+              'userId', 'journalEntryId', 'createdAt', 'updatedAt', 'behavior', 'userReported', 'schemaVersion'
+            ]) &&
+            request.resource.data.keys().hasAll([
+              'userId', 'journalEntryId', 'createdAt', 'updatedAt', 'behavior', 'schemaVersion'
+            ]) &&
+            request.resource.data.userId == userId &&
+            request.resource.data.journalEntryId == entryId &&
+            request.resource.data.schemaVersion == 1 &&
+            request.resource.data.createdAt is timestamp && request.resource.data.updatedAt is timestamp &&
+            request.resource.data.behavior is map &&
+            request.resource.data.behavior.keys().hasOnly(['lengthBucket', 'timeOfDay', 'localDate', 'wasEdited']) &&
+            request.resource.data.behavior.lengthBucket in ['SHORT', 'MEDIUM', 'LONG'] &&
+            request.resource.data.behavior.timeOfDay in ['MORNING', 'AFTERNOON', 'EVENING', 'LATE_NIGHT'] &&
+            request.resource.data.behavior.localDate is string && request.resource.data.behavior.localDate.size() == 10 &&
+            request.resource.data.behavior.wasEdited is bool && validUserReported();
+        }
+        allow read: if owner(userId);
+        allow create: if owner(userId) && validJournalMetric() &&
+          request.resource.data.createdAt == getAfter(/databases/$(database)/documents/users/$(userId)/journals/$(entryId)).data.createdAt &&
+          request.resource.data.updatedAt == request.time;
+        allow update: if owner(userId) && validJournalMetric() &&
+          request.resource.data.userId == resource.data.userId &&
+          request.resource.data.journalEntryId == resource.data.journalEntryId &&
+          request.resource.data.createdAt == resource.data.createdAt &&
           request.resource.data.updatedAt == request.time;
         allow delete: if owner(userId);
       }
@@ -106,6 +184,13 @@ service cloud.firestore {
     match /connections/{patientId} {
       allow read: if owner(patientId) ||
         (signedIn() && request.auth.uid == resource.data.therapistId && resource.data.status in ['PENDING', 'ACTIVE']);
+      allow write: if false;
+    }
+
+    match /weekly_reports/{reportId} {
+      allow read: if signedIn() &&
+        (request.auth.uid == resource.data.userId ||
+          (resource.data.sharedWithTherapist == true && activeReportTherapist(resource.data.userId)));
       allow write: if false;
     }
 

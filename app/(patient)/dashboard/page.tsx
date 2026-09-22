@@ -7,9 +7,10 @@ import { Button } from "@/src/components/ui/Button";
 import { Card } from "@/src/components/ui/Card";
 import { Spinner } from "@/src/components/ui/Spinner";
 import { useAuth } from "@/src/context/AuthContext";
-import { listJournalEntries } from "@/src/services/journalService";
+import { listRecentJournalMetrics } from "@/src/services/journalService";
 import { createMoodEntry, listMoodEntries } from "@/src/services/moodService";
-import { JournalEntry, MoodEntry } from "@/src/types/database";
+import { MoodEntry } from "@/src/types/database";
+import type { JournalMetric } from "@/src/lib/journal/schemas";
 
 import { MoodTrend } from "@/src/components/shared/MoodTrend";
 import { MomoPortrait } from "@/src/components/shared/MomoPortrait";
@@ -52,7 +53,7 @@ export default function PatientDashboardPage() {
   const [scores, setScores] = useState<Scores>({ moodScore: 6, anxietyScore: 4, energyScore: 5 });
   const [note, setNote] = useState("");
   const [moodEntries, setMoodEntries] = useState<MoodEntry[]>([]);
-  const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([]);
+  const [journalMetrics, setJournalMetrics] = useState<JournalMetric[]>([]);
   const [isFetching, setIsFetching] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
@@ -60,11 +61,14 @@ export default function PatientDashboardPage() {
   async function refreshDashboard(uid: string) {
     try {
       setIsFetching(true);
-      const [moods, journals] = await Promise.allSettled([listMoodEntries(uid, 7), listJournalEntries(uid, 3)]);
+      const [moods, journals] = await Promise.allSettled([listMoodEntries(uid, 7), listRecentJournalMetrics(uid, 3)]);
       if (moods.status === "fulfilled") setMoodEntries(moods.value);
-      if (journals.status === "fulfilled") setJournalEntries(journals.value);
+      if (journals.status === "fulfilled") setJournalMetrics(journals.value);
       if (moods.status === "rejected" || journals.status === "rejected") {
-        console.error("Failed to load some dashboard data:", { moods, journals });
+        console.error("Failed to load dashboard sources", {
+          moodCheckInsFailed: moods.status === "rejected",
+          journalMetricsFailed: journals.status === "rejected",
+        });
         setFeedback({ type: "error", message: "Some recent activity is temporarily unavailable." });
       }
     } catch (error) {
@@ -207,10 +211,11 @@ export default function PatientDashboardPage() {
           </Card>
 
           <Card className="p-6 sm:p-8" padding="none" variant="peach">
-            <div className="flex items-center justify-between gap-3"><div><p className="text-xs font-medium uppercase tracking-[0.12em] text-[#795841]/70">Private writing</p><h2 className="mt-2 text-2xl font-medium text-[#795841]">Recent journal notes</h2></div><Link className="rounded-full bg-white/65 px-4 py-2 text-sm font-medium text-[#795841] transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#795841]" href="/vault">Open journal</Link></div>
+            <div className="flex items-center justify-between gap-3"><div><p className="text-xs font-medium uppercase tracking-[0.12em] text-[#795841]/70">Private writing</p><h2 className="mt-2 text-2xl font-medium text-[#795841]">Recent journal activity</h2></div><Link className="rounded-full bg-white/65 px-4 py-2 text-sm font-medium text-[#795841] transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#795841]" href="/vault">Open Vault</Link></div>
             <div className="mt-6 space-y-3">
-              {journalEntries.length > 0 ? journalEntries.map((entry) => <article className="rounded-[1.5rem] bg-white/70 p-4" key={entry.id}><div className="flex items-start justify-between gap-3"><h3 className="font-medium text-[#2c1601]">{entry.title}</h3>{entry.moodTag ? <span className="rounded-full bg-[#ffdcc6] px-2.5 py-1 text-xs text-[#795841]">{entry.moodTag}</span> : null}</div><p className="mt-2 line-clamp-2 text-sm leading-6 text-[#414845]">{entry.body}</p></article>) : <p className="rounded-[1.5rem] bg-white/70 p-5 text-sm leading-6 text-[#795841]">Nothing written yet. Your journal is here whenever words arrive.</p>}
+              {journalMetrics.length > 0 ? journalMetrics.map((entry) => <article className="rounded-[1.5rem] bg-white/70 p-4" key={entry.id}><div className="flex items-start justify-between gap-3"><h3 className="font-medium text-[#2c1601]">Encrypted journal entry</h3><span className="rounded-full bg-[#ffdcc6] px-2.5 py-1 text-xs text-[#795841]">{entry.behavior.lengthBucket.toLowerCase()}</span></div><p className="mt-2 text-sm leading-6 text-[#414845]">{entry.behavior.timeOfDay.toLowerCase().replace("_", " ")} · {entry.userReported?.emotions?.length ?? 0} optional emotion labels</p></article>) : <p className="rounded-[1.5rem] bg-white/70 p-5 text-sm leading-6 text-[#795841]">Nothing written yet. Your encrypted journal is here whenever words arrive.</p>}
             </div>
+            <p className="mt-4 text-xs leading-5 text-[#795841]/75">This card uses activity metadata only. Unlock your Vault to read journal text.</p>
           </Card>
         </section>
       </div>

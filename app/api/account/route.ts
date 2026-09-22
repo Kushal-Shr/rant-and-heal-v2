@@ -16,10 +16,10 @@ export async function GET(request: NextRequest) {
   if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const db = getAdminDb();
   const userRef = db.collection("users").doc(token.uid);
-  const [profile, sessions, journals, health, relationshipSnapshot] = await Promise.all([
+  const [profile, sessions, journalMetrics, health, relationshipSnapshot] = await Promise.all([
     userRef.get(),
     userRef.collection("sessions").get(),
-    documents(userRef.collection("journals")),
+    documents(userRef.collection("journal_metrics")),
     documents(userRef.collection("health_metrics")),
     db.collection("therapy_relationships").where("userId", "==", token.uid).get(),
   ]);
@@ -38,7 +38,8 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     exportedAt: new Date().toISOString(),
     profile: profile.data() ?? null,
-    journals,
+    journalContent: "Encrypted journal content is intentionally excluded from server-generated exports. Export it from the unlocked Vault in a future client-side export flow.",
+    journalMetrics,
     healthMetrics: health,
     momoConversations: conversations,
     therapyRelationships: relationships,
