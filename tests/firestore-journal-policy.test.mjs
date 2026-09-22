@@ -21,6 +21,6 @@ test("raw journal metrics remain owner-only", () => {
 test("weekly report sharing requires an active current therapist relationship", () => {
   const section = rules.slice(rules.indexOf("match /weekly_reports"), rules.indexOf("match /therapy_relationships"));
   assert.match(section, /sharedWithTherapist == true/);
-  assert.match(section, /activeReportTherapist\(resource\.data\.userId\)/);
+  assert.match(section, /activeReportTherapist\(resource\.data\.userId, resource\.data\.relationshipId\)/);
   assert.match(rules, /status == 'ACTIVE'/);
 });

@@ -17,8 +17,11 @@ export default function TherapistReviewPage() {
     if (!user) return;
     setLoading(true);
     setError(null);
-    const token = await user.getIdToken();
-    const response = await fetch("/api/admin/therapists", { headers: { Authorization: `Bearer ${token}` } });
+    const token = await user.getIdTokenResult(true);
+    if (token.claims.admin !== true) {
+      throw new Error("This account does not have administrator access. Ask the project owner to grant the Firebase admin claim.");
+    }
+    const response = await fetch("/api/admin/therapists", { headers: { Authorization: `Bearer ${token.token}` } });
     const payload = await response.json() as { therapists?: TherapistProfile[]; error?: string };
     if (!response.ok) throw new Error(payload.error ?? "Could not load applications.");
     setItems(payload.therapists ?? []);

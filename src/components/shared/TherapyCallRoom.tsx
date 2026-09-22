@@ -19,6 +19,7 @@ import {
   TherapyCallSignal,
   TherapyCallStatus,
 } from "@/src/types/database";
+import { TherapyNotesPanel } from "./TherapyNotesPanel";
 
 interface TherapyCallRoomProps {
   relationshipId: string;
@@ -251,7 +252,7 @@ export function TherapyCallRoom({ backHref, relationshipId, sessionId }: Therapy
     cleanup();
     try {
       await endCallSession(relationshipId, sessionId);
-      router.push(backHref);
+      if (user?.uid !== session?.therapistId) router.push(backHref);
     } catch (hangupError) {
       console.error("Failed to end call:", hangupError);
       setError("Could not confirm that the call ended. Return to messages and try again.");
@@ -271,12 +272,14 @@ export function TherapyCallRoom({ backHref, relationshipId, sessionId }: Therapy
             {waitingForRecipient ? "Waiting for the other participant" : status}
           </p>
         </div>
-        <Button onClick={handleHangup} variant="danger">
+        <Button disabled={status === "ended" || status === "failed"} onClick={handleHangup} variant="danger">
           End call
         </Button>
       </header>
 
       {error ? <p className="m-5 rounded-[1.5rem] bg-[#ffdad6] p-4 text-sm text-[#93000a]">{error}</p> : null}
+
+      {status === "ended" && user?.uid === session?.therapistId ? <div className="m-5"><TherapyNotesPanel relationshipId={relationshipId} isTherapist callId={sessionId} /></div> : null}
 
       <div className="grid min-h-[68vh] gap-4 p-5 lg:grid-cols-[1fr_320px]">
         <section className="relative min-h-[48vh] overflow-hidden rounded-[2rem] border border-white/20 bg-[#2c1601] shadow-[inset_0_2px_8px_rgba(0,0,0,0.3)]">

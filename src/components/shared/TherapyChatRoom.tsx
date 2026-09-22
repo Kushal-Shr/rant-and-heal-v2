@@ -2,7 +2,6 @@
 
 import { FormEvent, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Timestamp } from "firebase/firestore";
 import { Button } from "@/src/components/ui/Button";
 import { Spinner } from "@/src/components/ui/Spinner";
 import { Textarea } from "@/src/components/forms/Textarea";
@@ -19,6 +18,8 @@ import {
   TherapyMessage,
   TherapyMessageSenderRole,
 } from "@/src/types/database";
+import { TherapyNotesPanel } from "./TherapyNotesPanel";
+import { TherapyWeeklyPanel } from "./TherapyWeeklyPanel";
 
 interface TherapyChatRoomProps {
   relationshipId: string;
@@ -30,8 +31,8 @@ interface TherapyChatRoomProps {
 }
 
 function formatMessageTime(message: TherapyMessage) {
-  if (message.createdAt instanceof Timestamp) {
-    return message.createdAt.toDate().toLocaleTimeString(undefined, {
+  if (typeof message.createdAt === "number") {
+    return new Date(message.createdAt).toLocaleTimeString(undefined, {
       hour: "numeric",
       minute: "2-digit",
     });
@@ -208,6 +209,14 @@ export function TherapyChatRoom({
           )}
         </div>
       </header>
+
+      <details className="shrink-0 border-b border-[#ffeada] bg-[#fff8f5] px-5 py-3">
+        <summary className="cursor-pointer text-sm font-medium text-[#325347]">Session notes and weekly reports</summary>
+        <div className="mt-3 max-h-[40vh] space-y-3 overflow-y-auto">
+          <TherapyNotesPanel relationshipId={relationshipId} isTherapist={senderRole === TherapyMessageSenderRole.THERAPIST} />
+          <TherapyWeeklyPanel relationshipId={relationshipId} isTherapist={senderRole === TherapyMessageSenderRole.THERAPIST} />
+        </div>
+      </details>
 
       {openCall ? (
         <section className="border-b border-[#ffeada] bg-[#ffe3cd]/75 p-4 sm:px-6">

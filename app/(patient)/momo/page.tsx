@@ -193,16 +193,15 @@ export default function MomoPage() {
 
       const responsePayload = (await response.json().catch(() => null)) as {
         error?: string;
+        code?: string;
         safety?: { level?: string };
       } | null;
 
       if (!response.ok) {
         const message = responsePayload?.error ?? "Failed to generate Momo response.";
-        console.error(
-          "MOMO API ERROR:",
-          response.status,
-          message
-        );
+        if (responsePayload?.code !== "AI_BILLING_REQUIRED") {
+          console.error("MOMO API ERROR:", response.status, message);
+        }
         setInputValue(userMessageText);
         setSendError(message);
       } else if (responsePayload?.safety?.level === "IMMINENT") {

@@ -22,7 +22,9 @@ if (!projectId || !clientEmail || !privateKey) {
 }
 
 const app = getApps()[0] ?? initializeApp({ credential: cert({ projectId, clientEmail, privateKey }) });
-await getAuth(app).setCustomUserClaims(uid, { admin: true });
+const auth = getAuth(app);
+const existingUser = await auth.getUser(uid);
+await auth.setCustomUserClaims(uid, { ...existingUser.customClaims, admin: true });
 await getFirestore(app).collection("users").doc(uid).set({
   uid,
   role: "ADMIN",

@@ -1,6 +1,8 @@
 import type { WeeklyJournalMetrics } from "./sources/journalMetrics.ts";
+import { AI_MODELS } from "../ai/models.ts";
+import { ThinkingLevel } from "@google/genai";
 
-export const WEEKLY_REPORT_MODEL = process.env.GEMINI_WEEKLY_REPORT_MODEL ?? "gemini-3.8-flash";
+export const WEEKLY_REPORT_MODEL = AI_MODELS.WEEKLY_REFLECTION;
 
 export const WEEKLY_REPORT_SYSTEM_INSTRUCTION = `Create a supportive weekly summary from the supplied structured sources.
 Journal data contains behavioral counts and labels explicitly selected by the user only. Describe those as observations or user selections.
@@ -40,7 +42,7 @@ export function buildWeeklySupportSummaryRequest(sources: WeeklyReportSources) {
     contents: [{ role: "user" as const, parts: [{ text: JSON.stringify(sources) }] }],
     config: {
       systemInstruction: WEEKLY_REPORT_SYSTEM_INSTRUCTION,
-      thinkingConfig: { thinkingLevel: "HIGH" as const },
+      thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
       responseMimeType: "application/json",
       responseJsonSchema: {
         type: "object",
