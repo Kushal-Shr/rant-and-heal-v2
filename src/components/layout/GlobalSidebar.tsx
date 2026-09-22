@@ -7,6 +7,7 @@ import { authService } from "@/src/services/authService";
 import { useCurrentProfile } from "@/src/hooks/useCurrentProfile";
 import { UserRole } from "@/src/types/database";
 import { MomoPortrait } from "@/src/components/shared/MomoPortrait";
+import { useVault } from "@/src/context/VaultContext";
 
 const publicLinks = [
   { label: "Home", href: "/", icon: "home" },
@@ -29,6 +30,7 @@ const adminLinks = [
 ];
 
 export function GlobalSidebar() {
+  const { lockVault } = useVault();
   const { user, profile, loading, error, retry } = useCurrentProfile();
   const pathname = usePathname();
   const router = useRouter();
@@ -46,6 +48,7 @@ export function GlobalSidebar() {
     setSigningOut(true);
     setSignOutError(false);
     try {
+      await lockVault();
       await authService.signOut();
       closeMenu();
       router.replace("/");
