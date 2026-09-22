@@ -1,7 +1,12 @@
-import { GoogleGenAI } from "@google/genai";
+import { ApiError, GoogleGenAI } from "@google/genai";
 
 export const MOMO_TEXT_MODEL = process.env.GEMINI_MODEL ?? "gemini-2.5-flash";
 export const MOMO_LIVE_MODEL = process.env.GEMINI_LIVE_MODEL ?? "gemini-3.1-flash-live-preview";
+
+export function isGeminiBillingError(error: unknown): boolean {
+  return (error instanceof ApiError && error.status === 402) ||
+    (error instanceof Error && /prepayment credits are depleted/i.test(error.message));
+}
 
 export function getRequiredEnv(name: string): string {
   const value = process.env[name];

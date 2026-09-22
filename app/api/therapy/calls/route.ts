@@ -35,9 +35,11 @@ export async function POST(request: NextRequest) {
       ]);
       const relationship = relationshipSnap.data();
       const lock = lockSnap.data();
+      const pointer = relationship?.userId ? (await transaction.get(db.collection("connections").doc(relationship.userId))).data() : null;
       if (
         !relationship ||
         relationship.status !== ConnectionStatus.ACTIVE ||
+        pointer?.relationshipId !== relationshipRef.id || pointer.status !== ConnectionStatus.ACTIVE ||
         (token.uid !== relationship.userId && token.uid !== relationship.therapistId)
       ) throw new CallError("You cannot start a call for this relationship", 403);
 

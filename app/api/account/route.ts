@@ -61,7 +61,10 @@ export async function DELETE(request: NextRequest) {
   )) {
     return NextResponse.json({ error: "End your therapist connection before deleting your account." }, { status: 409 });
   }
-  await Promise.all(relationshipSnapshot.docs.map((item) => db.recursiveDelete(item.ref)));
+  await Promise.all(relationshipSnapshot.docs.map(async (item) => {
+    await db.recursiveDelete(item.ref);
+    await db.collection("therapy_keys").doc(item.id).delete();
+  }));
   await Promise.all([
     db.recursiveDelete(db.collection("users").doc(token.uid)),
     db.collection("patient_profiles").doc(token.uid).delete(),

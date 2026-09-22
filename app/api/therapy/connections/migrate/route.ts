@@ -4,6 +4,7 @@ import { z } from "zod";
 import { verifyFirebaseBearerToken } from "@/src/server/auth";
 import { getErrorMessage } from "@/src/server/errors";
 import { getAdminDb } from "@/src/server/firebaseAdmin";
+import { newWrappedRelationshipKey } from "@/src/server/therapy/crypto";
 
 export const runtime = "nodejs";
 const schema = z.object({ patientId: z.string().trim().min(1).max(128) }).strict();
@@ -32,30 +33,22 @@ export async function POST(request: NextRequest) {
         : null;
     const relationshipId = existingRelationshipId ?? `legacy_${patientId}`;
     const relationshipRef = db.collection("therapy_relationships").doc(relationshipId);
+    const keyRef = db.collection("therapy_keys").doc(relationshipId);
     const existingRelationship = await relationshipRef.get();
-    if (existingRelationshipId && existingRelationship.exists) {
+    const existingKey = await keyRef.get();
+    if (existingRelationshipId && existingRelationship.exists && (pointer.status !== "ACTIVE" || existingKey.exists)) {
       return NextResponse.json({ ok: true, migrated: false });
     }
-    if (!existingRelationship.exists) {
-      await relationshipRef.set({
-        ...pointer,
-        relationshipId,
-        patientId,
-        consent: {
-          version: "legacy-import",
-          disclosureHash: pointer.consentHash ?? "legacy-unavailable",
-          scope: ["therapy-messages", "therapy-calls", "connection-status"],
-          acceptedAt: pointer.requestedAt ?? FieldValue.serverTimestamp(),
-        },
-        migratedAt: FieldValue.serverTimestamp(),
-      });
+    const [oldMessages, relationshipMessages] = await Promise.all([
+      pointerRef.collection("messages").limit(1).get(),
+      relationshipRef.collection("messages").limit(1).get(),
+    ]);
+    if (!oldMessages.empty || !relationshipMessages.empty) {
+      return NextResponse.json({ error: "Legacy messages require administrator migration before this chat can open." }, { status: 409 });
     }
+    const keyRecord = pointer.status === "ACTIVE" && !existingKey.exists ? await newWrappedRelationshipKey() : null;
 
     const writer = db.bulkWriter();
-    const oldMessages = await pointerRef.collection("messages").get();
-    for (const item of oldMessages.docs) {
-      writer.set(relationshipRef.collection("messages").doc(item.id), item.data());
-    }
     const oldCalls = await pointerRef.collection("call_sessions").get();
     for (const item of oldCalls.docs) {
       const callRef = relationshipRef.collection("call_sessions").doc(item.id);
@@ -77,13 +70,41 @@ export async function POST(request: NextRequest) {
         expiresAt: oldState.data()?.expiresAt ?? Timestamp.now(),
       });
     }
-    writer.set(pointerRef, { relationshipId, migratedAt: FieldValue.serverTimestamp() }, { merge: true });
-    writer.set(relationshipRef.collection("events").doc("legacy-import"), {
-      type: "LEGACY_IMPORT",
-      actorId: token.uid,
-      createdAt: FieldValue.serverTimestamp(),
-    });
     await writer.close();
+
+    await db.runTransaction(async (transaction) => {
+      const [currentPointer, currentRelationship, currentKey] = await Promise.all([
+        transaction.get(pointerRef), transaction.get(relationshipRef), transaction.get(keyRef),
+      ]);
+      const current = currentPointer.data();
+      if (!current || current.therapistId !== pointer.therapistId || current.status !== pointer.status ||
+        (current.relationshipId && current.relationshipId !== relationshipId)) {
+        throw new Error("Connection changed during migration");
+      }
+      if (!currentRelationship.exists) {
+        transaction.create(relationshipRef, {
+          ...current,
+          userId: patientId,
+          relationshipId,
+          patientId,
+          consent: {
+            version: "legacy-import",
+            disclosureHash: current.consentHash ?? "legacy-unavailable",
+            scope: ["therapy-messages", "therapy-calls", "connection-status"],
+            acceptedAt: current.requestedAt ?? FieldValue.serverTimestamp(),
+          },
+          migratedAt: FieldValue.serverTimestamp(),
+        });
+      }
+      if (current.status === "ACTIVE" && !currentKey.exists) {
+        if (!keyRecord) throw new Error("Connection encryption changed during migration");
+        transaction.create(keyRef, { ...keyRecord, cryptoVersion: 1, createdAt: FieldValue.serverTimestamp() });
+      }
+      transaction.set(pointerRef, { relationshipId, migratedAt: FieldValue.serverTimestamp() }, { merge: true });
+      transaction.set(relationshipRef.collection("events").doc("legacy-import"), {
+        type: "LEGACY_IMPORT", actorId: token.uid, createdAt: FieldValue.serverTimestamp(),
+      });
+    });
 
     const patient = await db.collection("users").doc(patientId).get();
     if (patient.exists) {

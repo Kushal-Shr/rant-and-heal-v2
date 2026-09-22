@@ -39,7 +39,8 @@ export async function POST(request: NextRequest, context: { params: Promise<{ se
       const session = sessionSnap.data();
       const lock = lockSnap.data();
       if (!relationship || !session || session.relationshipId !== relationshipRef.id) throw new CallError("Call session was not found", 404);
-      if (relationship.status !== ConnectionStatus.ACTIVE) throw new CallError("This relationship is no longer active", 409);
+      const pointer = (await transaction.get(db.collection("connections").doc(relationship.userId))).data();
+      if (relationship.status !== ConnectionStatus.ACTIVE || pointer?.relationshipId !== relationshipRef.id || pointer.status !== ConnectionStatus.ACTIVE) throw new CallError("This relationship is no longer active", 409);
       if (token.uid !== session.patientId && token.uid !== session.therapistId) throw new CallError("Forbidden", 403);
       if (lock?.sessionId !== sessionId) throw new CallError("This call is no longer current", 409);
 

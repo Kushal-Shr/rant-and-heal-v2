@@ -31,10 +31,12 @@ export async function POST(request: NextRequest) {
     ]);
     const relationship = relationshipSnapshot.data();
     const session = sessionSnapshot.data();
+    const pointer = relationship?.userId ? (await adminDb.collection("connections").doc(relationship.userId).get()).data() : null;
 
     if (
       !relationship ||
       relationship.status !== ConnectionStatus.ACTIVE ||
+      pointer?.relationshipId !== relationshipId || pointer.status !== ConnectionStatus.ACTIVE ||
       !session ||
       session.relationshipId !== relationshipId ||
       !(session.expiresAt instanceof Timestamp) ||

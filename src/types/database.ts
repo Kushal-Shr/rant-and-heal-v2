@@ -81,7 +81,7 @@ export interface TherapyMessage {
   text: string;
   senderId: string;
   senderRole: TherapyMessageSenderRole;
-  createdAt: ServerTime;
+  createdAt: number | null;
 }
 
 export enum TherapyCallStatus {
@@ -106,6 +106,18 @@ export interface TherapyCallSession {
   declinedAt?: ServerTime;
   endedBy?: string;
   endedAt?: ServerTime;
+}
+
+// Reserved for a later, separately consented transcription workflow. No call audio is recorded in this sprint.
+export interface EncryptedTherapyTranscript {
+  relationshipId: string;
+  callSessionId: string;
+  ciphertext: string;
+  iv: string;
+  cryptoVersion: 1;
+  startedAt: ServerTime;
+  endedAt: ServerTime;
+  transcriptionConsent: { patient: true; therapist: true; consentVersion: string };
 }
 
 export type TherapySignalType = "offer" | "answer" | "ice-candidate" | "hangup";

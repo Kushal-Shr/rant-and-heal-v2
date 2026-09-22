@@ -16,6 +16,9 @@ export default function TherapyChatPage() {
   if (!user?.uid || loading) {
     return <div className="flex min-h-[60vh] items-center justify-center"><Spinner label="Opening conversation" /></div>;
   }
+  if (connection?.status === ConnectionStatus.ACTIVE && !connection.relationshipId) {
+    return <p role="alert" className="rounded-[1.5rem] bg-[#ffdad6] p-5 text-sm text-[#93000a]">This older connection needs administrator migration before chat can open.</p>;
+  }
   if (!connection?.relationshipId || connection.status !== ConnectionStatus.ACTIVE || connection.therapistId !== therapistId) {
     return <p role="alert" className="rounded-[1.5rem] bg-[#ffdad6] p-5 text-sm text-[#93000a]">This therapist connection is no longer active.</p>;
   }

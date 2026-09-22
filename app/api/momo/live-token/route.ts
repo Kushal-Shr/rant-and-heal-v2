@@ -2,7 +2,7 @@ import { GoogleGenAI, Modality } from "@google/genai";
 import { NextResponse, type NextRequest } from "next/server";
 import { verifyFirebaseBearerToken } from "@/src/server/auth";
 import { getErrorMessage } from "@/src/server/errors";
-import { getRequiredEnv, MOMO_LIVE_MODEL } from "@/src/server/momo/gemini";
+import { getRequiredEnv, isGeminiBillingError, MOMO_LIVE_MODEL } from "@/src/server/momo/gemini";
 import { MOMO_SYSTEM_INSTRUCTION } from "@/src/server/momo/persona";
 import { getAdminDb } from "@/src/server/firebaseAdmin";
 import { MomoAccessError, consumeQuota, requireOwnedSession } from "@/src/server/momo/access";
@@ -63,6 +63,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: error.status });
     }
     const detail = getErrorMessage(error);
+    if (isGeminiBillingError(error)) {
+      console.error("MOMO LIVE GEMINI BILLING ERROR:", detail);
+      return NextResponse.json({
+        error: "Momo voice is temporarily unavailable. Please try again later.",
+        code: "AI_BILLING_REQUIRED",
+      }, { status: 503 });
+    }
     console.error("MOMO LIVE TOKEN ERROR:", detail, error);
 
     return NextResponse.json(

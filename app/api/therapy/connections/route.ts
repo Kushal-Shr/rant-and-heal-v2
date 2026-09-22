@@ -12,6 +12,7 @@ import { getErrorMessage } from "@/src/server/errors";
 import { getAdminDb } from "@/src/server/firebaseAdmin";
 import { ConnectionStatus, TherapyCallStatus, UserRole } from "@/src/types/database";
 import { canTransitionRelationship } from "@/src/server/therapy/connectionTransitions";
+import { newWrappedRelationshipKey, unwrapRelationshipKey } from "@/src/server/therapy/crypto";
 
 export const runtime = "nodejs";
 
@@ -25,6 +26,7 @@ const schema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("ACCEPT"), relationshipId: z.string().trim().min(1).max(128) }).strict(),
   z.object({ action: z.literal("REJECT"), relationshipId: z.string().trim().min(1).max(128) }).strict(),
   z.object({ action: z.literal("REVOKE"), relationshipId: z.string().trim().min(1).max(128) }).strict(),
+  z.object({ action: z.literal("CONSENT_AI"), relationshipId: z.string().trim().min(1).max(128), consentAccepted: z.literal(true), consentVersion: z.literal(THERAPY_CONSENT_VERSION) }).strict(),
 ]);
 
 class HttpError extends Error {
@@ -114,6 +116,18 @@ export async function POST(request: NextRequest) {
       const pointer = pointerSnap.data();
       if (pointer?.relationshipId !== relationshipRef.id) throw new HttpError("This connection is no longer current", 409);
 
+      if (body.action === "CONSENT_AI") {
+        if (token.uid !== relationship.userId || relationship.status !== ConnectionStatus.ACTIVE || pointer.status !== ConnectionStatus.ACTIVE) throw new HttpError("Consent can only be updated by the connected patient", 403);
+        const disclosureHash = createHash("sha256").update(THERAPY_CONSENT_DISCLOSURE).digest("hex");
+        const update = { consentHash: disclosureHash, consent: { version: THERAPY_CONSENT_VERSION,
+          disclosureHash, scope: [...THERAPY_CONSENT_SCOPE], acceptedAt: FieldValue.serverTimestamp() }, updatedAt: FieldValue.serverTimestamp() };
+        transaction.update(relationshipRef, update);
+        transaction.update(pointerRef, update);
+        transaction.create(relationshipRef.collection("events").doc(), { type: "CONSENT_AI", actorId: token.uid,
+          version: THERAPY_CONSENT_VERSION, disclosureHash, scope: [...THERAPY_CONSENT_SCOPE], createdAt: FieldValue.serverTimestamp() });
+        return;
+      }
+
       let therapistVerified = true;
       if (body.action === "ACCEPT" || body.action === "REJECT") {
         const therapistSnap = await transaction.get(db.collection("therapists").doc(token.uid));
@@ -138,6 +152,23 @@ export async function POST(request: NextRequest) {
         therapistIsVerified: therapistVerified,
       });
       if (!allowed) throw new HttpError("This relationship transition is not allowed", 409);
+
+      if (body.action === "ACCEPT") {
+        const keyRef = db.collection("therapy_keys").doc(relationshipRef.id);
+        const keySnap = await transaction.get(keyRef);
+        try {
+          if (keySnap.exists) {
+            const key = keySnap.data();
+            const dek = await unwrapRelationshipKey({ wrappedDek: key!.wrappedDek, kmsKeyName: key!.kmsKeyName });
+            dek.fill(0);
+          } else {
+            const keyRecord = await newWrappedRelationshipKey();
+            transaction.create(keyRef, { ...keyRecord, cryptoVersion: 1, createdAt: FieldValue.serverTimestamp() });
+          }
+        } catch {
+          throw new HttpError("Therapy encryption is unavailable. Ask the administrator to configure Cloud KMS before accepting.", 503);
+        }
+      }
 
       if (body.action === "ACCEPT" || body.action === "REJECT") {
         const status = body.action === "ACCEPT" ? ConnectionStatus.ACTIVE : ConnectionStatus.REJECTED;

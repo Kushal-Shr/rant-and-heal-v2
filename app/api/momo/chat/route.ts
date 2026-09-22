@@ -6,7 +6,7 @@ import { verifyFirebaseBearerToken } from "@/src/server/auth";
 import { getErrorMessage } from "@/src/server/errors";
 import { getAdminDb } from "@/src/server/firebaseAdmin";
 import { MomoAccessError, consumeQuota, requireOwnedSession } from "@/src/server/momo/access";
-import { getGeminiClient, MOMO_TEXT_MODEL } from "@/src/server/momo/gemini";
+import { getGeminiClient, isGeminiBillingError, MOMO_TEXT_MODEL } from "@/src/server/momo/gemini";
 import { MOMO_SYSTEM_INSTRUCTION } from "@/src/server/momo/persona";
 import { assessMomoSafety, crisisReplyFor, recordMomoSafetyEvent } from "@/src/server/momo/safety";
 import { classifySafetyRisk } from "@/src/server/safety/classifier";
@@ -176,6 +176,13 @@ export async function POST(request: NextRequest) {
     if (release) await release().catch(() => undefined);
     if (error instanceof MomoAccessError) return NextResponse.json({ error: error.message }, { status: error.status });
     const detail = getErrorMessage(error);
+    if (isGeminiBillingError(error)) {
+      console.error("MOMO GEMINI BILLING ERROR:", detail);
+      return NextResponse.json({
+        error: "Momo is temporarily unavailable. Please try again later.",
+        code: "AI_BILLING_REQUIRED",
+      }, { status: 503 });
+    }
     console.error("MOMO CHAT API ERROR:", detail);
     return NextResponse.json({ error: process.env.NODE_ENV === "production" ? "Failed to process message" : detail }, { status: 500 });
   }

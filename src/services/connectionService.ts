@@ -6,7 +6,8 @@ import { THERAPY_CONSENT_VERSION } from "../lib/therapy/consent";
 
 type ConnectionAction =
   | { action: "REQUEST"; therapistId: string; consentAccepted: true; consentVersion: string }
-  | { action: "ACCEPT" | "REJECT" | "REVOKE"; relationshipId: string };
+  | { action: "ACCEPT" | "REJECT" | "REVOKE"; relationshipId: string }
+  | { action: "CONSENT_AI"; relationshipId: string; consentAccepted: true; consentVersion: string };
 
 const legacyMigrationsInFlight = new Set<string>();
 
@@ -54,6 +55,10 @@ export function requestConnection(therapistId: string) {
     consentAccepted: true,
     consentVersion: THERAPY_CONSENT_VERSION,
   });
+}
+
+export function acceptTherapyAiConsent(relationshipId: string) {
+  return mutateConnection({ action: "CONSENT_AI", relationshipId, consentAccepted: true, consentVersion: THERAPY_CONSENT_VERSION });
 }
 
 export function revokeConnection(relationshipId: string) {

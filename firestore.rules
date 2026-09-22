@@ -8,6 +8,8 @@ service cloud.firestore {
     }
     function activeParticipant(id) {
       return signedIn() && rel(id).data.status == 'ACTIVE' &&
+        get(/databases/$(database)/documents/connections/$(rel(id).data.userId)).data.relationshipId == id &&
+        get(/databases/$(database)/documents/connections/$(rel(id).data.userId)).data.status == 'ACTIVE' &&
         (request.auth.uid == rel(id).data.userId || request.auth.uid == rel(id).data.therapistId);
     }
     function currentTherapist(patientId) {
@@ -15,9 +17,10 @@ service cloud.firestore {
         get(/databases/$(database)/documents/connections/$(patientId)).data.therapistId == request.auth.uid &&
         get(/databases/$(database)/documents/connections/$(patientId)).data.status in ['PENDING', 'ACTIVE'];
     }
-    function activeReportTherapist(patientId) {
-      return signedIn() &&
+    function activeReportTherapist(patientId, relationshipId) {
+      return signedIn() && relationshipId is string &&
         get(/databases/$(database)/documents/connections/$(patientId)).data.therapistId == request.auth.uid &&
+        get(/databases/$(database)/documents/connections/$(patientId)).data.relationshipId == relationshipId &&
         get(/databases/$(database)/documents/connections/$(patientId)).data.status == 'ACTIVE';
     }
 
@@ -190,9 +193,11 @@ service cloud.firestore {
     match /weekly_reports/{reportId} {
       allow read: if signedIn() &&
         (request.auth.uid == resource.data.userId ||
-          (resource.data.sharedWithTherapist == true && activeReportTherapist(resource.data.userId)));
+          (resource.data.sharedWithTherapist == true && activeReportTherapist(resource.data.userId, resource.data.relationshipId)));
       allow write: if false;
     }
+
+    match /therapy_keys/{relationshipId} { allow read, write: if false; }
 
     match /therapy_relationships/{relationshipId} {
       allow read: if signedIn() &&
@@ -211,17 +216,12 @@ service cloud.firestore {
       }
 
       match /messages/{messageId} {
-        allow read: if activeParticipant(relationshipId);
-        allow create: if activeParticipant(relationshipId) &&
-          request.resource.data.keys().hasOnly(['text', 'senderId', 'senderRole', 'createdAt']) &&
-          request.resource.data.senderId == request.auth.uid &&
-          request.resource.data.text is string &&
-          request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 4000 &&
-          request.resource.data.createdAt == request.time &&
-          ((request.auth.uid == rel(relationshipId).data.userId && request.resource.data.senderRole == 'USER') ||
-            (request.auth.uid == rel(relationshipId).data.therapistId && request.resource.data.senderRole == 'THERAPIST'));
-        allow update, delete: if false;
+        allow read, write: if false;
       }
+
+      match /session_notes/{noteId} { allow read, write: if false; }
+      match /weekly_therapy_summaries/{summaryId} { allow read, write: if false; }
+      match /weekly_reflections/{reflectionId} { allow read, write: if false; }
 
       match /call_sessions/{sessionId} {
         function session() {
@@ -230,6 +230,7 @@ service cloud.firestore {
         allow read: if activeParticipant(relationshipId) &&
           (request.auth.uid == resource.data.patientId || request.auth.uid == resource.data.therapistId);
         allow create, update, delete: if false;
+        match /transcripts/{transcriptId} { allow read, write: if false; }
         match /signals/{signalId} {
           allow read: if activeParticipant(relationshipId) &&
             (request.auth.uid == session().data.patientId || request.auth.uid == session().data.therapistId);
