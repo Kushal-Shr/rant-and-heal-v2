@@ -2,41 +2,165 @@ import { getSafetyPolicy } from "../safety/policy.ts";
 import type { SafetyState } from "../safety/schemas.ts";
 import {
   momoDecisionSchema,
+  momoPlannerInferenceSchema,
+  type Intervention,
   type MomoDecision,
   type NormalizedConversationInput,
+  type PrimaryNeed,
   type SupportMode,
 } from "./schemas.ts";
 
-function explicitSupportMode(message: string): SupportMode {
-  if (/\b(?:calm down|ground me|breathe|breathing|panic|regulate)\b/i.test(message)) return "REGULATE";
-  if (/\b(?:just listen|need to vent|let me vent|no advice)\b/i.test(message)) return "LISTEN";
-  if (/\b(?:what should i do|give me advice|help me decide|next steps?)\b/i.test(message)) return "DIRECT_HELP";
-  if (/\b(?:work through|understand this|think through|make sense of)\b/i.test(message)) return "WORK_THROUGH";
-  return "UNCLEAR";
+interface ExplicitPreference {
+  supportMode: Exclude<SupportMode, "UNCLEAR">;
+  primaryNeed: PrimaryNeed;
+  intervention: Intervention;
+}
+
+const LISTEN_PATTERNS = [
+  /\b(?:i\s+)?just\s+(?:need|want)\s+to\s+(?:vent|rant|talk|be\s+heard)\b/i,
+  /\b(?:please\s+)?let\s+me\s+(?:vent|rant)\b/i,
+  /\b(?:please\s+)?(?:just\s+)?listen(?:\s+to\s+me)?\b/i,
+  /\bno\s+advice(?:\s+please)?\b/i,
+  /\b(?:do\s+not|don['’]t|no)\s+(?:give|offer)\s+me\s+(?:any\s+)?advice\b/i,
+  /\b(?:do\s+not|don['’]t|stop)\s+(?:trying\s+to\s+)?fix(?:ing)?\s+(?:me|everything|this)\b/i,
+  /\b(?:i\s+)?(?:do\s+not|don['’]t)\s+want\s+to\s+do\s+(?:a\s+)?(?:thought|cbt)\s+exercise\b/i,
+  /(?:मलाई\s*)?(?:सल्लाह\s*नदिनु|बस\s*सुन(?:िदिनु)?|केवल\s*सुन(?:िदिनु)?|कुरा\s*पोख्न\s*(?:दिनु|छ))/i,
+  /\b(?:malai\s+)?(?:sallah\s+nadinu|bas\s+sun(?:a|i)?dinu|kura\s+matra\s+suna|vent\s+garna\s+(?:cha|man\s+cha))\b/i,
+];
+
+const DIRECT_HELP_PATTERNS = [
+  /\b(?:stop|quit)\s+asking\s+(?:me\s+)?questions?\b/i,
+  /\b(?:no|not)\s+more\s+questions?\b/i,
+  /\bjust\s+(?:give|tell)\s+me\s+(?:an?\s+)?(?:answer|what\s+to\s+do)\b/i,
+  /\bwhat\s+do\s+you\s+think\s+i\s+should\s+(?:actually\s+)?do\b/i,
+  /\bwhat\s+should\s+i\s+(?:actually\s+)?do(?:\s+(?:now|today|tomorrow|next))?\b/i,
+  /\b(?:give|offer)\s+me\s+(?:some\s+)?(?:ideas|options|advice|next\s+steps?)\b/i,
+  /\b(?:help\s+me\s+decide|tell\s+me\s+what\s+i\s+can\s+(?:actually\s+)?do)\b/i,
+  /(?:प्रश्न\s*नसोध|सिधै\s*भन|के\s*गर्ने\s*भन|केही\s*उपाय\s*देऊ)/i,
+  /\b(?:prasna\s+nasodha|sidhai\s+bhana|ke\s+garne\s+bhana|kehi\s+upaya\s+deu)\b/i,
+];
+
+const REGULATE_PATTERNS = [
+  /\b(?:i\s+)?(?:need|want)\s+to\s+(?:calm|settle)\s+down(?:\s+first)?\b/i,
+  /\bhelp\s+me\s+(?:calm|settle|ground|regulate)(?:\s+down)?\b/i,
+  /\b(?:can|could)\s+we\s+(?:pause|ground|breathe)\b/i,
+  /(?:शान्त\s*हुन\s*(?:मद्दत|मन)|मन\s*शान्त\s*पार्न|सास\s*फेर्न\s*मद्दत)/i,
+  /\b(?:shanta\s+huna|man\s+shanta|saas\s+ferna)\s+(?:madat|help)\b/i,
+];
+
+const WORK_THROUGH_PATTERNS = [
+  /\b(?:can|could|will|would)\s+(?:you|we)\s+(?:actually\s+)?(?:help\s+me\s+)?(?:work|talk|think)\s+through\b/i,
+  /\bhelp\s+me\s+(?:understand|make\s+sense\s+of|challenge|examine)\b/i,
+  /\bwhy\s+does\s+this\s+keep\s+happening\b/i,
+  /\blet['’]s\s+(?:do\s+cbt|work\s+through|look\s+at\s+this\s+thought)\b/i,
+  /(?:बुझ्न\s*मद्दत|सँगै\s*बुझौँ|यो\s*विचार\s*हेरौँ)/i,
+  /\b(?:bujhna\s+madat|sangai\s+bujhau|yo\s+bichar\s+herau)\b/i,
+];
+
+const CBT_REQUEST_PATTERN = /\b(?:cbt|challenge\s+(?:this|that|my)\s+thought|examine\s+(?:this|that|my)\s+(?:thought|belief))\b/i;
+
+function matchesAny(message: string, patterns: RegExp[]): boolean {
+  return patterns.some((pattern) => pattern.test(message));
+}
+
+export function detectExplicitSupportPreference(message: string): ExplicitPreference | null {
+  const normalized = message.normalize("NFKC").trim();
+
+  // Refusing advice or an exercise is more specific than incidental words such
+  // as "panic" or "help" elsewhere in the same message.
+  if (matchesAny(normalized, LISTEN_PATTERNS)) {
+    return { supportMode: "LISTEN", primaryNeed: "VENT", intervention: "PCT_LISTENING" };
+  }
+  if (matchesAny(normalized, DIRECT_HELP_PATTERNS)) {
+    return { supportMode: "DIRECT_HELP", primaryNeed: "PRACTICAL_HELP", intervention: "PROBLEM_SOLVING" };
+  }
+  if (matchesAny(normalized, REGULATE_PATTERNS)) {
+    return { supportMode: "REGULATE", primaryNeed: "EMOTIONAL_REGULATION", intervention: "RELAXATION" };
+  }
+  if (matchesAny(normalized, WORK_THROUGH_PATTERNS)) {
+    const cbtRequested = CBT_REQUEST_PATTERN.test(normalized);
+    return {
+      supportMode: "WORK_THROUGH",
+      primaryNeed: cbtRequested ? "COGNITIVE_SUPPORT" : "UNDERSTAND",
+      intervention: cbtRequested ? "CBT_RESTRUCTURING" : "PCT_EXPLORATION",
+    };
+  }
+  return null;
+}
+
+function safetyConstrainedDecision(safetyState: SafetyState): MomoDecision | null {
+  const policy = getSafetyPolicy(safetyState);
+  if (policy.structuredInterventionsAllowed && policy.normalSupportAllowed) return null;
+
+  return momoDecisionSchema.parse({
+    supportMode: "UNCLEAR",
+    primaryNeed: policy.humanReviewRequired ? "PROFESSIONAL_SUPPORT" : "UNKNOWN",
+    intervention: policy.humanReviewRequired ? "PROFESSIONAL_SUPPORT" : "PCT_LISTENING",
+    confidence: "HIGH",
+    shouldClarify: policy.clarificationRequired,
+    ...(policy.clarificationRequired ? { clarificationTarget: "OTHER" } : {}),
+    userPreferenceOverride: false,
+    safetyState,
+  });
+}
+
+function fallbackDecision(safetyState: SafetyState): MomoDecision {
+  return momoDecisionSchema.parse({
+    supportMode: "UNCLEAR",
+    primaryNeed: "UNKNOWN",
+    intervention: "NONE",
+    confidence: "LOW",
+    shouldClarify: true,
+    clarificationTarget: "SUPPORT_PREFERENCE",
+    userPreferenceOverride: false,
+    safetyState,
+  });
 }
 
 export function planMomoResponse(
   input: NormalizedConversationInput,
-  safetyState: SafetyState
+  safetyState: SafetyState,
+  inferredRouting?: unknown
 ): MomoDecision {
-  const policy = getSafetyPolicy(safetyState);
-  const supportMode = explicitSupportMode(input.messageText);
-  const intervention = !policy.normalSupportAllowed
-    ? "PROFESSIONAL_SUPPORT"
-    : !policy.structuredInterventionsAllowed
-      ? "PCT_LISTENING"
-      : supportMode === "REGULATE"
-        ? "RELAXATION"
-        : supportMode === "DIRECT_HELP"
-          ? "PROBLEM_SOLVING"
-          : "PCT_LISTENING";
+  const constrained = safetyConstrainedDecision(safetyState);
+  if (constrained) return constrained;
+
+  const explicit = detectExplicitSupportPreference(input.messageText);
+  if (explicit) {
+    return momoDecisionSchema.parse({
+      ...explicit,
+      confidence: "HIGH",
+      shouldClarify: false,
+      userPreferenceOverride: true,
+      safetyState,
+    });
+  }
+
+  const inferred = momoPlannerInferenceSchema.safeParse(inferredRouting);
+  if (!inferred.success) return fallbackDecision(safetyState);
+
+  const routing = inferred.data;
+  const shouldClarify = routing.supportMode === "UNCLEAR" || routing.shouldClarify;
+  const clarificationTarget = shouldClarify
+    ? routing.clarificationTarget ?? "SUPPORT_PREFERENCE"
+    : undefined;
+
+  let intervention = routing.intervention;
+  if (routing.supportMode === "LISTEN") intervention = "PCT_LISTENING";
+  if (routing.supportMode === "REGULATE") intervention = "RELAXATION";
+  if (routing.supportMode === "UNCLEAR") intervention = "NONE";
+  if (routing.supportMode === "WORK_THROUGH" && intervention === "PCT_LISTENING") {
+    intervention = "PCT_EXPLORATION";
+  }
 
   return momoDecisionSchema.parse({
-    supportMode,
+    supportMode: routing.supportMode,
+    primaryNeed: routing.supportMode === "UNCLEAR" ? "UNKNOWN" : routing.primaryNeed,
     intervention,
-    emotionalContext: [],
-    shouldClarify: policy.clarificationRequired,
-    needsProfessionalSupport: policy.humanReviewRequired,
+    confidence: routing.confidence,
+    shouldClarify,
+    ...(clarificationTarget ? { clarificationTarget } : {}),
+    userPreferenceOverride: false,
     safetyState,
   });
 }

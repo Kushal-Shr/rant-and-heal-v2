@@ -10,9 +10,9 @@ import { crisisReplyFor, recordMomoSafetyEvent } from "@/src/server/momo/safety"
 import { classifySafetyRisk } from "@/src/server/safety/classifier";
 import { notifySafetySupport } from "@/src/server/safety/notifications";
 import { orchestrateMomoTurn } from "@/src/lib/momo/orchestrator";
-import { planMomoResponse } from "@/src/lib/momo/planner";
 import type { ConversationTurn } from "@/src/lib/momo/schemas";
 import { evaluateDeterministicSafety } from "@/src/lib/safety/detector";
+import { planMomoResponseWithInference } from "@/src/server/momo/planner";
 import { generateMomoResponse } from "@/src/server/momo/responder";
 
 export const runtime = "nodejs";
@@ -115,7 +115,7 @@ export async function POST(request: NextRequest) {
       { messageText, history: history(snapshot.docs.map((item) => item.data() as StoredMessage)) },
       {
         evaluateSafety: evaluateDeterministicSafety,
-        plan: planMomoResponse,
+        plan: planMomoResponseWithInference,
         respond: generateMomoResponse,
         safetyResponse: (evaluation) => crisisReplyFor(evaluation.deterministic),
       }
