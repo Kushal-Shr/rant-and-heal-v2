@@ -1,21 +1,7 @@
-import { z } from "zod";
 import { AI_MODELS } from "../ai/models.ts";
 import { ThinkingLevel } from "@google/genai";
 import type { NoteContent } from "../therapy/notes.ts";
-
-export const weeklyReflectionSchema = z.object({
-  observations: z.array(z.string().max(500)).max(20),
-  supportiveReflection: z.string().max(4000),
-  suggestedNextSteps: z.array(z.string().max(500)).max(10),
-}).strict();
-export const weeklyTherapySchema = z.object({
-  sessions: z.array(z.string().max(200)).max(20),
-  topicsDiscussed: z.array(z.string().max(500)).max(30),
-  userReportedConcerns: z.array(z.string().max(500)).max(30),
-  strategiesDiscussed: z.array(z.string().max(500)).max(30),
-  goalsAgreed: z.array(z.string().max(500)).max(30),
-  followUpItems: z.array(z.string().max(500)).max(30),
-}).strict();
+export { weeklyReflectionSchema, weeklyTherapySchema } from "./schemas.ts";
 
 export function isReviewedTherapyNote(value: { status?: unknown; source?: unknown }): boolean {
   return value.status === "THERAPIST_REVIEWED" &&

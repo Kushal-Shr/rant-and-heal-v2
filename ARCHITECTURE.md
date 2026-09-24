@@ -44,6 +44,7 @@ The project follows a hybrid directory layout:
 │   │
 │   ├── config/                       # Application configuration
 │   │   ├── env.ts                    # Zod env schema validation
+│   │   ├── features.ts               # Server-owned V4 trial flags
 │   │   └── firebase.ts               # Firebase App, Auth, and Firestore initialization
 │   │
 │   ├── context/                      # React Context Providers
@@ -53,7 +54,15 @@ The project follows a hybrid directory layout:
 │   │   ├── authService.ts            # Auth-to-Database Bridge (signup/signin)
 │   │   └── connectionService.ts      # Client WebRTC/Session connectivity services
 │   │
-│   └── types/                        # Core TypeScript declarations
+│   ├── lib/                          # Provider-neutral domain boundaries
+│   │   ├── ai/                       # Model-role and thinking-level registry
+│   │   ├── crypto/                   # Client-only journal Vault cryptography
+│   │   ├── momo/                     # Orchestration, planning, schemas, prompt policy
+│   │   ├── reports/                  # Weekly report schemas and safe source contracts
+│   │   ├── safety/                   # Detection, normalized states, schemas, policy
+│   │   └── therapy/                  # Relationship, access, notes, consent, envelope rules
+│   ├── server/                       # Firebase Admin, Gemini, KMS, server-only adapters
+│   └── types/                        # Shared application TypeScript declarations
 ```
 
 ---
@@ -64,6 +73,14 @@ The project follows a hybrid directory layout:
 - Client-side Firebase helpers live in `src/services/` for user, therapist, and connection flows.
 - Privileged server integrations live in `src/server/`, including Firebase Admin initialization, Firebase ID-token verification, Gemini configuration, and shared Momo persona instructions.
 - UI components should not perform privileged writes directly. Sensitive mutations, such as Momo message creation, should go through authenticated Route Handlers.
+
+### V4 domain boundaries
+- Momo uses one visible identity. `orchestrateMomoTurn` owns the safety → planner → responder sequence, while the existing route retains authentication, quotas, idempotency, and Firestore transactions.
+- `MomoDecision` is structured routing metadata only. No model chain-of-thought is requested or stored.
+- Safety normalizes evidence into `NORMAL`, `CLARIFY`, `SELF_HARM`, `SUICIDAL`, `IMMINENT`, or `MEDICAL_EMERGENCY`, then applies a centralized behavioral policy. Human escalation ownership and the clinician-approved launch protocol remain future work.
+- Weekly-report Gemini generation consumes mood records, Momo summaries, reviewed therapy notes, objective activity, and aggregate `journal_metrics`. Raw journal documents and decrypted journal content are excluded by contract and tests.
+- Journal Vault encryption is client-only. Therapy messages, notes, and reports use a distinct application-managed relationship key wrapped by Cloud KMS. Neither key model may be substituted for the other.
+- Server feature flags default weekly reports, AI therapy notes, and the future dashboard on; Momo voice defaults off. The Live implementation is preserved, but token minting and trial UI remain disabled until real-time safety interruption exists.
 
 ### Auth-to-Database Bridge (Atomic Registration)
 - User sign-ups require atomic syncing between Firebase Auth and Firestore.

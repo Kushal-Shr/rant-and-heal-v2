@@ -7,6 +7,7 @@ import { MOMO_SYSTEM_INSTRUCTION } from "@/src/server/momo/persona";
 import { getAdminDb } from "@/src/server/firebaseAdmin";
 import { MomoAccessError, consumeQuota, requireOwnedSession } from "@/src/server/momo/access";
 import { z } from "zod";
+import { FEATURE_FLAGS } from "@/src/config/features";
 
 export const runtime = "nodejs";
 
@@ -14,6 +15,12 @@ const schema = z.object({ sessionId: z.string().trim().min(1).max(128) }).strict
 
 export async function POST(request: NextRequest) {
   try {
+    if (!FEATURE_FLAGS.MOMO_VOICE) {
+      return NextResponse.json(
+        { error: "Momo voice is not enabled for this trial.", code: "FEATURE_DISABLED" },
+        { status: 503 }
+      );
+    }
     const decodedToken = await verifyFirebaseBearerToken(request);
 
     if (!decodedToken) {

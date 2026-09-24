@@ -22,6 +22,8 @@ import { db } from "@/src/config/firebase";
 import { useAuth } from "@/src/context/AuthContext";
 import { MomoVoiceCallPanel } from "@/src/components/momo/MomoVoiceCallPanel";
 
+const momoVoiceEnabled = process.env.NEXT_PUBLIC_MOMO_VOICE_ENABLED === "true";
+
 type MessageSender = "USER" | "MOMO";
 
 interface MomoMessage {
@@ -284,11 +286,11 @@ export default function MomoPage() {
             </select>
           </label>
 
-          <MomoVoiceCallPanel embedded sessionId={sessionId} />
+          {momoVoiceEnabled ? <MomoVoiceCallPanel embedded sessionId={sessionId} /> : null}
 
           <div ref={messagesRef} className="min-h-0 flex-1 overflow-y-auto px-5 py-6 sm:px-7">
             <div className="mx-auto flex max-w-3xl flex-col gap-5 pb-8">
-              {messages.length === 0 ? <div className="mx-auto flex max-w-md flex-col items-center rounded-[2rem] bg-[#fff1e8] px-7 py-9 text-center"><div aria-hidden="true" className="flex size-12 items-center justify-center rounded-full bg-[#c6ebda] text-[#325347]"><span className="material-symbols-outlined">waving_hand</span></div><h1 className="mt-4 text-xl font-medium text-[#325347]">I&apos;m here whenever you&apos;re ready.</h1><p className="mt-2 text-sm leading-6 text-[#414845]/75">You can write freely, ask for a moment to pause, or start a voice conversation.</p></div> : null}
+              {messages.length === 0 ? <div className="mx-auto flex max-w-md flex-col items-center rounded-[2rem] bg-[#fff1e8] px-7 py-9 text-center"><div aria-hidden="true" className="flex size-12 items-center justify-center rounded-full bg-[#c6ebda] text-[#325347]"><span className="material-symbols-outlined">waving_hand</span></div><h1 className="mt-4 text-xl font-medium text-[#325347]">I&apos;m here whenever you&apos;re ready.</h1><p className="mt-2 text-sm leading-6 text-[#414845]/75">You can write freely, ask for a moment to pause, or tell Momo what kind of support would help.</p></div> : null}
               {messages.map((message) => {
                 const isUserMessage = message.sender === "USER";
                 return <div className={`flex gap-3 ${isUserMessage ? "justify-end" : "justify-start"}`} key={message.id}>

@@ -1,7 +1,9 @@
 import { ApiError, GoogleGenAI } from "@google/genai";
+import { AI_MODELS } from "@/src/lib/ai/models";
 
-export const MOMO_TEXT_MODEL = process.env.GEMINI_MODEL ?? "gemini-2.5-flash";
-export const MOMO_LIVE_MODEL = process.env.GEMINI_LIVE_MODEL ?? "gemini-3.1-flash-live-preview";
+export const MOMO_TEXT_MODEL = process.env.GEMINI_MODEL ?? AI_MODELS.MOMO_RESPONSE;
+export const MOMO_LIVE_MODEL = process.env.GEMINI_LIVE_MODEL ?? AI_MODELS.VOICE;
+export const SAFETY_CLASSIFIER_MODEL = process.env.GEMINI_SAFETY_MODEL ?? AI_MODELS.SAFETY_CLASSIFIER;
 
 export function isGeminiBillingError(error: unknown): boolean {
   return (error instanceof ApiError && error.status === 402) ||

@@ -1,4 +1,3 @@
-import type { Content } from "@google/genai";
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { after, NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
@@ -6,11 +5,15 @@ import { verifyFirebaseBearerToken } from "@/src/server/auth";
 import { getErrorMessage } from "@/src/server/errors";
 import { getAdminDb } from "@/src/server/firebaseAdmin";
 import { MomoAccessError, consumeQuota, requireOwnedSession } from "@/src/server/momo/access";
-import { getGeminiClient, isGeminiBillingError, MOMO_TEXT_MODEL } from "@/src/server/momo/gemini";
-import { MOMO_SYSTEM_INSTRUCTION } from "@/src/server/momo/persona";
-import { assessMomoSafety, crisisReplyFor, recordMomoSafetyEvent } from "@/src/server/momo/safety";
+import { isGeminiBillingError } from "@/src/server/momo/gemini";
+import { crisisReplyFor, recordMomoSafetyEvent } from "@/src/server/momo/safety";
 import { classifySafetyRisk } from "@/src/server/safety/classifier";
 import { notifySafetySupport } from "@/src/server/safety/notifications";
+import { orchestrateMomoTurn } from "@/src/lib/momo/orchestrator";
+import { planMomoResponse } from "@/src/lib/momo/planner";
+import type { ConversationTurn } from "@/src/lib/momo/schemas";
+import { evaluateDeterministicSafety } from "@/src/lib/safety/detector";
+import { generateMomoResponse } from "@/src/server/momo/responder";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -30,7 +33,7 @@ interface StoredMessage {
   provenance?: string;
 }
 
-function history(messages: StoredMessage[]): Content[] {
+function history(messages: StoredMessage[]): ConversationTurn[] {
   return messages
     .filter((item) =>
       typeof item.text === "string" &&
@@ -42,8 +45,8 @@ function history(messages: StoredMessage[]): Content[] {
       return time || (a.order ?? 0) - (b.order ?? 0);
     })
     .map((item) => ({
-      role: item.sender === "MOMO" ? "model" : "user",
-      parts: [{ text: item.text!.trim() }],
+      role: item.sender === "MOMO" ? "MOMO" as const : "USER" as const,
+      text: item.text!.trim(),
     }));
 }
 
@@ -107,9 +110,19 @@ export async function POST(request: NextRequest) {
       });
     };
 
-    const safety = assessMomoSafety(messageText);
-    if (safety.level === "IMMINENT") {
-      const reply = crisisReplyFor(safety);
+    const snapshot = await messagesRef.orderBy("timestamp", "asc").limitToLast(HISTORY_LIMIT).get();
+    const outcome = await orchestrateMomoTurn(
+      { messageText, history: history(snapshot.docs.map((item) => item.data() as StoredMessage)) },
+      {
+        evaluateSafety: evaluateDeterministicSafety,
+        plan: planMomoResponse,
+        respond: generateMomoResponse,
+        safetyResponse: (evaluation) => crisisReplyFor(evaluation.deterministic),
+      }
+    );
+    const safety = outcome.safety.deterministic;
+    const reply = outcome.message;
+    if (outcome.kind === "SAFETY_RESPONSE") {
       await db.runTransaction(async (transaction) => {
         const sessionSnap = await transaction.get(sessionRef);
         if (sessionSnap.data()?.activeRequestId !== requestId) {
@@ -139,17 +152,8 @@ export async function POST(request: NextRequest) {
           console.error("MOMO SAFETY FOLLOW-UP ERROR:", getErrorMessage(error));
         }
       });
-      return NextResponse.json({ message: reply, safety: { level: "IMMINENT", category: safety.category } });
+      return NextResponse.json({ message: reply, safety: { level: "IMMINENT", state: outcome.safety.state, category: safety.category } });
     }
-
-    const snapshot = await messagesRef.orderBy("timestamp", "asc").limitToLast(HISTORY_LIMIT).get();
-    const result = await getGeminiClient().models.generateContent({
-      model: MOMO_TEXT_MODEL,
-      contents: [...history(snapshot.docs.map((item) => item.data() as StoredMessage)), { role: "user", parts: [{ text: messageText }] }],
-      config: { systemInstruction: MOMO_SYSTEM_INSTRUCTION },
-    });
-    const reply = result.text?.trim();
-    if (!reply) throw new Error("Gemini returned an empty response.");
 
     await db.runTransaction(async (transaction) => {
       const sessionSnap = await transaction.get(sessionRef);
