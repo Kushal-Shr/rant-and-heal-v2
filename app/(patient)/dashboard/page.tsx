@@ -15,6 +15,8 @@ import type { JournalMetric } from "@/src/lib/journal/schemas";
 import { MoodTrend } from "@/src/components/shared/MoodTrend";
 import { MomoPortrait } from "@/src/components/shared/MomoPortrait";
 
+const momoVoiceEnabled = process.env.NEXT_PUBLIC_MOMO_VOICE_ENABLED === "true";
+
 const scoreFields = [
   { key: "moodScore", label: "Mood", accent: "bg-[#abcebf]" },
   { key: "anxietyScore", label: "Anxiety", accent: "bg-[#fed1b4]" },
@@ -187,7 +189,7 @@ export default function PatientDashboardPage() {
 
         <section className="grid gap-6 lg:grid-cols-[0.82fr_1.18fr]">
           <div className="grid grid-cols-2 gap-4">
-            {quickActions.map((action) => (
+            {quickActions.filter((action) => momoVoiceEnabled || action.href !== "/momo/call").map((action) => (
               <Link className="group flex min-h-36 flex-col items-center justify-center rounded-[2rem] border border-white/70 bg-white/45 p-5 text-center shadow-[0_15px_30px_-18px_rgba(121,88,65,0.2),inset_0_2px_4px_rgba(255,255,255,0.65)] transition-all hover:-translate-y-1 hover:bg-white/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#325347] focus-visible:ring-offset-4 focus-visible:ring-offset-[#fff8f5] active:scale-[0.97]" href={action.href} key={action.label}>
                 <span className={`mb-4 flex size-12 items-center justify-center rounded-full shadow-[inset_0_2px_4px_rgba(255,255,255,0.55)] ${action.className}`}><span aria-hidden="true" className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>{action.icon}</span></span>
                 <span className="text-sm font-medium text-[#2c1601]">{action.label}</span>

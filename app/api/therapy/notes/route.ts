@@ -5,6 +5,7 @@ import { requireRelationship, requireAiConsent, TherapyAccessError } from "@/src
 import { createCallDraft, createTextDraft, readNote, reviewNote } from "@/src/server/therapy/notes";
 import { callInputSchema, noteContentSchema } from "@/src/lib/therapy/notes";
 import { isGeminiBillingError } from "@/src/server/momo/gemini";
+import { FEATURE_FLAGS } from "@/src/config/features";
 
 export const runtime = "nodejs";
 const bodySchema = z.discriminatedUnion("action", [
@@ -44,6 +45,9 @@ export async function POST(request: NextRequest) {
   if (!parsed.success) return NextResponse.json({ error: "Invalid note request" }, { status: 400 });
   try {
     const body = parsed.data;
+    if (!FEATURE_FLAGS.AI_THERAPY_NOTES && (body.action === "GENERATE_TEXT" || (body.action === "CREATE_CALL" && body.organizeWithAi))) {
+      return NextResponse.json({ error: "AI therapy notes are disabled.", code: "FEATURE_DISABLED" }, { status: 503 });
+    }
     const rel = await requireRelationship(token, body.relationshipId, "therapist");
     if (body.action === "GENERATE_TEXT" || (body.action === "CREATE_CALL" && body.organizeWithAi)) await requireAiConsent(body.relationshipId);
     let result;

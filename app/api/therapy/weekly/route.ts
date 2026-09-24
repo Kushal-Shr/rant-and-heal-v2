@@ -5,10 +5,12 @@ import { verifyFirebaseBearerToken } from "@/src/server/auth";
 import { requireRelationship, requireAiConsent, relationshipDek, TherapyAccessError } from "@/src/server/therapy/access";
 import { readNote } from "@/src/server/therapy/notes";
 import { encryptText, decryptText, type EncryptedPayload } from "@/src/server/therapy/crypto";
-import { getGeminiClient, isGeminiBillingError } from "@/src/server/momo/gemini";
+import { isGeminiBillingError } from "@/src/server/momo/gemini";
 import { aggregateWeeklyJournalMetrics } from "@/src/lib/reports/sources/journalMetrics";
-import { buildWeeklySupportSummaryRequest } from "@/src/lib/reports/weeklySupportSummary";
-import { buildWeeklyTherapyRequest, isReviewedTherapyNote, weeklyReflectionSchema, weeklyTherapySchema } from "@/src/lib/reports/therapyWeekly";
+import { isReviewedTherapyNote } from "@/src/lib/reports/therapyWeekly";
+import { weeklyReflectionSchema, weeklyTherapySchema } from "@/src/lib/reports/schemas";
+import { generateWeeklyReport } from "@/src/server/reports/generateWeeklyReport";
+import { FEATURE_FLAGS } from "@/src/config/features";
 
 export const runtime = "nodejs";
 const bodySchema = z.object({ relationshipId: z.string().min(1).max(128), weekStart: z.string().datetime() }).strict();
@@ -39,6 +41,7 @@ function fail(error: unknown) {
 }
 
 export async function POST(request: NextRequest) {
+  if (!FEATURE_FLAGS.WEEKLY_REPORTS) return NextResponse.json({ error: "Weekly reports are disabled.", code: "FEATURE_DISABLED" }, { status: 503 });
   const token = await verifyFirebaseBearerToken(request);
   if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const parsed = bodySchema.safeParse(await request.json().catch(() => null));
@@ -49,7 +52,6 @@ export async function POST(request: NextRequest) {
     if (token.uid !== rel.patientUid) throw new TherapyAccessError("Only the patient can generate weekly reports", 403);
     await requireAiConsent(relationshipId);
     const notes = await reviewedNotes(rel, relationshipId, start, end);
-    const therapyRequest = buildWeeklyTherapyRequest(notes);
     const [moodSnap, momoSnap, journalMetrics] = await Promise.all([
       rel.ref.firestore.collection("users").doc(rel.patientUid).collection("health_metrics")
         .where("createdAt", ">=", Timestamp.fromDate(start)).where("createdAt", "<", Timestamp.fromDate(end)).get(),
@@ -57,25 +59,14 @@ export async function POST(request: NextRequest) {
         .where("createdAt", ">=", Timestamp.fromDate(start)).where("createdAt", "<", Timestamp.fromDate(end)).get(),
       aggregateWeeklyJournalMetrics(rel.ref.firestore, rel.patientUid, start, end),
     ]);
-    const reflectionRequest = buildWeeklySupportSummaryRequest({
+    const sources = {
       moodTrackerData: moodSnap.docs.map((doc) => ({ moodScore: doc.data().moodScore, anxietyScore: doc.data().anxietyScore, energyScore: doc.data().energyScore })),
       momoSessionSummaries: momoSnap.docs.flatMap((doc) => typeof doc.data().summary === "string" ? [doc.data().summary] : []),
       therapistReviewedNotes: notes,
       objectiveAppActivity: { momoSessionCount: momoSnap.size, reviewedTherapySessionCount: notes.length },
       journalMetrics,
-    });
-    const [therapyResult, reflectionResult] = await Promise.all([
-      getGeminiClient().models.generateContent(therapyRequest),
-      getGeminiClient().models.generateContent(reflectionRequest),
-    ]);
-    const generatedTherapy = weeklyTherapySchema.parse(JSON.parse(therapyResult.text ?? "null"));
-    const sessionLabels = { TEXT_CHAT: "text session", VIDEO_CALL: "video session", VOICE_CALL: "voice session" } as const;
-    const sessions = Object.entries(sessionLabels).flatMap(([source, label]) => {
-      const count = notes.filter((note) => note.source === source).length;
-      return count ? [`${count} ${label}${count === 1 ? "" : "s"}`] : [];
-    });
-    const therapy = { ...generatedTherapy, sessions };
-    const reflection = weeklyReflectionSchema.parse(JSON.parse(reflectionResult.text ?? "null"));
+    };
+    const { therapy, reflection } = await generateWeeklyReport(sources, notes);
     const dek = await relationshipDek(relationshipId);
     try {
       const therapyEncrypted = encryptText(dek, JSON.stringify(therapy), `${relationshipId}:weekly:therapy:${weekId}`);
@@ -98,6 +89,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function GET(request: NextRequest) {
+  if (!FEATURE_FLAGS.WEEKLY_REPORTS) return NextResponse.json({ error: "Weekly reports are disabled.", code: "FEATURE_DISABLED" }, { status: 503 });
   const token = await verifyFirebaseBearerToken(request);
   if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const relationshipId = request.nextUrl.searchParams.get("relationshipId") ?? "";

@@ -30,8 +30,18 @@ FIREBASE_ADMIN_PRIVATE_KEY=
 
 GEMINI_API_KEY=
 GEMINI_MODEL=gemini-2.5-flash
+GEMINI_SAFETY_MODEL=gemini-2.5-flash
 GEMINI_LIVE_MODEL=gemini-3.1-flash-live-preview
-GEMINI_WEEKLY_REPORT_MODEL=gemini-3.8-flash
+
+# Trial feature flags. Voice stays off until live audio can be interrupted by
+# the safety layer before a model response is delivered.
+ENABLE_WEEKLY_REPORTS=true
+ENABLE_AI_THERAPY_NOTES=true
+ENABLE_SAFETY_DASHBOARD=true
+ENABLE_MOMO_VOICE=false
+
+# Server-only application-managed therapy encryption.
+THERAPY_KMS_KEY_NAME=
 
 # Optional TURN relay for therapist video calls. Keep these server-only.
 TURN_URLS=turn:turn.example.com:3478,turns:turn.example.com:5349
@@ -93,11 +103,25 @@ Content-Type: application/json
 
 Verification atomically marks the directory profile as verified and changes the user role to `THERAPIST`. Send `{ "action": "REJECT" }` to reject a pending application. Assigning the `admin` custom claim must be done through a trusted Firebase Admin SDK environment; never from the browser.
 
+## V4 engineering layer
+
+Shared domain contracts live under `src/lib` and provider integrations remain under `src/server`:
+
+- `src/lib/momo`: normalized input/output, structured routing decisions, orchestration, and core/PCT/boundary prompts.
+- `src/lib/safety`: deterministic detection, normalized safety state, event schemas, and response policy. The Gemini classifier remains server-only.
+- `src/lib/reports`: weekly report schemas, privacy-safe source contracts, and request builders. Actual Gemini generation is isolated in `src/server/reports`.
+- `src/lib/crypto`: client-only journal Vault primitives. These never import Firebase Admin, Gemini, KMS, or therapy encryption.
+- `src/lib/therapy`: relationship transitions, access policy, note schemas, consent, and the server-only-compatible therapy envelope primitive.
+- `src/lib/ai/models.ts`: one model-role and thinking-level registry. Server environment overrides are resolved by the provider adapter.
+- `src/config/features.ts`: server-owned feature flags. The non-sensitive voice availability value is projected into the client build so disabled trial UI is not offered.
+
+The two encryption models are deliberately separate: journals are encrypted and decrypted only in the browser with the user's Vault key; therapy communication uses per-relationship envelope encryption whose DEK is wrapped by Cloud KMS and may be temporarily decrypted by authorized server workflows.
+
 ## Momo Architecture
 
-Momo text chat is server-owned: the client calls `/api/momo/chat`, the route verifies the Firebase ID token and session, enforces bounded quotas, serializes/idempotently records the turn, calls Gemini, then writes ordered USER and MOMO messages with the Admin SDK.
+Momo text chat is server-owned: the client calls `/api/momo/chat`, the route verifies the Firebase ID token and session, enforces bounded quotas, and preserves idempotent persistence. The domain orchestrator then evaluates safety, creates a structured `MomoDecision`, and invokes the server-only responder. Only routing fields are retained in memory; model chain-of-thought is neither requested nor stored.
 
-Momo voice uses `/api/momo/live-token` to mint a short-lived Gemini Live token. Browser code captures microphone PCM audio and streams it directly to Gemini Live with the ephemeral token.
+The underlying Momo voice implementation uses `/api/momo/live-token` to mint a short-lived Gemini Live token. Browser code captures microphone PCM audio and streams it directly to Gemini Live with the ephemeral token. It is disabled for the trial by `ENABLE_MOMO_VOICE=false` and hidden from trial actions because completed-transcript screening is not real-time interruption.
 
 Authenticated patient and anonymous Firebase sessions use the same application quotas: 20 text turns per minute, 5 live-token grants per 10 minutes, and 60 transcript writes per minute. Infrastructure-level budgets and alerts should still be configured in Google Cloud.
 

@@ -1,5 +1,9 @@
 import { z } from "zod";
 
+export const THERAPY_SESSION_NOTE_STATUSES = ["AI_DRAFT", "THERAPIST_REVIEWED"] as const;
+export const therapySessionNoteStatusSchema = z.enum(THERAPY_SESSION_NOTE_STATUSES);
+export type TherapySessionNoteStatus = z.infer<typeof therapySessionNoteStatusSchema>;
+
 const boundedText = z.string().trim().max(4000);
 const statements = z.array(z.string().trim().min(1).max(500)).max(30);
 export const noteContentSchema = z.object({
@@ -17,6 +21,7 @@ export const noteContentSchema = z.object({
 export type NoteContent = z.infer<typeof noteContentSchema>;
 
 export const noteSourceSchema = z.enum(["TEXT_CHAT", "VIDEO_CALL", "VOICE_CALL"]);
+export type TherapySessionNoteSource = z.infer<typeof noteSourceSchema>;
 export const callInputSchema = z.object({
   focus: z.string().trim().min(1).max(4000),
   userConcerns: z.string().trim().max(4000),

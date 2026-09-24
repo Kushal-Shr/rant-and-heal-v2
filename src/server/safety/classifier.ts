@@ -1,26 +1,18 @@
-import { z } from "zod";
-import { getGeminiClient, MOMO_TEXT_MODEL } from "@/src/server/momo/gemini";
+import { getGeminiClient, SAFETY_CLASSIFIER_MODEL } from "@/src/server/momo/gemini";
+import {
+  modelRiskAssessmentSchema,
+  type ModelRiskAssessment,
+} from "@/src/lib/safety/schemas";
+export type { ModelRiskAssessment } from "@/src/lib/safety/schemas";
 
 export const SAFETY_POLICY_VERSION = "2026-09-17-v1";
-
-export interface ModelRiskAssessment {
-  level: "SAFE" | "CONCERNING" | "IMMINENT";
-  category?: "SELF_HARM" | "HARM_TO_OTHERS";
-  rationale: string;
-}
-
-const modelAssessmentSchema = z.object({
-  level: z.enum(["SAFE", "CONCERNING", "IMMINENT"]),
-  category: z.enum(["SELF_HARM", "HARM_TO_OTHERS"]).nullable(),
-  rationale: z.string().min(1).max(240),
-});
 
 // The model is a second opinion only. Its response is schema-validated and it
 // has no tool/function access; application code owns every safety action.
 export async function classifySafetyRisk(text: string): Promise<ModelRiskAssessment | null> {
   try {
     const generation = getGeminiClient().models.generateContent({
-      model: MOMO_TEXT_MODEL,
+      model: SAFETY_CLASSIFIER_MODEL,
       contents: [{ role: "user", parts: [{ text }]}],
       config: {
         responseMimeType: "application/json",
@@ -43,11 +35,11 @@ export async function classifySafetyRisk(text: string): Promise<ModelRiskAssessm
         setTimeout(() => reject(new Error("Safety classifier timed out")), 4_000)
       ),
     ]);
-    const parsed = modelAssessmentSchema.safeParse(JSON.parse(result.text ?? ""));
+    const parsed = modelRiskAssessmentSchema.safeParse(JSON.parse(result.text ?? ""));
     if (!parsed.success) return null;
     return {
       level: parsed.data.level,
-      category: parsed.data.category ?? undefined,
+      category: parsed.data.category,
       rationale: parsed.data.rationale,
     };
   } catch (error) {
