@@ -13,10 +13,11 @@ import {
 
 const validDecision = {
   supportMode: "LISTEN",
+  primaryNeed: "VENT",
   intervention: "PCT_LISTENING",
-  emotionalContext: [],
+  confidence: "HIGH",
   shouldClarify: false,
-  needsProfessionalSupport: false,
+  userPreferenceOverride: true,
   safetyState: "NORMAL",
 };
 
@@ -56,7 +57,7 @@ test("Momo planner emits structured routing state without chain-of-thought", () 
   assert.equal(decision.supportMode, "LISTEN");
   assert.equal(decision.intervention, "PCT_LISTENING");
   assert.deepEqual(Object.keys(decision).sort(), [
-    "emotionalContext", "intervention", "needsProfessionalSupport", "safetyState", "shouldClarify", "supportMode",
+    "confidence", "intervention", "primaryNeed", "safetyState", "shouldClarify", "supportMode", "userPreferenceOverride",
   ]);
 });
 

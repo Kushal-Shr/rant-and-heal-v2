@@ -10,10 +10,11 @@ import { crisisReplyFor, recordMomoSafetyEvent } from "@/src/server/momo/safety"
 import { classifySafetyRisk } from "@/src/server/safety/classifier";
 import { notifySafetySupport } from "@/src/server/safety/notifications";
 import { orchestrateMomoTurn } from "@/src/lib/momo/orchestrator";
-import { planMomoResponse } from "@/src/lib/momo/planner";
 import type { ConversationTurn } from "@/src/lib/momo/schemas";
 import { evaluateDeterministicSafety } from "@/src/lib/safety/detector";
+import { planMomoResponseWithInference } from "@/src/server/momo/planner";
 import { generateMomoResponse } from "@/src/server/momo/responder";
+import { logMomoRoutingDecision, logMomoSafetyBypass } from "@/src/server/momo/routingDebug";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -115,13 +116,18 @@ export async function POST(request: NextRequest) {
       { messageText, history: history(snapshot.docs.map((item) => item.data() as StoredMessage)) },
       {
         evaluateSafety: evaluateDeterministicSafety,
-        plan: planMomoResponse,
+        plan: planMomoResponseWithInference,
         respond: generateMomoResponse,
         safetyResponse: (evaluation) => crisisReplyFor(evaluation.deterministic),
       }
     );
     const safety = outcome.safety.deterministic;
     const reply = outcome.message;
+    if (outcome.decision) {
+      logMomoRoutingDecision(outcome.decision);
+    } else {
+      logMomoSafetyBypass(outcome.safety.state);
+    }
     if (outcome.kind === "SAFETY_RESPONSE") {
       await db.runTransaction(async (transaction) => {
         const sessionSnap = await transaction.get(sessionRef);

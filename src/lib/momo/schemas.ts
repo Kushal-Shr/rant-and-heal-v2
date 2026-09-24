@@ -11,10 +11,22 @@ export const SUPPORT_MODES = [
 export const supportModeSchema = z.enum(SUPPORT_MODES);
 export type SupportMode = z.infer<typeof supportModeSchema>;
 
+export const PRIMARY_NEEDS = [
+  "VENT",
+  "UNDERSTAND",
+  "PRACTICAL_HELP",
+  "COGNITIVE_SUPPORT",
+  "EMOTIONAL_REGULATION",
+  "PROFESSIONAL_SUPPORT",
+  "UNKNOWN",
+] as const;
+export const primaryNeedSchema = z.enum(PRIMARY_NEEDS);
+export type PrimaryNeed = z.infer<typeof primaryNeedSchema>;
+
 export const INTERVENTIONS = [
   "NONE",
   "PCT_LISTENING",
-  "CBT_GUIDED_DISCOVERY",
+  "PCT_EXPLORATION",
   "CBT_RESTRUCTURING",
   "PROBLEM_SOLVING",
   "RELAXATION",
@@ -23,16 +35,81 @@ export const INTERVENTIONS = [
 export const interventionSchema = z.enum(INTERVENTIONS);
 export type Intervention = z.infer<typeof interventionSchema>;
 
+export const PLANNER_CONFIDENCE_LEVELS = ["LOW", "MEDIUM", "HIGH"] as const;
+export const plannerConfidenceSchema = z.enum(PLANNER_CONFIDENCE_LEVELS);
+export type PlannerConfidence = z.infer<typeof plannerConfidenceSchema>;
+
+export const CLARIFICATION_TARGETS = [
+  "SUPPORT_PREFERENCE",
+  "SITUATION",
+  "EMOTION",
+  "THOUGHT",
+  "GOAL",
+  "OTHER",
+] as const;
+export const clarificationTargetSchema = z.enum(CLARIFICATION_TARGETS);
+export type ClarificationTarget = z.infer<typeof clarificationTargetSchema>;
+
 export const momoDecisionSchema = z.object({
   supportMode: supportModeSchema,
+  primaryNeed: primaryNeedSchema,
   intervention: interventionSchema,
-  emotionalContext: z.array(z.string().trim().min(1).max(80)).max(12),
-  primaryIssue: z.string().trim().min(1).max(240).optional(),
+  confidence: plannerConfidenceSchema,
   shouldClarify: z.boolean(),
-  needsProfessionalSupport: z.boolean(),
+  clarificationTarget: clarificationTargetSchema.optional(),
+  userPreferenceOverride: z.boolean(),
   safetyState: safetyStateSchema,
-}).strict();
+}).strict().superRefine((decision, context) => {
+  if (decision.shouldClarify && !decision.clarificationTarget) {
+    context.addIssue({
+      code: "custom",
+      path: ["clarificationTarget"],
+      message: "A clarification target is required when shouldClarify is true.",
+    });
+  }
+  if (!decision.shouldClarify && decision.clarificationTarget) {
+    context.addIssue({
+      code: "custom",
+      path: ["clarificationTarget"],
+      message: "A clarification target is only allowed when shouldClarify is true.",
+    });
+  }
+});
 export type MomoDecision = z.infer<typeof momoDecisionSchema>;
+
+// The inference model returns routing metadata only. Safety state and explicit
+// preference precedence are owned by application code, not the model.
+export const momoPlannerInferenceSchema = z.object({
+  supportMode: supportModeSchema,
+  primaryNeed: primaryNeedSchema,
+  intervention: interventionSchema,
+  confidence: plannerConfidenceSchema,
+  shouldClarify: z.boolean(),
+  clarificationTarget: clarificationTargetSchema.nullable(),
+}).strict().superRefine((inference, context) => {
+  if (inference.shouldClarify && !inference.clarificationTarget) {
+    context.addIssue({
+      code: "custom",
+      path: ["clarificationTarget"],
+      message: "A clarification target is required when shouldClarify is true.",
+    });
+  }
+  if (!inference.shouldClarify && inference.clarificationTarget) {
+    context.addIssue({
+      code: "custom",
+      path: ["clarificationTarget"],
+      message: "A clarification target must be null when shouldClarify is false.",
+    });
+  }
+  if (inference.supportMode === "UNCLEAR" && !inference.shouldClarify) {
+    context.addIssue({
+      code: "custom",
+      path: ["shouldClarify"],
+      message: "UNCLEAR routing must request a targeted clarification.",
+    });
+  }
+});
+export type MomoPlannerInference = z.infer<typeof momoPlannerInferenceSchema>;
 
 export const conversationTurnSchema = z.object({
   role: z.enum(["USER", "MOMO"]),
