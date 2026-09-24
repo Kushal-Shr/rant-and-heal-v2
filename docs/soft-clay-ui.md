@@ -16,7 +16,7 @@ Practitioner pages share clay headers, searchable patient/conversation lists, cl
 
 ## Generated asset
 
-- File: `public/images/momo-clay.png`.
+- File: `public/images/momo-dumpling-clay-transparent.png`.
 - Created with the built-in imagegen tool, used by `MomoPortrait` for the brand, landing hero, dashboard, signup, and Momo voice screen. The original output was copied into this repository and is served through `next/image`.
 - Prompt: “Use case: stylized-concept. Asset type: reusable website mascot illustration for Rant & Heal, a gentle emotional wellbeing app. Create a single charming 3D marshmallow cloud called Momo, floating just above a sage green surface in a softly lit miniature studio. Momo is a creamy warm ivory puffy cloud with five organic lobes, two tiny dark moss round eyes, a subtle friendly curved smile, soft muted peach cheeks. Soft Clay Realism: tactile matte sculpted clay, soft subsurface scattering, delicate contact shadows and diffused warm daylight from upper left, sophisticated polished 3D render. Front view, centered full character, generous negative space around it, square composition, background seamless pale sage #d9e7d8 with warm cream #fff8f5 glow. Palette ivory, muted sage, blush peach only. No lettering, no text, no logo, no watermark, no other objects, no border. Quiet comforting expression, avoid plastic shine, avoid emoji style.”
 

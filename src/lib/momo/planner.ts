@@ -52,6 +52,7 @@ const WORK_THROUGH_PATTERNS = [
   /\b(?:can|could|will|would)\s+(?:you|we)\s+(?:actually\s+)?(?:help\s+me\s+)?(?:work|talk|think)\s+through\b/i,
   /\bhelp\s+me\s+(?:understand|make\s+sense\s+of|challenge|examine)\b/i,
   /\bwhy\s+does\s+this\s+keep\s+happening\b/i,
+  /\b(?:can|could)\s+we\s+(?:figure|find)\s+out\s+why\b/i,
   /\blet['’]s\s+(?:do\s+cbt|work\s+through|look\s+at\s+this\s+thought)\b/i,
   /(?:बुझ्न\s*मद्दत|सँगै\s*बुझौँ|यो\s*विचार\s*हेरौँ)/i,
   /\b(?:bujhna\s+madat|sangai\s+bujhau|yo\s+bichar\s+herau)\b/i,
@@ -163,4 +164,27 @@ export function planMomoResponse(
     userPreferenceOverride: false,
     safetyState,
   });
+}
+
+export type MomoRoutingInference = (
+  input: NormalizedConversationInput
+) => unknown | Promise<unknown>;
+
+export async function planMomoResponseWithModel(
+  input: NormalizedConversationInput,
+  safetyState: SafetyState,
+  infer: MomoRoutingInference,
+  onInferenceError?: (error: unknown) => void
+): Promise<MomoDecision> {
+  const constrained = safetyConstrainedDecision(safetyState);
+  if (constrained || detectExplicitSupportPreference(input.messageText)) {
+    return constrained ?? planMomoResponse(input, safetyState);
+  }
+
+  try {
+    return planMomoResponse(input, safetyState, await infer(input));
+  } catch (error) {
+    onInferenceError?.(error);
+    return planMomoResponse(input, safetyState);
+  }
 }

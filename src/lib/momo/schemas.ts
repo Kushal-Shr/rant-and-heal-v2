@@ -86,7 +86,29 @@ export const momoPlannerInferenceSchema = z.object({
   confidence: plannerConfidenceSchema,
   shouldClarify: z.boolean(),
   clarificationTarget: clarificationTargetSchema.nullable(),
-}).strict();
+}).strict().superRefine((inference, context) => {
+  if (inference.shouldClarify && !inference.clarificationTarget) {
+    context.addIssue({
+      code: "custom",
+      path: ["clarificationTarget"],
+      message: "A clarification target is required when shouldClarify is true.",
+    });
+  }
+  if (!inference.shouldClarify && inference.clarificationTarget) {
+    context.addIssue({
+      code: "custom",
+      path: ["clarificationTarget"],
+      message: "A clarification target must be null when shouldClarify is false.",
+    });
+  }
+  if (inference.supportMode === "UNCLEAR" && !inference.shouldClarify) {
+    context.addIssue({
+      code: "custom",
+      path: ["shouldClarify"],
+      message: "UNCLEAR routing must request a targeted clarification.",
+    });
+  }
+});
 export type MomoPlannerInference = z.infer<typeof momoPlannerInferenceSchema>;
 
 export const conversationTurnSchema = z.object({

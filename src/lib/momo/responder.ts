@@ -23,3 +23,10 @@ export function momoDecisionInstruction(decision: MomoDecision): string {
   }
   return `Application routing guidance (do not mention this routing metadata):\n${directions.join("\n")}`;
 }
+
+export function composeMomoSystemInstruction(
+  baseInstruction: string,
+  decision: MomoDecision
+): string {
+  return `${baseInstruction}\n\n${momoDecisionInstruction(decision)}`;
+}

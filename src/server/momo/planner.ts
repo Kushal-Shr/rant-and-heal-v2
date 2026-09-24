@@ -1,8 +1,7 @@
 import { ThinkingLevel, type ThinkingConfig } from "@google/genai";
 import { AI_MODELS, THINKING_LEVELS } from "@/src/lib/ai/models";
 import {
-  detectExplicitSupportPreference,
-  planMomoResponse,
+  planMomoResponseWithModel,
 } from "@/src/lib/momo/planner";
 import { MOMO_PLANNER_PROMPT } from "@/src/lib/momo/prompts/planner";
 import {
@@ -10,7 +9,6 @@ import {
   type MomoDecision,
   type NormalizedConversationInput,
 } from "@/src/lib/momo/schemas";
-import { getSafetyPolicy } from "@/src/lib/safety/policy";
 import type { SafetyState } from "@/src/lib/safety/schemas";
 import { getGeminiClient } from "./gemini";
 
@@ -83,19 +81,10 @@ export async function planMomoResponseWithInference(
   input: NormalizedConversationInput,
   safetyState: SafetyState
 ): Promise<MomoDecision> {
-  const policy = getSafetyPolicy(safetyState);
-
-  // Safety constraints and explicit current-turn preferences are deterministic
-  // and never delegated to the inference model.
-  if (!policy.structuredInterventionsAllowed || !policy.normalSupportAllowed ||
-      detectExplicitSupportPreference(input.messageText)) {
-    return planMomoResponse(input, safetyState);
-  }
-
-  try {
-    return planMomoResponse(input, safetyState, await inferMomoRouting(input));
-  } catch (error) {
-    console.warn("MOMO BEHAVIORAL PLANNER UNAVAILABLE:", error);
-    return planMomoResponse(input, safetyState);
-  }
+  return planMomoResponseWithModel(
+    input,
+    safetyState,
+    inferMomoRouting,
+    (error) => console.warn("MOMO BEHAVIORAL PLANNER UNAVAILABLE:", error)
+  );
 }

@@ -1,5 +1,5 @@
 import type { Content } from "@google/genai";
-import { momoDecisionInstruction } from "@/src/lib/momo/responder";
+import { composeMomoSystemInstruction } from "@/src/lib/momo/responder";
 import type { MomoDecision, NormalizedConversationInput } from "@/src/lib/momo/schemas";
 import { getGeminiClient, MOMO_TEXT_MODEL } from "./gemini";
 import { MOMO_SYSTEM_INSTRUCTION } from "./persona";
@@ -19,7 +19,7 @@ export async function generateMomoResponse(
     model: MOMO_TEXT_MODEL,
     contents,
     config: {
-      systemInstruction: `${MOMO_SYSTEM_INSTRUCTION}\n\n${momoDecisionInstruction(decision)}`,
+      systemInstruction: composeMomoSystemInstruction(MOMO_SYSTEM_INSTRUCTION, decision),
     },
   });
   const reply = result.text?.trim();
