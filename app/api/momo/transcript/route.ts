@@ -6,8 +6,10 @@ import { getErrorMessage } from "@/src/server/errors";
 import { getAdminDb } from "@/src/server/firebaseAdmin";
 import { MomoAccessError, consumeQuota, requireOwnedSession } from "@/src/server/momo/access";
 import { assessMomoSafety, recordMomoSafetyEvent } from "@/src/server/momo/safety";
-import { classifySafetyRisk } from "@/src/server/safety/classifier";
-import { notifySafetySupport } from "@/src/server/safety/notifications";
+import { combineSafetyAssessments } from "@/src/lib/safety/detector";
+import { safetyResponseFor } from "@/src/lib/safety/responses";
+import { shouldAttemptSafetySupportNotification } from "@/src/lib/safety/policy";
+import { notifySafetySupport, safetySupportNotificationsEnabled } from "@/src/server/safety/notifications";
 
 export const runtime = "nodejs";
 const schema = z.object({
@@ -30,21 +32,22 @@ export async function POST(request: NextRequest) {
     const db = getAdminDb();
     const sessionRef = await requireOwnedSession(db, userId, sessionId);
     await consumeQuota({ db, userId, key: "momo_transcript_minute", limit: 60, windowMs: 60_000 });
-    const safety = sender === "USER" ? assessMomoSafety(text) : { level: "SAFE" as const, matchedSignals: [] };
+    const safety = sender === "USER" ? assessMomoSafety(text) : assessMomoSafety("");
 
     if (safety.level === "IMMINENT") {
+      const evaluation = combineSafetyAssessments(safety);
+      const responseText = safetyResponseFor(evaluation, { messageText: text, language: safety.language });
       after(async () => {
         try {
-          const [eventId, model] = await Promise.all([
-            recordMomoSafetyEvent({ db, userId, sessionId, userText: text, source: "VOICE", assessment: safety }),
-            classifySafetyRisk(text),
-          ]);
-          if (model?.level === "IMMINENT" && model.category === safety.category) {
-            const status = await notifySafetySupport({ eventId, category: safety.category, source: "VOICE", state: "IMMINENT_RULE_AND_MODEL_AGREE" });
-            await db.collection("users").doc(userId).collection("safety_events").doc(eventId).update({
-              supportNotificationStatus: status,
-              supportNotificationUpdatedAt: FieldValue.serverTimestamp(),
-            });
+          const eventId = await recordMomoSafetyEvent({
+            db, userId, sessionId, userText: text, source: "VOICE", evaluation, responseText,
+          });
+          if (shouldAttemptSafetySupportNotification(evaluation) && safetySupportNotificationsEnabled()) {
+            const eventRef = db.collection("users").doc(userId).collection("safety_events").doc(eventId);
+            await eventRef.update({ supportNotificationStatus: "REQUESTED", supportNotificationUpdatedAt: FieldValue.serverTimestamp() });
+            await eventRef.update({ supportNotificationStatus: "STARTED", supportNotificationUpdatedAt: FieldValue.serverTimestamp() });
+            const status = await notifySafetySupport({ eventId, category: safety.category, source: "VOICE", state: evaluation.state });
+            await eventRef.update({ supportNotificationStatus: status, supportNotificationUpdatedAt: FieldValue.serverTimestamp() });
           }
         } catch (error) {
           console.error("MOMO VOICE SAFETY FOLLOW-UP ERROR:", getErrorMessage(error));

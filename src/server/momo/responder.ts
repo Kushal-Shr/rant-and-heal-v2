@@ -1,6 +1,7 @@
 import type { Content } from "@google/genai";
 import { composeMomoSystemInstruction } from "@/src/lib/momo/responder";
 import type { MomoDecision, NormalizedConversationInput } from "@/src/lib/momo/schemas";
+import { enforceBackendActionTruthfulness } from "@/src/lib/safety/actionTruthfulness";
 import { getGeminiClient, MOMO_TEXT_MODEL } from "./gemini";
 import { MOMO_SYSTEM_INSTRUCTION } from "./persona";
 
@@ -24,5 +25,5 @@ export async function generateMomoResponse(
   });
   const reply = result.text?.trim();
   if (!reply) throw new Error("Gemini returned an empty response.");
-  return reply;
+  return enforceBackendActionTruthfulness(reply);
 }

@@ -9,10 +9,10 @@ import {
 } from "./schemas.ts";
 
 export interface MomoOrchestratorDependencies {
-  evaluateSafety(messageText: string): SafetyEvaluation | Promise<SafetyEvaluation>;
+  evaluateSafety(messageText: string, input?: NormalizedConversationInput): SafetyEvaluation | Promise<SafetyEvaluation>;
   plan(input: NormalizedConversationInput, safetyState: SafetyEvaluation["state"]): MomoDecision | Promise<MomoDecision>;
   respond(input: NormalizedConversationInput, decision: MomoDecision): Promise<string>;
-  safetyResponse(evaluation: SafetyEvaluation): string | Promise<string>;
+  safetyResponse(evaluation: SafetyEvaluation, input?: NormalizedConversationInput): string | Promise<string>;
 }
 
 export async function orchestrateMomoTurn(
@@ -20,12 +20,12 @@ export async function orchestrateMomoTurn(
   dependencies: MomoOrchestratorDependencies
 ): Promise<NormalizedMomoOutput> {
   const input = normalizedConversationInputSchema.parse(rawInput);
-  const safety = await dependencies.evaluateSafety(input.messageText);
+  const safety = await dependencies.evaluateSafety(input.messageText, input);
   const policy = getSafetyPolicy(safety.state);
 
-  if (policy.immediateProtocolRequired) {
+  if (!policy.ordinaryInterventionAllowed) {
     return normalizedMomoOutputSchema.parse({
-      message: await dependencies.safetyResponse(safety),
+      message: await dependencies.safetyResponse(safety, input),
       kind: "SAFETY_RESPONSE",
       decision: null,
       safety,

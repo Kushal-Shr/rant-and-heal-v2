@@ -91,12 +91,12 @@ export function detectExplicitSupportPreference(message: string): ExplicitPrefer
 
 function safetyConstrainedDecision(safetyState: SafetyState): MomoDecision | null {
   const policy = getSafetyPolicy(safetyState);
-  if (policy.structuredInterventionsAllowed && policy.normalSupportAllowed) return null;
+  if (policy.ordinaryInterventionAllowed) return null;
 
   return momoDecisionSchema.parse({
     supportMode: "UNCLEAR",
-    primaryNeed: policy.humanReviewRequired ? "PROFESSIONAL_SUPPORT" : "UNKNOWN",
-    intervention: policy.humanReviewRequired ? "PROFESSIONAL_SUPPORT" : "PCT_LISTENING",
+    primaryNeed: safetyState === "CLARIFY" ? "UNKNOWN" : "PROFESSIONAL_SUPPORT",
+    intervention: safetyState === "CLARIFY" ? "PCT_LISTENING" : "PROFESSIONAL_SUPPORT",
     confidence: "HIGH",
     shouldClarify: policy.clarificationRequired,
     ...(policy.clarificationRequired ? { clarificationTarget: "OTHER" } : {}),

@@ -12,11 +12,17 @@ export interface SafetyEvidence {
 
 export function resolveSafetyState(evidence: SafetyEvidence): SafetyState {
   if (evidence.medicalEmergency) return "MEDICAL_EMERGENCY";
+  if (evidence.deterministic.suggestedState && evidence.deterministic.suggestedState !== "NORMAL") {
+    return evidence.deterministic.suggestedState;
+  }
   if (evidence.deterministic.level === "IMMINENT" || evidence.model?.level === "IMMINENT") {
     return "IMMINENT";
   }
   if (evidence.model?.level === "CONCERNING") {
-    return evidence.model.category === "SELF_HARM" ? "SELF_HARM" : "CLARIFY";
+    if (evidence.model.category !== "SELF_HARM") return "CLARIFY";
+    return evidence.model.evidence.some((item) =>
+      item === "DEATH_OR_NONEXISTENCE" || item === "SUICIDAL_IDEATION"
+    ) ? "SUICIDAL" : "SELF_HARM";
   }
   if (evidence.deterministic.level === "CONCERNING") {
     return evidence.deterministic.category === "SELF_HARM" ? "SELF_HARM" : "CLARIFY";

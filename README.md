@@ -125,17 +125,17 @@ The underlying Momo voice implementation uses `/api/momo/live-token` to mint a s
 
 Authenticated patient and anonymous Firebase sessions use the same application quotas: 20 text turns per minute, 5 live-token grants per 10 minutes, and 60 transcript writes per minute. Infrastructure-level budgets and alerts should still be configured in Google Cloud.
 
-### Momo safety interceptor v0.1
+### Momo Day 3 safety behavior
 
-Before a text message reaches Gemini, `/api/momo/chat` applies a conservative server-side phrase screen for direct self-harm or harm-to-others language in English, Nepali, and romanized Nepali. A matching message bypasses Gemini, receives fixed crisis wording, records a minimal server-only `users/{uid}/safety_events/{eventId}` audit event, and takes the user to `/crisis`.
+Before ordinary planning, `/api/momo/chat` applies contextual deterministic safety assessment and a schema-validated Gemini second opinion when the deterministic path is normal. The existing six-state taxonomy drives centralized behavior. Every non-`NORMAL` state bypasses the ordinary Day 2 responder; assessment is sequential, unresolved answers remain unresolved, and medical emergencies take priority. Immediate states still take the user to `/crisis`.
 
 Voice transcription is screened when a completed user transcript is saved. On a match, the browser ends the Momo Live session and opens `/crisis`. Because Gemini Live receives audio directly, this post-transcription safeguard is not a replacement for real-time voice moderation.
 
-This is not a clinical risk assessment or an emergency-response service. It needs clinician-approved rules, localized resources, escalation ownership, and a reviewed evaluation corpus before release. See [docs/SAFETY_INTERCEPTOR_V0.md](./docs/SAFETY_INTERCEPTOR_V0.md).
+This is not a clinically validated risk assessment or an emergency-response service. The implemented policy and exact copy are marked `RESEARCH_DRAFT`; clinician/legal approval gaps are tracked in [docs/SAFETY_CLINICIAN_REVIEW.md](./docs/SAFETY_CLINICIAN_REVIEW.md). The earlier interceptor boundary is documented in [docs/SAFETY_INTERCEPTOR_V0.md](./docs/SAFETY_INTERCEPTOR_V0.md).
 
 ### Optional safety-support notification
 
-When the deterministic phrase screen and the schema-validated Gemini classifier both identify imminent self-harm or harm-to-others risk, Momo records its fixed crisis response and can send a minimal email alert to the configured support address. The setting is disabled by default. The alert has only an event ID, risk category, source, state, and timestamp—never a message, name, phone number, or user ID.
+For a policy state with `IMMEDIATE` review urgency, Momo records a structured safety event and can send a minimal email alert to the configured support address. The setting is disabled by default. Transport status is recorded separately from classification and user-facing copy. The alert has only an event ID, risk category, source, state, and timestamp—never a message, name, phone number, or user ID.
 
 There are no emergency-contact calls, text-message fallbacks, delayed dispatches, IP-location workflows, or police integrations. The feature is not live monitoring or an emergency-response service. Voice alerts, if enabled, occur only after a completed transcript has reached the server and are not real-time moderation.
 

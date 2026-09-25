@@ -1,9 +1,13 @@
 import { Resend } from "resend";
 
-type SupportNotificationResult = "SENT" | "SKIPPED" | "FAILED";
+type SupportNotificationResult = "CONFIRMED" | "FAILED";
 
 function isEnabled(value: string | undefined): boolean {
   return ["1", "true", "yes"].includes(value?.trim().toLowerCase() ?? "");
+}
+
+export function safetySupportNotificationsEnabled(): boolean {
+  return isEnabled(process.env.SAFETY_SUPPORT_NOTIFICATIONS_ENABLED);
 }
 
 /**
@@ -15,19 +19,15 @@ export async function notifySafetySupport(options: {
   eventId: string;
   category?: string;
   source: "TEXT" | "VOICE";
-  state: "IMMINENT_RULE_AND_MODEL_AGREE";
+  state: "IMMINENT" | "MEDICAL_EMERGENCY";
 }): Promise<SupportNotificationResult> {
-  if (!isEnabled(process.env.SAFETY_SUPPORT_NOTIFICATIONS_ENABLED)) {
-    return "SKIPPED";
-  }
-
   const apiKey = process.env.RESEND_API_KEY?.trim();
   const from = process.env.SAFETY_ALERT_FROM_EMAIL?.trim();
   const recipient = process.env.SAFETY_SUPPORT_ALERT_EMAIL?.trim();
 
   if (!apiKey || !from || !recipient) {
-    console.error("SAFETY SUPPORT NOTIFICATION SKIPPED: missing Resend configuration.");
-    return "SKIPPED";
+    console.error("SAFETY SUPPORT NOTIFICATION FAILED: missing Resend configuration.");
+    return "FAILED";
   }
 
   try {
@@ -42,7 +42,7 @@ export async function notifySafetySupport(options: {
       console.error("SAFETY SUPPORT NOTIFICATION FAILED:", error);
       return "FAILED";
     }
-    return "SENT";
+    return "CONFIRMED";
   } catch (error) {
     console.error("SAFETY SUPPORT NOTIFICATION FAILED:", error);
     return "FAILED";

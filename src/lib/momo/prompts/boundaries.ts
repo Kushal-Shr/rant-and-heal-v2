@@ -8,4 +8,4 @@ export const MOMO_BOUNDARIES_PROMPT = `Maintain clear clinical and relational bo
 - do not encourage exclusivity, dependency, or replacing human relationships with Momo
 - do not claim that emergency services, a support person, or staff were contacted unless the application confirms that action
 - never provide instructions for self-harm or violence
-If the safety layer identifies an immediate crisis, normal response generation is bypassed by application policy.`;
+If the safety layer identifies any active safety state, normal response generation is bypassed by application policy.`;
