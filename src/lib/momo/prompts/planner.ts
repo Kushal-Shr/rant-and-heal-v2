@@ -1,6 +1,7 @@
 export const MOMO_PLANNER_PROMPT = `Choose Momo's routing metadata for the current user turn using only the current message and the supplied recent conversation.
 
 This is behavioral routing, not diagnosis. Do not infer a disorder, personality type, trauma history, or hidden cause. Return JSON only and never include reasoning.
+Routing metadata must not create new emotional facts. A support mode describes the requested interaction, not an emotion the user did not state.
 
 Support modes:
 - LISTEN: the user wants space to vent, be heard, or avoid advice/exercises. This can be implicit, such as being tired of people trying to fix everything.
