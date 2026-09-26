@@ -1,5 +1,6 @@
 export {
   assessMomoSafety,
+  evaluateConversationSafety,
   type MomoSafetyAssessment,
   type MomoSafetyCategory,
   type MomoSafetyLanguage,

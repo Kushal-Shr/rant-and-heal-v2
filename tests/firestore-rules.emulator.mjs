@@ -71,6 +71,24 @@ test("clients cannot access backend encrypted communication, drafts, reports or 
   }
 });
 
+test("Momo continuity state is server-owned while session shells remain owner-managed", async () => {
+  const patientDb = environment.authenticatedContext("patient-1").firestore();
+  const sessionRef = doc(patientDb, "users/patient-1/sessions/continuity-test");
+  await assertSucceeds(setDoc(sessionRef, {
+    title: "New Conversation",
+    createdAt: serverTimestamp(),
+  }));
+  await assertSucceeds(setDoc(sessionRef, { title: "Renamed" }, { merge: true }));
+  await assertFails(setDoc(sessionRef, {
+    continuityState: { version: 1, currentGoal: "PRACTICAL_HELP" },
+  }, { merge: true }));
+  await assertFails(setDoc(doc(patientDb, "users/patient-1/sessions/injected-continuity"), {
+    title: "Injected",
+    createdAt: serverTimestamp(),
+    continuityState: { version: 1, currentGoal: "PRACTICAL_HELP" },
+  }));
+});
+
 test("call access ends when the current relationship pointer changes", async () => {
   const patientDb = environment.authenticatedContext("patient-secure").firestore();
   const therapistDb = environment.authenticatedContext("therapist-secure").firestore();

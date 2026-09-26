@@ -1,15 +1,14 @@
 import { FieldValue, Timestamp, type Firestore } from "firebase-admin/firestore";
 import { SAFETY_POLICY_VERSION } from "@/src/server/safety/classifier";
+import { combineSafetyAssessments } from "@/src/lib/safety/detector";
+import { safetyResponseFor } from "@/src/lib/safety/responses";
+import type { SafetyEvaluation } from "@/src/lib/safety/schemas";
 import type { MomoSafetyAssessment } from "./safetyAssessment";
 export { assessMomoSafety } from "./safetyAssessment";
 export type { MomoSafetyAssessment, MomoSafetyCategory, MomoSafetyLanguage } from "./safetyAssessment";
 
 export function crisisReplyFor(assessment: MomoSafetyAssessment): string {
-  if (assessment.language === "NE") {
-    return "तपाईंले यो भन्नुभएकोमा धन्यवाद। अहिले तपाईंको सुरक्षा सबैभन्दा महत्त्वपूर्ण छ। कृपया तुरुन्तै आफ्नो स्थानीय आपतकालीन सेवामा फोन गर्नुहोस् वा नजिकको आपतकालीन उपचार केन्द्रमा जानुहोस्। सम्भव भए विश्वासिलो व्यक्तिलाई अहिले नै सम्पर्क गर्नुहोस् र एक्लै नबस्नुहोस्। म आपतकालीन सेवा होइन, तर तपाईंले Crisis Support पृष्ठबाट सम्पर्क विकल्पहरू हेर्न सक्नुहुन्छ।";
-  }
-
-  return "I’m really glad you told me. Your immediate safety matters most right now. Please call your local emergency services or go to the nearest emergency department. If you can, contact someone you trust right now and do not stay alone. I’m not an emergency service, but you can use the Crisis Support page for contact options.";
+  return safetyResponseFor(combineSafetyAssessments(assessment), { language: assessment.language });
 }
 
 interface RecordMomoSafetyEventOptions {
@@ -18,7 +17,8 @@ interface RecordMomoSafetyEventOptions {
   sessionId: string;
   userText: string;
   source: "TEXT" | "VOICE";
-  assessment: MomoSafetyAssessment;
+  evaluation: SafetyEvaluation;
+  responseText: string;
 }
 
 // Store a minimal, server-only audit event. The original chat/transcript is
@@ -29,7 +29,8 @@ export async function recordMomoSafetyEvent({
   sessionId,
   userText,
   source,
-  assessment,
+  evaluation,
+  responseText,
 }: RecordMomoSafetyEventOptions): Promise<string> {
   const userRef = db.collection("users").doc(userId);
   const sessionRef = userRef.collection("sessions").doc(sessionId);
@@ -46,7 +47,7 @@ export async function recordMomoSafetyEvent({
     timestamp: FieldValue.serverTimestamp(),
   });
   batch.set(messagesRef.doc(), {
-    text: crisisReplyFor(assessment),
+    text: responseText,
     sender: "MOMO",
     source: "SAFETY",
     provenance: "SERVER",
@@ -62,14 +63,23 @@ export async function recordMomoSafetyEvent({
     { merge: true }
   );
   batch.set(safetyEventRef, {
-    level: assessment.level,
-    category: assessment.category,
-    matchedSignals: assessment.matchedSignals,
+    userId,
+    level: evaluation.deterministic.level,
+    state: evaluation.state,
+    safetyResolution: evaluation.resolution,
+    assessmentStep: evaluation.assessmentStep,
+    requiresHumanReview: evaluation.requiresHumanReview,
+    reviewUrgency: evaluation.reviewUrgency,
+    triggerType: evaluation.triggerType,
+    safetyTarget: evaluation.safetyTarget,
+    ...(evaluation.deterministic.category ? { category: evaluation.deterministic.category } : {}),
+    matchedSignals: evaluation.deterministic.matchedSignals,
     source,
     sessionId,
-    status: "CRISIS_SUPPORT",
+    status: evaluation.escalationStatus,
     policyVersion: SAFETY_POLICY_VERSION,
     createdAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
     // Firestore TTL must be configured separately before this is relied on.
     expireAt: Timestamp.fromMillis(Date.now() + 30 * 24 * 60 * 60 * 1000),
   });

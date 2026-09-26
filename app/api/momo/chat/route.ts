@@ -6,12 +6,19 @@ import { getErrorMessage } from "@/src/server/errors";
 import { getAdminDb } from "@/src/server/firebaseAdmin";
 import { MomoAccessError, consumeQuota, requireOwnedSession } from "@/src/server/momo/access";
 import { isGeminiBillingError } from "@/src/server/momo/gemini";
-import { crisisReplyFor, recordMomoSafetyEvent } from "@/src/server/momo/safety";
-import { classifySafetyRisk } from "@/src/server/safety/classifier";
-import { notifySafetySupport } from "@/src/server/safety/notifications";
+import { recordMomoSafetyEvent } from "@/src/server/momo/safety";
+import { assessMomoTurnSafety } from "@/src/server/momo/turnSafety";
+import { notifySafetySupport, safetySupportNotificationsEnabled } from "@/src/server/safety/notifications";
 import { orchestrateMomoTurn } from "@/src/lib/momo/orchestrator";
 import type { ConversationTurn } from "@/src/lib/momo/schemas";
-import { evaluateDeterministicSafety } from "@/src/lib/safety/detector";
+import {
+  finalizeContinuityState,
+  parseConversationContinuityState,
+  prepareContinuityState,
+} from "@/src/lib/momo/continuity";
+import { conversationParticipantFromProfile } from "@/src/lib/momo/identity";
+import { safetyResponseFor } from "@/src/lib/safety/responses";
+import { shouldAttemptSafetySupportNotification } from "@/src/lib/safety/policy";
 import { planMomoResponseWithInference } from "@/src/server/momo/planner";
 import { generateMomoResponse } from "@/src/server/momo/responder";
 import { logMomoRoutingDecision, logMomoSafetyBypass } from "@/src/server/momo/routingDebug";
@@ -66,19 +73,32 @@ export async function POST(request: NextRequest) {
     await consumeQuota({ db, userId, key: "momo_chat_minute", limit: 20, windowMs: 60_000 });
     const messagesRef = sessionRef.collection("messages");
     const requestRef = sessionRef.collection("requests").doc(requestId);
+    const userRef = db.collection("users").doc(userId);
     let cachedReply: string | null = null;
+    let cachedSafety: Record<string, unknown> | null = null;
+    let storedContinuityState: unknown;
+    let storedDisplayName: unknown;
+    let storedIncognito: unknown;
 
     await db.runTransaction(async (transaction) => {
-      const [sessionSnap, requestSnap] = await Promise.all([
+      const [sessionSnap, requestSnap, userSnap] = await Promise.all([
         transaction.get(sessionRef),
         transaction.get(requestRef),
+        transaction.get(userRef),
       ]);
       const currentRequest = requestSnap.data();
       if (currentRequest?.status === "COMPLETED" && typeof currentRequest.reply === "string") {
         cachedReply = currentRequest.reply;
+        cachedSafety = currentRequest.safety && typeof currentRequest.safety === "object"
+          ? currentRequest.safety as Record<string, unknown>
+          : null;
         return;
       }
       const session = sessionSnap.data();
+      const userProfile = userSnap.data();
+      storedContinuityState = session?.continuityState;
+      storedDisplayName = userProfile?.displayName;
+      storedIncognito = userProfile?.isIncognito;
       const activeAge = session?.activeRequestAt instanceof Timestamp
         ? Date.now() - session.activeRequestAt.toMillis()
         : Number.POSITIVE_INFINITY;
@@ -97,7 +117,9 @@ export async function POST(request: NextRequest) {
       }, { merge: true });
     });
 
-    if (cachedReply) return NextResponse.json({ message: cachedReply, cached: true });
+    if (cachedReply) {
+      return NextResponse.json({ message: cachedReply, cached: true, ...(cachedSafety ? { safety: cachedSafety } : {}) });
+    }
     release = async () => {
       await db.runTransaction(async (transaction) => {
         const sessionSnap = await transaction.get(sessionRef);
@@ -112,16 +134,25 @@ export async function POST(request: NextRequest) {
     };
 
     const snapshot = await messagesRef.orderBy("timestamp", "asc").limitToLast(HISTORY_LIMIT).get();
+    const recentHistory = history(snapshot.docs.map((item) => item.data() as StoredMessage));
+    const continuityState = prepareContinuityState(
+      { messageText },
+      parseConversationContinuityState(storedContinuityState)
+    );
+    const participant = conversationParticipantFromProfile({
+      displayName: storedDisplayName,
+      isIncognito: storedIncognito,
+      authAnonymous: token.firebase?.sign_in_provider === "anonymous",
+    });
     const outcome = await orchestrateMomoTurn(
-      { messageText, history: history(snapshot.docs.map((item) => item.data() as StoredMessage)) },
+      { messageText, history: recentHistory, continuityState, participant },
       {
-        evaluateSafety: evaluateDeterministicSafety,
+        evaluateSafety: (_messageText, input) => assessMomoTurnSafety(input!),
         plan: planMomoResponseWithInference,
         respond: generateMomoResponse,
-        safetyResponse: (evaluation) => crisisReplyFor(evaluation.deterministic),
+        safetyResponse: (evaluation, input) => safetyResponseFor(evaluation, { messageText: input?.messageText }),
       }
     );
-    const safety = outcome.safety.deterministic;
     const reply = outcome.message;
     if (outcome.decision) {
       logMomoRoutingDecision(outcome.decision);
@@ -129,12 +160,25 @@ export async function POST(request: NextRequest) {
       logMomoSafetyBypass(outcome.safety.state);
     }
     if (outcome.kind === "SAFETY_RESPONSE") {
+      const level = outcome.safety.state === "IMMINENT" || outcome.safety.state === "MEDICAL_EMERGENCY"
+        ? "IMMINENT"
+        : "CONCERNING";
+      const safetyPayload = {
+        level,
+        state: outcome.safety.state,
+        resolution: outcome.safety.resolution,
+        assessmentStep: outcome.safety.assessmentStep,
+        requiresHumanReview: outcome.safety.requiresHumanReview,
+        reviewUrgency: outcome.safety.reviewUrgency,
+        safetyTarget: outcome.safety.safetyTarget,
+        ...(outcome.safety.deterministic.category ? { category: outcome.safety.deterministic.category } : {}),
+      };
       await db.runTransaction(async (transaction) => {
         const sessionSnap = await transaction.get(sessionRef);
         if (sessionSnap.data()?.activeRequestId !== requestId) {
           throw new MomoAccessError("This response was superseded by a newer request.", 409);
         }
-        transaction.set(requestRef, { status: "COMPLETED", reply, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+        transaction.set(requestRef, { status: "COMPLETED", reply, safety: safetyPayload, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
         transaction.set(sessionRef, {
           activeRequestId: FieldValue.delete(),
           activeRequestAt: FieldValue.delete(),
@@ -143,24 +187,35 @@ export async function POST(request: NextRequest) {
       release = null;
       after(async () => {
         try {
-          const [eventId, model] = await Promise.all([
-            recordMomoSafetyEvent({ db, userId, sessionId, userText: messageText, source: "TEXT", assessment: safety }),
-            classifySafetyRisk(messageText),
-          ]);
-          if (model?.level === "IMMINENT" && model.category === safety.category) {
-            const status = await notifySafetySupport({ eventId, category: safety.category, source: "TEXT", state: "IMMINENT_RULE_AND_MODEL_AGREE" });
-            await db.collection("users").doc(userId).collection("safety_events").doc(eventId).update({
-              supportNotificationStatus: status,
-              supportNotificationUpdatedAt: FieldValue.serverTimestamp(),
+          const eventId = await recordMomoSafetyEvent({
+            db, userId, sessionId, userText: messageText, source: "TEXT",
+            evaluation: outcome.safety, responseText: reply,
+          });
+          if (shouldAttemptSafetySupportNotification(outcome.safety) && safetySupportNotificationsEnabled()) {
+            const eventRef = db.collection("users").doc(userId).collection("safety_events").doc(eventId);
+            await eventRef.update({ supportNotificationStatus: "REQUESTED", supportNotificationUpdatedAt: FieldValue.serverTimestamp() });
+            await eventRef.update({ supportNotificationStatus: "STARTED", supportNotificationUpdatedAt: FieldValue.serverTimestamp() });
+            const status = await notifySafetySupport({
+              eventId,
+              category: outcome.safety.deterministic.category,
+              safetyTarget: outcome.safety.safetyTarget,
+              source: "TEXT",
+              state: outcome.safety.state,
             });
+            await eventRef.update({ supportNotificationStatus: status, supportNotificationUpdatedAt: FieldValue.serverTimestamp() });
           }
         } catch (error) {
           console.error("MOMO SAFETY FOLLOW-UP ERROR:", getErrorMessage(error));
         }
       });
-      return NextResponse.json({ message: reply, safety: { level: "IMMINENT", state: outcome.safety.state, category: safety.category } });
+      return NextResponse.json({ message: reply, safety: safetyPayload });
     }
 
+    const finalizedContinuity = finalizeContinuityState(
+      continuityState,
+      outcome.decision!,
+      reply
+    );
     await db.runTransaction(async (transaction) => {
       const sessionSnap = await transaction.get(sessionRef);
       if (sessionSnap.data()?.activeRequestId !== requestId) {
@@ -170,11 +225,18 @@ export async function POST(request: NextRequest) {
         text: messageText, sender: "USER", source: "TEXT", provenance: "SERVER", order: 0, timestamp: FieldValue.serverTimestamp(),
       });
       transaction.set(messagesRef.doc(`${requestId}-momo`), {
-        text: reply, sender: "MOMO", source: "TEXT", provenance: "SERVER", order: 1, timestamp: FieldValue.serverTimestamp(),
+        text: reply,
+        sender: "MOMO",
+        source: "TEXT",
+        provenance: "SERVER",
+        order: 1,
+        continuityMetadata: finalizedContinuity.metadata,
+        timestamp: FieldValue.serverTimestamp(),
       });
       transaction.set(requestRef, { status: "COMPLETED", reply, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
       transaction.set(sessionRef, {
         title: messageText.slice(0, 64),
+        continuityState: finalizedContinuity.state,
         activeRequestId: FieldValue.delete(),
         activeRequestAt: FieldValue.delete(),
         updatedAt: FieldValue.serverTimestamp(),

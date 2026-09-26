@@ -33,7 +33,11 @@ service cloud.firestore {
       allow delete: if false;
 
       match /sessions/{sessionId} {
-        allow read, create, update, delete: if owner(userId);
+        allow read, delete: if owner(userId);
+        allow create: if owner(userId) &&
+          !request.resource.data.keys().hasAny(['continuityState']);
+        allow update: if owner(userId) &&
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['continuityState']);
         match /messages/{messageId} {
           allow read: if owner(userId);
           allow write: if false;

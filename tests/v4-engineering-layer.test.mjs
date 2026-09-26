@@ -37,7 +37,7 @@ test("Momo orchestration bypasses planning and response generation for immediate
   let planned = false;
   let responded = false;
   const result = await orchestrateMomoTurn(
-    { messageText: "I am going to hurt myself", history: [] },
+    { messageText: "I am going to kill myself tonight", history: [] },
     {
       evaluateSafety: evaluateDeterministicSafety,
       plan: () => { planned = true; return validDecision; },
