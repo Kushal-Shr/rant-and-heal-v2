@@ -59,7 +59,11 @@ async function inferMomoRouting(input: NormalizedConversationInput): Promise<unk
     model,
     contents: [{
       role: "user",
-      parts: [{ text: JSON.stringify({ recentConversation, currentUserMessage: input.messageText }) }],
+      parts: [{ text: JSON.stringify({
+        continuityState: input.continuityState,
+        recentConversation,
+        currentUserMessage: input.messageText,
+      }) }],
     }],
     config: {
       systemInstruction: MOMO_PLANNER_PROMPT,

@@ -119,7 +119,9 @@ The two encryption models are deliberately separate: journals are encrypted and 
 
 ## Momo Architecture
 
-Momo text chat is server-owned: the client calls `/api/momo/chat`, the route verifies the Firebase ID token and session, enforces bounded quotas, and preserves idempotent persistence. The domain orchestrator then evaluates safety, creates a structured `MomoDecision`, and invokes the server-only responder. Only routing fields are retained in memory; model chain-of-thought is neither requested nor stored.
+Momo text chat is server-owned: the client calls `/api/momo/chat`, the route verifies the Firebase ID token and session, enforces bounded quotas, and preserves idempotent persistence. The domain orchestrator then evaluates safety, creates a structured `MomoDecision`, and invokes the server-only responder. Each session stores a bounded `continuityState` for the active support goal/mode, explicit interaction preferences, brief user corrections, option/question fatigue, recent response functions, and user-reported intervention outcomes. It does not copy the transcript or use journal or therapist-chat content, and it does not store diagnosis or model reasoning. Current-session continuity informs planning and a deterministic response check; safety still bypasses ordinary generation. Cross-session personalization is deferred.
+
+For greeting-only turns, the route may provide the responder with a sanitized first name from the authenticated user profile. Incognito accounts and placeholder names are treated as anonymous. The hint is optional, is not stored in continuity state, and must not produce repeated name use or a fixed greeting template.
 
 The underlying Momo voice implementation uses `/api/momo/live-token` to mint a short-lived Gemini Live token. Browser code captures microphone PCM audio and streams it directly to Gemini Live with the ephemeral token. It is disabled for the trial by `ENABLE_MOMO_VOICE=false` and hidden from trial actions because completed-transcript screening is not real-time interruption.
 

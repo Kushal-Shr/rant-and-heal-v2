@@ -1,6 +1,10 @@
 import { getSafetyPolicy } from "../safety/policy.ts";
 import type { SafetyState } from "../safety/schemas.ts";
 import {
+  isContextDependentShortReply,
+  supportModeFromContinuity,
+} from "./continuity.ts";
+import {
   momoDecisionSchema,
   momoPlannerInferenceSchema,
   type Intervention,
@@ -105,7 +109,36 @@ function safetyConstrainedDecision(safetyState: SafetyState): MomoDecision | nul
   });
 }
 
-function fallbackDecision(safetyState: SafetyState): MomoDecision {
+function modeDefaults(supportMode: Exclude<SupportMode, "UNCLEAR">): Pick<ExplicitPreference, "primaryNeed" | "intervention"> {
+  if (supportMode === "LISTEN") return { primaryNeed: "VENT", intervention: "PCT_LISTENING" };
+  if (supportMode === "WORK_THROUGH") return { primaryNeed: "UNDERSTAND", intervention: "PCT_EXPLORATION" };
+  if (supportMode === "DIRECT_HELP") return { primaryNeed: "PRACTICAL_HELP", intervention: "PROBLEM_SOLVING" };
+  return { primaryNeed: "EMOTIONAL_REGULATION", intervention: "RELAXATION" };
+}
+
+function fallbackDecision(
+  safetyState: SafetyState,
+  input?: NormalizedConversationInput
+): MomoDecision {
+  const continuityMode = supportModeFromContinuity(input?.continuityState);
+  const preserveContinuity = continuityMode && (
+    input?.continuityState?.questionFatigue ||
+    input?.continuityState?.needsReassessment ||
+    input?.continuityState?.optionOverload ||
+    (input ? isContextDependentShortReply(input.messageText) : false)
+  );
+  if (preserveContinuity && continuityMode) {
+    const defaults = modeDefaults(continuityMode);
+    return momoDecisionSchema.parse({
+      supportMode: continuityMode,
+      primaryNeed: defaults.primaryNeed,
+      intervention: input?.continuityState?.needsReassessment ? "NONE" : defaults.intervention,
+      confidence: "MEDIUM",
+      shouldClarify: false,
+      userPreferenceOverride: false,
+      safetyState,
+    });
+  }
   return momoDecisionSchema.parse({
     supportMode: "UNCLEAR",
     primaryNeed: "UNKNOWN",
@@ -138,25 +171,56 @@ export function planMomoResponse(
   }
 
   const inferred = momoPlannerInferenceSchema.safeParse(inferredRouting);
-  if (!inferred.success) return fallbackDecision(safetyState);
+  if (!inferred.success) return fallbackDecision(safetyState, input);
 
-  const routing = inferred.data;
-  const shouldClarify = routing.supportMode === "UNCLEAR" || routing.shouldClarify;
+  const continuityMode = supportModeFromContinuity(input.continuityState);
+  const shortContextualReply = isContextDependentShortReply(input.messageText);
+  const preserveContinuity = continuityMode && (
+    shortContextualReply ||
+    ((input.continuityState?.questionFatigue || input.continuityState?.needsReassessment || input.continuityState?.optionOverload) &&
+      inferred.data.supportMode === "UNCLEAR")
+  );
+  const routing = preserveContinuity
+    ? {
+        ...inferred.data,
+        supportMode: continuityMode,
+        ...modeDefaults(continuityMode),
+        shouldClarify: false,
+        clarificationTarget: null,
+      }
+    : inferred.data;
+  const noAdvice = input.continuityState?.explicitPreferences.some((preference) =>
+    preference === "NO_ADVICE" || preference === "RANT_FIRST"
+  );
+  const preferenceConstrainedRouting = noAdvice && routing.supportMode === "DIRECT_HELP"
+    ? {
+        ...routing,
+        supportMode: "LISTEN" as const,
+        primaryNeed: "VENT" as const,
+        intervention: "PCT_LISTENING" as const,
+        shouldClarify: false,
+        clarificationTarget: null,
+      }
+    : routing;
+  const shouldClarify = input.continuityState?.questionFatigue
+    ? false
+    : preferenceConstrainedRouting.supportMode === "UNCLEAR" || preferenceConstrainedRouting.shouldClarify;
   const clarificationTarget = shouldClarify
-    ? routing.clarificationTarget ?? "SUPPORT_PREFERENCE"
+    ? preferenceConstrainedRouting.clarificationTarget ?? "SUPPORT_PREFERENCE"
     : undefined;
 
-  let intervention = routing.intervention;
-  if (routing.supportMode === "LISTEN") intervention = "PCT_LISTENING";
-  if (routing.supportMode === "REGULATE") intervention = "RELAXATION";
-  if (routing.supportMode === "UNCLEAR") intervention = "NONE";
-  if (routing.supportMode === "WORK_THROUGH" && intervention === "PCT_LISTENING") {
+  let intervention = preferenceConstrainedRouting.intervention;
+  if (preferenceConstrainedRouting.supportMode === "LISTEN") intervention = "PCT_LISTENING";
+  if (preferenceConstrainedRouting.supportMode === "REGULATE" && !input.continuityState?.needsReassessment) intervention = "RELAXATION";
+  if (preferenceConstrainedRouting.supportMode === "UNCLEAR") intervention = "NONE";
+  if (preferenceConstrainedRouting.supportMode === "WORK_THROUGH" && intervention === "PCT_LISTENING") {
     intervention = "PCT_EXPLORATION";
   }
+  if (input.continuityState?.needsReassessment && !explicit) intervention = "NONE";
 
   return momoDecisionSchema.parse({
-    supportMode: routing.supportMode,
-    primaryNeed: routing.supportMode === "UNCLEAR" ? "UNKNOWN" : routing.primaryNeed,
+    supportMode: preferenceConstrainedRouting.supportMode,
+    primaryNeed: preferenceConstrainedRouting.supportMode === "UNCLEAR" ? "UNKNOWN" : preferenceConstrainedRouting.primaryNeed,
     intervention,
     confidence: routing.confidence,
     shouldClarify,

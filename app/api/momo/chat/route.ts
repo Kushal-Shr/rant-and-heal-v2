@@ -11,6 +11,12 @@ import { assessMomoTurnSafety } from "@/src/server/momo/turnSafety";
 import { notifySafetySupport, safetySupportNotificationsEnabled } from "@/src/server/safety/notifications";
 import { orchestrateMomoTurn } from "@/src/lib/momo/orchestrator";
 import type { ConversationTurn } from "@/src/lib/momo/schemas";
+import {
+  finalizeContinuityState,
+  parseConversationContinuityState,
+  prepareContinuityState,
+} from "@/src/lib/momo/continuity";
+import { conversationParticipantFromProfile } from "@/src/lib/momo/identity";
 import { safetyResponseFor } from "@/src/lib/safety/responses";
 import { shouldAttemptSafetySupportNotification } from "@/src/lib/safety/policy";
 import { planMomoResponseWithInference } from "@/src/server/momo/planner";
@@ -67,13 +73,18 @@ export async function POST(request: NextRequest) {
     await consumeQuota({ db, userId, key: "momo_chat_minute", limit: 20, windowMs: 60_000 });
     const messagesRef = sessionRef.collection("messages");
     const requestRef = sessionRef.collection("requests").doc(requestId);
+    const userRef = db.collection("users").doc(userId);
     let cachedReply: string | null = null;
     let cachedSafety: Record<string, unknown> | null = null;
+    let storedContinuityState: unknown;
+    let storedDisplayName: unknown;
+    let storedIncognito: unknown;
 
     await db.runTransaction(async (transaction) => {
-      const [sessionSnap, requestSnap] = await Promise.all([
+      const [sessionSnap, requestSnap, userSnap] = await Promise.all([
         transaction.get(sessionRef),
         transaction.get(requestRef),
+        transaction.get(userRef),
       ]);
       const currentRequest = requestSnap.data();
       if (currentRequest?.status === "COMPLETED" && typeof currentRequest.reply === "string") {
@@ -84,6 +95,10 @@ export async function POST(request: NextRequest) {
         return;
       }
       const session = sessionSnap.data();
+      const userProfile = userSnap.data();
+      storedContinuityState = session?.continuityState;
+      storedDisplayName = userProfile?.displayName;
+      storedIncognito = userProfile?.isIncognito;
       const activeAge = session?.activeRequestAt instanceof Timestamp
         ? Date.now() - session.activeRequestAt.toMillis()
         : Number.POSITIVE_INFINITY;
@@ -119,8 +134,18 @@ export async function POST(request: NextRequest) {
     };
 
     const snapshot = await messagesRef.orderBy("timestamp", "asc").limitToLast(HISTORY_LIMIT).get();
+    const recentHistory = history(snapshot.docs.map((item) => item.data() as StoredMessage));
+    const continuityState = prepareContinuityState(
+      { messageText },
+      parseConversationContinuityState(storedContinuityState)
+    );
+    const participant = conversationParticipantFromProfile({
+      displayName: storedDisplayName,
+      isIncognito: storedIncognito,
+      authAnonymous: token.firebase?.sign_in_provider === "anonymous",
+    });
     const outcome = await orchestrateMomoTurn(
-      { messageText, history: history(snapshot.docs.map((item) => item.data() as StoredMessage)) },
+      { messageText, history: recentHistory, continuityState, participant },
       {
         evaluateSafety: (_messageText, input) => assessMomoTurnSafety(input!),
         plan: planMomoResponseWithInference,
@@ -186,6 +211,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ message: reply, safety: safetyPayload });
     }
 
+    const finalizedContinuity = finalizeContinuityState(
+      continuityState,
+      outcome.decision!,
+      reply
+    );
     await db.runTransaction(async (transaction) => {
       const sessionSnap = await transaction.get(sessionRef);
       if (sessionSnap.data()?.activeRequestId !== requestId) {
@@ -195,11 +225,18 @@ export async function POST(request: NextRequest) {
         text: messageText, sender: "USER", source: "TEXT", provenance: "SERVER", order: 0, timestamp: FieldValue.serverTimestamp(),
       });
       transaction.set(messagesRef.doc(`${requestId}-momo`), {
-        text: reply, sender: "MOMO", source: "TEXT", provenance: "SERVER", order: 1, timestamp: FieldValue.serverTimestamp(),
+        text: reply,
+        sender: "MOMO",
+        source: "TEXT",
+        provenance: "SERVER",
+        order: 1,
+        continuityMetadata: finalizedContinuity.metadata,
+        timestamp: FieldValue.serverTimestamp(),
       });
       transaction.set(requestRef, { status: "COMPLETED", reply, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
       transaction.set(sessionRef, {
         title: messageText.slice(0, 64),
+        continuityState: finalizedContinuity.state,
         activeRequestId: FieldValue.delete(),
         activeRequestAt: FieldValue.delete(),
         updatedAt: FieldValue.serverTimestamp(),
