@@ -29,9 +29,9 @@ FIREBASE_ADMIN_CLIENT_EMAIL=
 FIREBASE_ADMIN_PRIVATE_KEY=
 
 GEMINI_API_KEY=
-GEMINI_MODEL=gemini-2.5-flash
-GEMINI_SAFETY_MODEL=gemini-2.5-flash
-GEMINI_LIVE_MODEL=gemini-3.1-flash-live-preview
+GEMINI_MODEL=gemini-3.8-flash
+GEMINI_SAFETY_MODEL=gemini-3.8-flash
+GEMINI_LIVE_MODEL=gemini-3.8-live
 
 # Trial feature flags. Voice stays off until live audio can be interrupted by
 # the safety layer before a model response is delivered.
