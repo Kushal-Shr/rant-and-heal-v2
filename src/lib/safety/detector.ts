@@ -9,6 +9,7 @@ import {
   type SafetyEvaluation,
   type SafetyResolution,
   type SafetyState,
+  type SafetyTarget,
   type SafetyTriggerType,
 } from "./schemas.ts";
 import { resolveSafetyState } from "./stateMachine.ts";
@@ -25,6 +26,7 @@ export interface SafetyConversationInput {
 interface DetectedSignal {
   id: string;
   state: SafetyState;
+  target: SafetyTarget;
   category?: MomoSafetyCategory;
   language?: MomoSafetyLanguage;
   assessmentStep?: SafetyAssessmentStep;
@@ -38,15 +40,29 @@ const MEDICAL_PATTERNS: Array<[string, RegExp]> = [
   ["serious-injury", /\b(?:serious(?:ly)? injured|life[- ]threatening injury|attempt (?:is )?(?:already )?underway)\b/i],
 ];
 
-const IMMINENT_PATTERNS: Array<[string, RegExp]> = [
-  ["immediate-suicide-intent", /\b(?:i(?:\s+am|['’]m)?\s+)?(?:am\s+)?(?:going to|planning to|intend to|will|about to)\s+(?:kill myself|end my life|die)(?:\s+(?:now|tonight|today|soon))?\b/i],
-  ["timebound-suicide-intent", /\b(?:i\s+)?want to (?:die|kill myself|end my life)\s+(?:now|tonight|today|very soon)\b/i],
-  ["immediate-self-harm-intent", /\b(?:i(?:\s+am|['’]m)?\s+)?(?:am\s+)?going to\s+(?:hurt|harm|cut|injure)\s+myself\b/i],
-  ["dangerous-location-intent", /\b(?:roof|rooftop|balcony|bridge|highway|traffic|train tracks?)\b.{0,80}\b(?:jump(?:ing)?|die|kill myself|end my life|walk into)\b|\b(?:jump(?:ing)?|die|kill myself|end my life|walk into)\b.{0,80}\b(?:roof|rooftop|balcony|bridge|highway|traffic|train tracks?)\b/i],
-  ["plan-access-intent", /\bplan\b.{0,100}\b(?:access|with me|have it|ready)\b.{0,100}\b(?:intend|going|tonight|now|today|do it)\b|\b(?:intend|going|tonight|now|today|do it)\b.{0,100}\bplan\b.{0,100}\b(?:access|with me|have it|ready)\b/i],
-  ["cannot-stay-safe", /\b(?:cannot|can['’]t|don['’]t think i can)\s+(?:keep myself|stay)\s+safe\b/i],
-  ["harm-others-immediate", /\b(?:going|planning|intend|want)\s+to\s+(?:kill|shoot|attack)\s+(?:him|her|them|someone|people|my\s+(?:partner|family|friend|boss))\b/i],
+const OTHER_TARGET = "(?:him|her|them|someone|anyone|another person|people|my\\s+(?:partner|family|friend|boss|coworker|roommate|neighbor))";
+const OTHER_HARM_ACTION = "(?:kill|shoot|attack|assault|stab|hurt|harm)";
+const OTHER_HARM_EVIDENCE_ACTION = "(?:kill(?:ing)?|shoot(?:ing)?|attack(?:ing)?|assault(?:ing)?|stab(?:bing)?|hurt(?:ing)?|harm(?:ing)?)";
+const NEAR_TERM_TIME = "(?:right now|now|tonight|today|tomorrow|very soon|soon|in\\s+(?:a few\\s+)?(?:minutes?|hours?))";
+
+const IMMINENT_PATTERNS: Array<[string, RegExp, SafetyTarget]> = [
+  ["immediate-suicide-intent", /\b(?:i(?:\s+am|['’]m)?\s+)?(?:am\s+)?(?:going to|planning to|intend to|will|about to)\s+(?:kill myself|end my life|die)(?:\s+(?:now|tonight|today|soon))?\b/i, "SELF"],
+  ["timebound-suicide-intent", /\b(?:i\s+)?want to (?:die|kill myself|end my life)\s+(?:now|tonight|today|very soon)\b/i, "SELF"],
+  ["immediate-self-harm-intent", /\b(?:i(?:\s+am|['’]m)?\s+)?(?:am\s+)?going to\s+(?:hurt|harm|cut|injure)\s+myself\b/i, "SELF"],
+  ["dangerous-location-intent", /\b(?:roof|rooftop|balcony|bridge|highway|traffic|train tracks?)\b.{0,80}\b(?:jump(?:ing)?|die|kill myself|end my life|walk into)\b|\b(?:jump(?:ing)?|die|kill myself|end my life|walk into)\b.{0,80}\b(?:roof|rooftop|balcony|bridge|highway|traffic|train tracks?)\b/i, "SELF"],
+  ["plan-access-intent", /\bplan\b.{0,100}\b(?:access|with me|have it|ready)\b.{0,100}\b(?:intend|going|tonight|now|today|do it)\b|\b(?:intend|going|tonight|now|today|do it)\b.{0,100}\bplan\b.{0,100}\b(?:access|with me|have it|ready)\b/i, "UNCLEAR"],
+  ["cannot-stay-safe", /\b(?:cannot|can['’]t|don['’]t think i can)\s+(?:keep myself|stay)\s+safe\b/i, "SELF"],
+  ["other-directed-imminent", new RegExp(`\\b(?:about to\\s+${OTHER_HARM_ACTION}\\s+${OTHER_TARGET}|(?:(?:going|planning|intend)\\s+to|will)\\s+${OTHER_HARM_ACTION}\\s+${OTHER_TARGET}.{0,32}\\b${NEAR_TERM_TIME}\\b|\\b${NEAR_TERM_TIME}\\b.{0,48}(?:(?:going|planning|intend)\\s+to|will)\\s+${OTHER_HARM_ACTION}\\s+${OTHER_TARGET})`, "i"), "OTHER"],
 ];
+
+const OTHER_DIRECTED_CONCERN = new RegExp(
+  `\\b(?:(?:(?:going|planning|intend|want)\\s+to|will)\\s+${OTHER_HARM_ACTION}\\s+${OTHER_TARGET}|(?:thinking|thoughts?|urge)\\s+(?:about|of|to)\\s+${OTHER_HARM_EVIDENCE_ACTION}\\s+${OTHER_TARGET})\\b`,
+  "i"
+);
+const AMBIGUOUS_VIOLENCE = new RegExp(
+  `\\b(?:could|might)\\s+(?:just\\s+)?${OTHER_HARM_ACTION}\\s+${OTHER_TARGET}\\b`,
+  "i"
+);
 
 const SUICIDAL_PATTERNS: Array<[string, RegExp, MomoSafetyLanguage?]> = [
   ["suicidal-thoughts", /\b(?:suicidal\s+(?:thoughts?|ideas?|intent)|thinking about (?:suicide|killing myself)|thinking about (?:ending|taking) my life)\b/i],
@@ -80,9 +96,14 @@ const AMBIGUOUS_PATTERNS: Array<[string, RegExp]> = [
   ["hopeless-romanized-nepali", /\b(?:aba\s+sakdina|yo\s+garna\s+sakdina)\b/i],
 ];
 
-const PERSONAL_RISK_EXCLUSION = /\b(?:for (?:an? )?(?:essay|assignment|research|article|story)|in (?:a|the) (?:novel|book|movie|show|article)|the (?:character|client|patient) (?:said|says)|(?:my|a) (?:friend|partner|sibling|coworker) (?:said|says|told me)|what (?:is|does|are) (?:self[- ]?harm|suicidal ideation|suicidal thoughts?)|signs of (?:suicide|self[- ]?harm)|suicide prevention education|quoted? (?:text|statement))\b/i;
+const PERSONAL_RISK_EXCLUSION = /\b(?:for (?:an? )?(?:essay|assignment|research|article|story|screenplay)|in (?:a|the|my) (?:novel|book|movie|show|article|story|screenplay)|fictional(?:ly| character)?|the (?:character|client|patient|villain) (?:said|says)|(?:he|she|they|someone|my|a|the) (?:friend|partner|sibling|coworker|character|client|patient|villain)?\s*(?:said|says|told me|wrote)|what (?:is|does|are) (?:self[- ]?harm|suicidal ideation|suicidal thoughts?|violence risk)|signs of (?:suicide|self[- ]?harm)|(?:suicide|violence) prevention education|quoted? (?:text|statement))\b/i;
 const HISTORICAL_RESOLVED = /\b(?:yesterday|last (?:week|month|year)|years? ago|when i was younger|i used to)\b.{0,120}\b(?:but|and)\b.{0,60}\b(?:not now|no longer|recovered|safe now|am safe now)\b/i;
 const EXPLICIT_DENIAL = /\b(?:do not|don['’]t|never|no longer|am not|i['’]m not)\b.{0,24}\b(?:hurt|harm|cut|kill)\s+myself\b/i;
+const OTHER_HARM_DENIAL = new RegExp(
+  `\\b(?:do not|don['’]t|never|will not|won['’]t|would not|wouldn['’]t|am not|i['’]m not)\\b.{0,32}\\b${OTHER_HARM_ACTION}\\s+${OTHER_TARGET}\\b`,
+  "i"
+);
+const CLEAR_FIGURATIVE_VIOLENCE = /\b(?:figure of speech|didn['’]t mean (?:it )?literally|did not mean (?:it )?literally|just (?:angry|mad|venting)|only (?:angry|mad|venting)|wouldn['’]t actually hurt|won['’]t hurt anyone|will not hurt anyone)\b/i;
 const NON_SUICIDAL_DISTINCTION = /\b(?:do not|don['’]t|am not|i['’]m not)\s+(?:want(?:ing)?\s+to\s+)?(?:die|kill myself|end my life)|\bwithout (?:wanting to )?dying\b/i;
 const UNRESOLVED_ANSWER = /^(?:i\s+)?(?:don['’]t know|do not know|am not sure|i['’]m not sure|unsure|maybe|can['’]t say|cannot say|don['’]t want to answer|do not want to answer|won['’]t answer|stop asking)(?:\b|[.!?])/i;
 const JOKING_RETRACTION = /\b(?:i was|i['’]m|just) joking\b|\b(?:relax|forget it),?\s*(?:i was joking|it was a joke)?/i;
@@ -96,7 +117,47 @@ function normalized(text: string): string {
 }
 
 function isClearNonSafetyExplanation(text: string): boolean {
-  return CLEAR_NON_SAFETY_MEANING.test(text) || CLEAR_CONTEXTUAL_EXPLANATION.test(text);
+  return CLEAR_NON_SAFETY_MEANING.test(text) || CLEAR_CONTEXTUAL_EXPLANATION.test(text) ||
+    CLEAR_FIGURATIVE_VIOLENCE.test(text);
+}
+
+const SELF_TARGET_EVIDENCE = /\b(?:kill myself|end my life|take my life|hurt myself|harm myself|cut myself|injure myself|self[- ]?harm|want to die|want my life to end|don['’]t want to (?:live|be alive)|cannot keep myself safe|can['’]t keep myself safe)\b/i;
+const OTHER_TARGET_EVIDENCE = new RegExp(
+  `\\b${OTHER_HARM_EVIDENCE_ACTION}\\s+(?:myself\\s+(?:and|or)\\s+)?${OTHER_TARGET}\\b`,
+  "i"
+);
+const MIXED_TARGET_EVIDENCE = new RegExp(
+  `\\b${OTHER_HARM_EVIDENCE_ACTION}\\s+(?:myself\\s+(?:and|or)\\s+${OTHER_TARGET}|${OTHER_TARGET}\\s+(?:and|or)\\s+myself)\\b`,
+  "i"
+);
+
+function categoryForTarget(target: SafetyTarget): MomoSafetyCategory | undefined {
+  if (target === "SELF") return "SELF_HARM";
+  if (target === "OTHER") return "HARM_TO_OTHERS";
+  return undefined;
+}
+
+function safetyTargetForText(text: string, fallback: SafetyTarget): SafetyTarget {
+  const self = SELF_TARGET_EVIDENCE.test(text) || MIXED_TARGET_EVIDENCE.test(text);
+  const other = OTHER_TARGET_EVIDENCE.test(text);
+  if (self && other) return "BOTH";
+  if (self) return "SELF";
+  if (other) return "OTHER";
+  return fallback;
+}
+
+function targetFromModelEvidence(evidence: ModelSafetyEvidence[]): SafetyTarget {
+  const self = evidence.some((item) => [
+    "SELF_DIRECTED_HARM",
+    "DEATH_OR_NONEXISTENCE",
+    "SUICIDAL_IDEATION",
+    "INABILITY_TO_STAY_SAFE",
+  ].includes(item));
+  const other = evidence.includes("HARM_TO_OTHERS");
+  if (self && other) return "BOTH";
+  if (self) return "SELF";
+  if (other) return "OTHER";
+  return "UNCLEAR";
 }
 
 const MODEL_EVIDENCE_PATTERNS: Record<ModelSafetyEvidence, RegExp> = {
@@ -104,10 +165,11 @@ const MODEL_EVIDENCE_PATTERNS: Record<ModelSafetyEvidence, RegExp> = {
   DEATH_OR_NONEXISTENCE: /\b(?:i\s+(?:want|wish|hope|would rather)\s+(?:to\s+)?(?:die|be dead|not exist|stop existing)|i\s+don['’]t want to (?:live|be alive)|my life\s+(?:to\s+end|isn['’]t worth living))\b/i,
   SUICIDAL_IDEATION: /\b(?:suicid(?:e|al)|ending my life|taking my life|kill myself)\b/i,
   PLAN_OR_ACCESS: /\b(?:plan|method|means|access|have (?:it|them) (?:with me|ready))\b/i,
-  IMMEDIACY: /\b(?:right now|now|tonight|today|very soon|about to)\b/i,
+  IMMEDIACY: new RegExp(`\\b(?:${NEAR_TERM_TIME}|about to)\\b`, "i"),
   INABILITY_TO_STAY_SAFE: /\b(?:can['’]t|cannot|don['’]t think i can|unable to)\s+(?:keep myself|stay)\s+safe\b/i,
   ATTEMPT_OR_INJURY: /\b(?:attempt (?:is|already) underway|overdos(?:e|ed)|took|swallowed|bleeding|not breathing|unconscious|serious(?:ly)? injured)\b/i,
-  HARM_TO_OTHERS: /\b(?:kill|shoot|attack|hurt|harm)\s+(?:him|her|them|someone|people|my\s+(?:partner|family|friend|boss))\b/i,
+  HARM_TO_OTHERS: OTHER_TARGET_EVIDENCE,
+  INTENT: /\b(?:(?:going|planning|intend|want)\s+to|will|about to)\b/i,
 };
 
 function supportedModelAssessment(
@@ -122,18 +184,30 @@ function supportedModelAssessment(
   const value = normalized(text);
   if (PERSONAL_RISK_EXCLUSION.test(value) || HISTORICAL_RESOLVED.test(value)) return null;
   const evidence = parsed.data.evidence.filter((item) => MODEL_EVIDENCE_PATTERNS[item].test(value));
-  const substantive = evidence.filter((item) => item !== "IMMEDIACY" && item !== "PLAN_OR_ACCESS");
+  const substantive = evidence.filter((item) =>
+    item !== "IMMEDIACY" && item !== "PLAN_OR_ACCESS" && item !== "INTENT"
+  );
   if (substantive.length === 0) return null;
-  if (parsed.data.category === "HARM_TO_OTHERS" && !evidence.includes("HARM_TO_OTHERS")) return null;
-  if (parsed.data.category === "SELF_HARM" && evidence.includes("HARM_TO_OTHERS") && substantive.length === 1) return null;
+  const supportedTarget = targetFromModelEvidence(evidence);
+  if (parsed.data.target !== supportedTarget) return null;
 
+  const hasIntent = evidence.includes("INTENT");
+  const otherDirected = supportedTarget === "OTHER" || supportedTarget === "BOTH";
   const imminentSupport = evidence.some((item) =>
     item === "INABILITY_TO_STAY_SAFE" || item === "ATTEMPT_OR_INJURY"
-  ) || (evidence.includes("IMMEDIACY") && substantive.length > 0) ||
-    (evidence.includes("PLAN_OR_ACCESS") && substantive.length > 0);
+  ) || (hasIntent && substantive.length > 0 && (
+    evidence.includes("IMMEDIACY") || evidence.includes("PLAN_OR_ACCESS")
+  ));
+  const targetSupportedImminence = !otherDirected || (
+    evidence.includes("HARM_TO_OTHERS") && hasIntent &&
+    (evidence.includes("IMMEDIACY") || evidence.includes("PLAN_OR_ACCESS"))
+  );
 
   return {
-    level: parsed.data.level === "IMMINENT" && !imminentSupport ? "CONCERNING" : parsed.data.level,
+    level: parsed.data.level === "IMMINENT" && (!imminentSupport || !targetSupportedImminence)
+      ? "CONCERNING"
+      : parsed.data.level,
+    target: supportedTarget,
     category: parsed.data.category,
     evidence,
   };
@@ -142,17 +216,49 @@ function supportedModelAssessment(
 function signalFor(text: string): DetectedSignal | null {
   const value = normalized(text);
   if (!value || PERSONAL_RISK_EXCLUSION.test(value) || HISTORICAL_RESOLVED.test(value)) return null;
-  if (EXPLICIT_DENIAL.test(value) && !/\bbut\b/i.test(value)) return null;
+  if ((EXPLICIT_DENIAL.test(value) || OTHER_HARM_DENIAL.test(value)) && !/\bbut\b/i.test(value)) return null;
 
   for (const [id, expression] of MEDICAL_PATTERNS) {
     if (expression.test(value)) {
-      return { id, state: "MEDICAL_EMERGENCY", category: "SELF_HARM", assessmentStep: "MEDICAL_TRIAGE" };
+      return {
+        id,
+        state: "MEDICAL_EMERGENCY",
+        target: "SELF",
+        category: "SELF_HARM",
+        assessmentStep: "MEDICAL_TRIAGE",
+      };
     }
   }
-  for (const [id, expression] of IMMINENT_PATTERNS) {
+  for (const [id, expression, fallbackTarget] of IMMINENT_PATTERNS) {
     if (expression.test(value)) {
-      return { id, state: "IMMINENT", category: id === "harm-others-immediate" ? "HARM_TO_OTHERS" : "SELF_HARM", assessmentStep: "CHECK_ALONE" };
+      const target = safetyTargetForText(value, fallbackTarget);
+      const category = categoryForTarget(target);
+      return {
+        id,
+        state: "IMMINENT",
+        target,
+        ...(category ? { category } : {}),
+        assessmentStep: target === "UNCLEAR" ? "CLARIFY_TARGET" : "CREATE_DISTANCE",
+      };
     }
+  }
+  if (OTHER_DIRECTED_CONCERN.test(value)) {
+    return {
+      id: "other-directed-concerning",
+      state: "CLARIFY",
+      target: "OTHER",
+      category: "HARM_TO_OTHERS",
+      assessmentStep: "CHECK_CURRENT_IMMEDIACY",
+    };
+  }
+  if (AMBIGUOUS_VIOLENCE.test(value)) {
+    return {
+      id: "ambiguous-violence-language",
+      state: "CLARIFY",
+      target: "OTHER",
+      category: "HARM_TO_OTHERS",
+      assessmentStep: "CLARIFY_MEANING",
+    };
   }
   for (const [id, expression, language] of SUICIDAL_PATTERNS) {
     if (expression.test(value) && !NON_SUICIDAL_DISTINCTION.test(value)) {
@@ -160,6 +266,7 @@ function signalFor(text: string): DetectedSignal | null {
       return {
         id,
         state: "SUICIDAL",
+        target: "SELF",
         category: "SELF_HARM",
         language,
         assessmentStep: noCurrentPlan ? "CHECK_SAFE_PERSON" : "CHECK_CURRENT_IMMEDIACY",
@@ -172,6 +279,7 @@ function signalFor(text: string): DetectedSignal | null {
       return {
         id,
         state: "SELF_HARM",
+        target: "SELF",
         category: "SELF_HARM",
         language,
         assessmentStep: alreadyActed
@@ -184,13 +292,22 @@ function signalFor(text: string): DetectedSignal | null {
   }
   for (const [id, expression] of AMBIGUOUS_PATTERNS) {
     if (expression.test(value)) {
-      return { id, state: "CLARIFY", assessmentStep: "CLARIFY_MEANING" };
+      return { id, state: "CLARIFY", target: "UNCLEAR", assessmentStep: "CLARIFY_MEANING" };
     }
   }
   return null;
 }
 
-function triggerTypeFor(state: SafetyState): SafetyTriggerType {
+function triggerTypeFor(
+  state: SafetyState,
+  target: SafetyTarget,
+  matchedSignals: string[]
+): SafetyTriggerType {
+  if ((target === "OTHER" || target === "BOTH") && matchedSignals.some((id) =>
+    id === "other-directed-imminent" || id === "other-directed-concerning"
+  )) {
+    return "OTHER_DIRECTED_THREAT";
+  }
   switch (state) {
     case "CLARIFY": return "AMBIGUOUS_LANGUAGE";
     case "SELF_HARM": return "SELF_HARM_DISCLOSURE";
@@ -203,16 +320,27 @@ function triggerTypeFor(state: SafetyState): SafetyTriggerType {
 
 function ruleAssessmentFor(text: string): RuleRiskAssessment {
   const signal = signalFor(text);
-  if (!signal) return { level: "SAFE", suggestedState: "NORMAL", matchedSignals: [] };
+  if (!signal) return { level: "SAFE", target: "NONE", suggestedState: "NORMAL", matchedSignals: [] };
   const language = signal.language ?? (/\p{Script=Devanagari}/u.test(text) ? "NE" : "EN");
   return {
     level: signal.state === "IMMINENT" || signal.state === "MEDICAL_EMERGENCY" ? "IMMINENT" : "CONCERNING",
+    target: signal.target,
     ...(signal.category ? { category: signal.category } : {}),
     language,
     suggestedState: signal.state,
     assessmentStep: signal.assessmentStep,
     matchedSignals: [signal.id],
   };
+}
+
+function mergeSafetyTargets(left: SafetyTarget, right: SafetyTarget): SafetyTarget {
+  if (left === "NONE") return right;
+  if (right === "NONE") return left;
+  if (left === right) return left;
+  if (left === "BOTH" || right === "BOTH") return "BOTH";
+  if (left === "UNCLEAR") return right;
+  if (right === "UNCLEAR") return left;
+  return "BOTH";
 }
 
 function evaluationFrom(
@@ -224,20 +352,38 @@ function evaluationFrom(
 ): SafetyEvaluation {
   const state = resolveSafetyState({ deterministic, model });
   const policy = getSafetyPolicy(state);
+  const safetyTarget = mergeSafetyTargets(deterministic.target, model?.target ?? "NONE");
   const isUnresolvedConcern = resolution === "UNRESOLVED" && state !== "NORMAL" && state !== "CLARIFY";
-  const requiresHumanReview = policy.humanReviewRequired || isUnresolvedConcern;
-  const reviewUrgency = policy.reviewUrgency === "NONE" && isUnresolvedConcern ? "ROUTINE" : policy.reviewUrgency;
+  const credibleOtherDirected = (safetyTarget === "OTHER" || safetyTarget === "BOTH") && (
+    deterministic.matchedSignals.some((id) =>
+      id === "other-directed-imminent" || id === "other-directed-concerning"
+    ) || model?.evidence.includes("HARM_TO_OTHERS") === true
+  );
+  const requiresHumanReview = policy.humanReviewRequired || isUnresolvedConcern || credibleOtherDirected;
+  const reviewUrgency = policy.reviewUrgency === "NONE" && (isUnresolvedConcern || credibleOtherDirected)
+    ? "ROUTINE"
+    : policy.reviewUrgency;
   const escalationStatus = requiresHumanReview && policy.escalationStatus === "CLARIFICATION_REQUIRED"
     ? "HUMAN_REVIEW_REQUIRED"
     : policy.escalationStatus;
+  const derivedTriggerType = credibleOtherDirected
+    ? "OTHER_DIRECTED_THREAT"
+    : triggerTypeFor(state, safetyTarget, deterministic.matchedSignals);
 
   return safetyEvaluationSchema.parse({
     state,
+    safetyTarget,
     resolution: resolution ?? (state === "NORMAL" ? "RESOLVED_NORMAL" : "ASSESSING"),
     assessmentStep: assessmentStep ?? deterministic.assessmentStep ?? getSafetyPolicy(state).defaultAssessmentStep,
     requiresHumanReview,
     reviewUrgency,
-    triggerType: triggerType ?? (deterministic.level === "SAFE" && model?.level !== "SAFE" ? "MODEL_CONCERN" : triggerTypeFor(state)),
+    triggerType: triggerType ?? (
+      credibleOtherDirected
+        ? "OTHER_DIRECTED_THREAT"
+        : deterministic.level === "SAFE" && model && model.level !== "SAFE"
+          ? "MODEL_CONCERN"
+          : derivedTriggerType
+    ),
     policyApprovalStatus: policy.approvalStatus,
     deterministic,
     model,
@@ -303,7 +449,11 @@ function transitionFrom(previous: SafetyEvaluation, text: string, current: Safet
   if (previous.state === "NORMAL") return current;
 
   const value = normalized(text);
-  if (previous.state === "CLARIFY" && (isClearNonSafetyExplanation(value) || EXPLICIT_DENIAL.test(value))) {
+  if (previous.state === "CLARIFY" && (
+    isClearNonSafetyExplanation(value) || EXPLICIT_DENIAL.test(value) || OTHER_HARM_DENIAL.test(value)
+  )) {
+    const credibleOther = previous.deterministic.matchedSignals.includes("other-directed-concerning");
+    if (credibleOther) return carryForward(previous, "ASSESSING", "AWAIT_HUMAN_REVIEW");
     return current;
   }
   if (JOKING_RETRACTION.test(value) || UNRESOLVED_ANSWER.test(value)) {
@@ -318,6 +468,19 @@ function transitionFrom(previous: SafetyEvaluation, text: string, current: Safet
   }
 
   if (AFFIRMATIVE_ANSWER.test(value)) {
+    if (
+      previous.state === "CLARIFY" &&
+      previous.assessmentStep === "CHECK_CURRENT_IMMEDIACY" &&
+      (previous.safetyTarget === "OTHER" || previous.safetyTarget === "BOTH")
+    ) {
+      return evaluationFrom(
+        { ...previous.deterministic, level: "IMMINENT", suggestedState: "IMMINENT", assessmentStep: "CREATE_DISTANCE" },
+        previous.model,
+        "ASSESSING",
+        "CREATE_DISTANCE",
+        "OTHER_DIRECTED_THREAT"
+      );
+    }
     if (previous.assessmentStep === "CHECK_SUICIDAL_INTENT") {
       return evaluationFrom(
         { ...previous.deterministic, level: "CONCERNING", suggestedState: "SUICIDAL" }, previous.model,
@@ -333,7 +496,7 @@ function transitionFrom(previous: SafetyEvaluation, text: string, current: Safet
     if (previous.state === "SUICIDAL" && previous.assessmentStep === "CHECK_CURRENT_IMMEDIACY") {
       return evaluationFrom(
         { ...previous.deterministic, level: "IMMINENT", suggestedState: "IMMINENT" }, previous.model,
-        "ASSESSING", "CHECK_ALONE", "IMMINENT_DANGER"
+        "ASSESSING", "CREATE_DISTANCE", "IMMINENT_DANGER"
       );
     }
   }
@@ -347,6 +510,13 @@ function transitionFrom(previous: SafetyEvaluation, text: string, current: Safet
         { ...previous.deterministic, suggestedState: "SELF_HARM" }, previous.model,
         "ASSESSING", "CHECK_ALREADY_ACTED", "SELF_HARM_DISCLOSURE"
       );
+    }
+    if (
+      previous.state === "CLARIFY" &&
+      previous.assessmentStep === "CHECK_CURRENT_IMMEDIACY" &&
+      (previous.safetyTarget === "OTHER" || previous.safetyTarget === "BOTH")
+    ) {
+      return carryForward(previous, "ASSESSING", "AWAIT_HUMAN_REVIEW");
     }
     if (previous.assessmentStep === "CHECK_ALREADY_ACTED") {
       return evaluationFrom(
@@ -372,7 +542,7 @@ export function evaluateConversationSafety(
   model: ModelRiskAssessment | null = null
 ): SafetyEvaluation {
   let evaluation = evaluationFrom(
-    { level: "SAFE", suggestedState: "NORMAL", matchedSignals: [] }, null
+    { level: "SAFE", target: "NONE", suggestedState: "NORMAL", matchedSignals: [] }, null
   );
 
   for (const turn of input.history) {

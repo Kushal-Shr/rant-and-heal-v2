@@ -547,14 +547,14 @@ test("multi-turn corpus separates fresh distress from active safety progression"
 test("model-only concern requires structured evidence supported by the message", async () => {
   const unsupported = await evaluateConversationSafetyWithClassifier(
     input("I feel like my future is ruined honestly, IDK what to do."),
-    async () => ({ level: "CONCERNING", category: "SELF_HARM", evidence: ["SELF_DIRECTED_HARM"] })
+    async () => ({ level: "CONCERNING", target: "SELF", category: "SELF_HARM", evidence: ["SELF_DIRECTED_HARM"] })
   );
   assert.equal(unsupported.state, "NORMAL");
   assert.equal(unsupported.requiresHumanReview, false);
 
   const supported = await evaluateConversationSafetyWithClassifier(
     input("I want to stop existing."),
-    async () => ({ level: "CONCERNING", category: "SELF_HARM", evidence: ["DEATH_OR_NONEXISTENCE"] })
+    async () => ({ level: "CONCERNING", target: "SELF", category: "SELF_HARM", evidence: ["DEATH_OR_NONEXISTENCE"] })
   );
   assert.equal(supported.state, "SUICIDAL");
   assert.equal(supported.reviewUrgency, "URGENT");
@@ -563,8 +563,9 @@ test("model-only concern requires structured evidence supported by the message",
     input("I want to stop existing tonight."),
     async () => ({
       level: "IMMINENT",
+      target: "SELF",
       category: "SELF_HARM",
-      evidence: ["DEATH_OR_NONEXISTENCE", "IMMEDIACY"],
+      evidence: ["DEATH_OR_NONEXISTENCE", "INTENT", "IMMEDIACY"],
     })
   );
   assert.equal(imminent.state, "IMMINENT");
@@ -579,7 +580,7 @@ test("manual false-positive sequence reaches the ordinary planner even with an u
   ]), {
     evaluateSafety: (_message, current) => evaluateConversationSafetyWithClassifier(
       current,
-      async () => ({ level: "CONCERNING", category: "SELF_HARM", evidence: ["SELF_DIRECTED_HARM"] })
+      async () => ({ level: "CONCERNING", target: "SELF", category: "SELF_HARM", evidence: ["SELF_DIRECTED_HARM"] })
     ),
     plan: () => {
       plannerCalls += 1;

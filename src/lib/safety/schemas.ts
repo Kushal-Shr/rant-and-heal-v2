@@ -27,6 +27,8 @@ export const safetyAssessmentStepSchema = z.enum([
   "CHECK_ACCESS",
   "CHECK_ALONE",
   "CHECK_SAFE_PERSON",
+  "CREATE_DISTANCE",
+  "CLARIFY_TARGET",
   "MEDICAL_TRIAGE",
   "VERIFY_RETRACTED_CLAIM",
   "AWAIT_HUMAN_REVIEW",
@@ -49,6 +51,7 @@ export const safetyTriggerTypeSchema = z.enum([
   "SELF_HARM_DISCLOSURE",
   "SUICIDAL_IDEATION",
   "IMMINENT_DANGER",
+  "OTHER_DIRECTED_THREAT",
   "MEDICAL_EMERGENCY",
   "MODEL_CONCERN",
   "UNRESOLVED_FOLLOW_UP",
@@ -58,6 +61,8 @@ export type SafetyTriggerType = z.infer<typeof safetyTriggerTypeSchema>;
 export const riskLevelSchema = z.enum(["SAFE", "CONCERNING", "IMMINENT"]);
 export const safetyCategorySchema = z.enum(["SELF_HARM", "HARM_TO_OTHERS"]);
 export const safetyLanguageSchema = z.enum(["EN", "NE"]);
+export const safetyTargetSchema = z.enum(["NONE", "SELF", "OTHER", "BOTH", "UNCLEAR"]);
+export type SafetyTarget = z.infer<typeof safetyTargetSchema>;
 
 export const modelSafetyEvidenceSchema = z.enum([
   "SELF_DIRECTED_HARM",
@@ -68,11 +73,13 @@ export const modelSafetyEvidenceSchema = z.enum([
   "INABILITY_TO_STAY_SAFE",
   "ATTEMPT_OR_INJURY",
   "HARM_TO_OTHERS",
+  "INTENT",
 ]);
 export type ModelSafetyEvidence = z.infer<typeof modelSafetyEvidenceSchema>;
 
 export const ruleRiskAssessmentSchema = z.object({
   level: riskLevelSchema,
+  target: safetyTargetSchema,
   category: safetyCategorySchema.optional(),
   language: safetyLanguageSchema.optional(),
   suggestedState: safetyStateSchema.optional(),
@@ -83,23 +90,33 @@ export type RuleRiskAssessment = z.infer<typeof ruleRiskAssessmentSchema>;
 
 export const modelRiskAssessmentSchema = z.object({
   level: riskLevelSchema,
+  target: safetyTargetSchema,
   category: safetyCategorySchema.nullable(),
   evidence: z.array(modelSafetyEvidenceSchema).max(8),
 }).strict().superRefine((value, context) => {
   if (value.level === "SAFE") {
-    if (value.category !== null || value.evidence.length !== 0) {
+    if (value.target !== "NONE" || value.category !== null || value.evidence.length !== 0) {
       context.addIssue({
         code: "custom",
-        message: "SAFE assessments must not include a risk category or safety evidence",
+        message: "SAFE assessments must use target NONE without a risk category or safety evidence",
       });
     }
     return;
   }
-  if (value.category === null || value.evidence.length === 0) {
+  if (value.target === "NONE" || value.evidence.length === 0) {
     context.addIssue({
       code: "custom",
-      message: "Non-safe assessments require a category and explicit safety evidence",
+      message: "Non-safe assessments require a safety target and explicit safety evidence",
     });
+  }
+  if (value.target === "SELF" && value.category !== "SELF_HARM") {
+    context.addIssue({ code: "custom", message: "SELF target requires SELF_HARM category" });
+  }
+  if (value.target === "OTHER" && value.category !== "HARM_TO_OTHERS") {
+    context.addIssue({ code: "custom", message: "OTHER target requires HARM_TO_OTHERS category" });
+  }
+  if ((value.target === "BOTH" || value.target === "UNCLEAR") && value.category !== null) {
+    context.addIssue({ code: "custom", message: "BOTH and UNCLEAR targets use a null legacy category" });
   }
 });
 export type ModelRiskAssessment = z.infer<typeof modelRiskAssessmentSchema>;
@@ -114,6 +131,7 @@ export type EscalationStatus = z.infer<typeof escalationStatusSchema>;
 
 export const safetyEvaluationSchema = z.object({
   state: safetyStateSchema,
+  safetyTarget: safetyTargetSchema,
   resolution: safetyResolutionSchema,
   assessmentStep: safetyAssessmentStepSchema,
   requiresHumanReview: z.boolean(),
@@ -135,6 +153,7 @@ export const safetyEventSchema = z.object({
   requiresHumanReview: z.boolean(),
   reviewUrgency: reviewUrgencySchema,
   triggerType: safetyTriggerTypeSchema,
+  safetyTarget: safetyTargetSchema,
   category: safetyCategorySchema.optional(),
   source: z.enum(["TEXT", "VOICE"]),
   status: escalationStatusSchema,

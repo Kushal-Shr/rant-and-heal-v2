@@ -145,6 +145,7 @@ export async function POST(request: NextRequest) {
         assessmentStep: outcome.safety.assessmentStep,
         requiresHumanReview: outcome.safety.requiresHumanReview,
         reviewUrgency: outcome.safety.reviewUrgency,
+        safetyTarget: outcome.safety.safetyTarget,
         ...(outcome.safety.deterministic.category ? { category: outcome.safety.deterministic.category } : {}),
       };
       await db.runTransaction(async (transaction) => {
@@ -172,6 +173,7 @@ export async function POST(request: NextRequest) {
             const status = await notifySafetySupport({
               eventId,
               category: outcome.safety.deterministic.category,
+              safetyTarget: outcome.safety.safetyTarget,
               source: "TEXT",
               state: outcome.safety.state,
             });

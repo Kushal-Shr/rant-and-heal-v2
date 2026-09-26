@@ -1,7 +1,7 @@
 # Safety Behavior — Clinician and Legal Review
 
 Status: `RESEARCH_DRAFT`  
-Policy version: `2026-09-24-day3-research-draft`
+Policy version: `2026-09-25-target-aware-research-draft`
 
 This document separates behavior implemented from the supplied Rant & Heal research from decisions that still require qualified clinical, legal, privacy, and operational approval. Nothing here is represented as clinically validated, legally approved, or a production-approved crisis protocol.
 
@@ -19,7 +19,7 @@ This document separates behavior implemented from the supplied Rant & Heal resea
 - The model classifier may supplement deterministic rules only through schema-validated evidence categories that application code can anchor to the current message. Emotional intensity alone is not model evidence for a safety state.
 - Historical, quoted, and educational references are not automatically treated as current imminent danger without personal-risk context.
 - Generated success/progress claims about external action are removed unless matching backend state is supplied. The current chat responder has no confirmed external actions.
-- Safety events contain structured state, resolution, assessment step, review intent/urgency, trigger type, source, session ID, policy version, and timestamps. The event does not duplicate the user's message or store model rationale.
+- Safety events contain structured state, target, resolution, assessment step, review intent/urgency, trigger type, source, session ID, policy version, and timestamps. The event does not duplicate the user's message or store model rationale.
 - The existing opt-in Resend transport remains separate from classification. It is eligible only for policy states with `IMMEDIATE` review urgency and stores `REQUESTED`, `STARTED`, then `CONFIRMED` or `FAILED`; it is not an emergency-service dispatch.
 
 ## Current operational policy
@@ -34,6 +34,24 @@ This document separates behavior implemented from the supplied Rant & Heal resea
 | `MEDICAL_EMERGENCY` | Blocked | Urgent medical action | Immediate | Very short; medical priority |
 
 The policy values above are software defaults derived from the research brief, not clinical approval.
+
+## Harm-to-others / violence-risk policy gap
+
+Status: `RESEARCH_DRAFT / CLINICIAN_REVIEW_REQUIRED`
+
+The software now represents danger severity separately from the possible target: `NONE`, `SELF`, `OTHER`, `BOTH`, or `UNCLEAR`. Explicit near-term other-directed threats pause ordinary support, use target-appropriate distance language rather than suicide copy, and create immediate human-review intent. Credible other-directed concern without established imminence asks one direct immediacy question and creates routine review intent as a temporary research-draft default. Figurative or ambiguous violent language asks one clarification and does not become imminent solely because violent words appear.
+
+This is not a complete violence-risk protocol. Clinical and legal owners must define and approve:
+
+- threat-credibility criteria, including context, specificity, capability, access, protective factors, and how model evidence may be used;
+- imminent-risk criteria for other-directed and mixed self/other threats;
+- required reviewer urgency and response-time expectations for credible but non-imminent threats;
+- target-protection policy, including what guidance may be shown to the user and what qualified reviewers may do;
+- whether, when, and under whose authority emergency services or law enforcement may be involved;
+- minimum-necessary disclosure, consent and notice requirements, jurisdictional duties, retention, and audit access;
+- safe de-escalation, retraction reassessment, denial verification, and clearance criteria before returning to ordinary support.
+
+The current implementation does not claim that police, emergency services, a clinician, or the possible target were contacted. It does not independently authorize those actions.
 
 ## Review decisions still required
 

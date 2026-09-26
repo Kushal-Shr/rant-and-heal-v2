@@ -1,4 +1,5 @@
 import { Resend } from "resend";
+import type { SafetyTarget } from "@/src/lib/safety/schemas";
 
 type SupportNotificationResult = "CONFIRMED" | "FAILED";
 
@@ -18,6 +19,7 @@ export function safetySupportNotificationsEnabled(): boolean {
 export async function notifySafetySupport(options: {
   eventId: string;
   category?: string;
+  safetyTarget: SafetyTarget;
   source: "TEXT" | "VOICE";
   state: "IMMINENT" | "MEDICAL_EMERGENCY";
 }): Promise<SupportNotificationResult> {
@@ -36,7 +38,7 @@ export async function notifySafetySupport(options: {
       from,
       to: [recipient],
       subject: "[Rant & Heal] Safety event recorded",
-      text: `Safety event recorded\nEvent: ${options.eventId}\nCategory: ${options.category ?? "not provided"}\nSource: ${options.source}\nState: ${options.state}\nTimestamp: ${new Date().toISOString()}\n\nThis is a minimal operational alert. It does not contain the user's message or identity, and it does not mean Rant & Heal is a monitored or emergency-response service.`,
+      text: `Safety event recorded\nEvent: ${options.eventId}\nTarget: ${options.safetyTarget}\nCategory: ${options.category ?? "not provided"}\nSource: ${options.source}\nState: ${options.state}\nTimestamp: ${new Date().toISOString()}\n\nThis is a minimal operational alert. It does not contain the user's message or identity, and it does not mean Rant & Heal is a monitored or emergency-response service.`,
     });
     if (error) {
       console.error("SAFETY SUPPORT NOTIFICATION FAILED:", error);

@@ -98,7 +98,7 @@ const POLICIES: Record<SafetyState, SafetyPolicy> = {
     reviewUrgency: "IMMEDIATE",
     immediateProtocolRequired: true,
     medicalPriority: false,
-    defaultAssessmentStep: "CHECK_ALONE",
+    defaultAssessmentStep: "CREATE_DISTANCE",
     responseLength: "VERY_SHORT",
     responseStyle: "URGENT_DIRECT",
     approvalStatus: "RESEARCH_DRAFT",

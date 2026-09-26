@@ -5,7 +5,7 @@ import {
 } from "@/src/lib/safety/schemas";
 export type { ModelRiskAssessment } from "@/src/lib/safety/schemas";
 
-export const SAFETY_POLICY_VERSION = "2026-09-24-day3-research-draft";
+export const SAFETY_POLICY_VERSION = "2026-09-25-target-aware-research-draft";
 
 // The model is a second opinion only. Its response is schema-validated and it
 // has no tool/function access; application code owns every safety action.
@@ -20,6 +20,7 @@ export async function classifySafetyRisk(text: string): Promise<ModelRiskAssessm
           type: "object",
           properties: {
             level: { type: "string", enum: ["SAFE", "CONCERNING", "IMMINENT"] },
+            target: { type: "string", enum: ["NONE", "SELF", "OTHER", "BOTH", "UNCLEAR"] },
             category: { type: ["string", "null"], enum: ["SELF_HARM", "HARM_TO_OTHERS", null] },
             evidence: {
               type: "array",
@@ -34,15 +35,16 @@ export async function classifySafetyRisk(text: string): Promise<ModelRiskAssessm
                   "INABILITY_TO_STAY_SAFE",
                   "ATTEMPT_OR_INJURY",
                   "HARM_TO_OTHERS",
+                  "INTENT",
                 ],
               },
               maxItems: 8,
             },
           },
-          required: ["level", "category", "evidence"],
+          required: ["level", "target", "category", "evidence"],
           additionalProperties: false,
         },
-        systemInstruction: "Classify only explicit safety evidence in the user's current message. Sadness, hopelessness, failure, fear, exhaustion, feeling low, uncertainty, or a ruined future are SAFE unless the message also contains personal self-harm, death/nonexistence, suicide, harm-to-others, attempt/injury, plan/access, inability-to-stay-safe, or imminence evidence. IMMINENT requires supported intent to act now or soon, inability to stay safe, a plan/access signal, an attempt underway, or serious injury. CONCERNING requires supported self-harm, suicidal/death, or harm-to-others evidence without established immediacy. Historical, quoted, third-party, and educational content is SAFE without current personal-risk context. Select only evidence types directly supported by the message. SAFE requires category null and an empty evidence array. Return JSON only; do not include rationale, diagnosis, advice, method detail, or external actions.",
+        systemInstruction: "Classify only explicit safety evidence in the user's current message. Severity and target are separate: target is NONE, SELF, OTHER, BOTH, or UNCLEAR. Sadness, hopelessness, failure, fear, exhaustion, feeling low, uncertainty, anger, or a ruined future are SAFE unless the message also contains personal self-harm, death/nonexistence, suicide, harm-to-others, attempt/injury, plan/access, inability-to-stay-safe, intent, or imminence evidence. Figurative or ambiguous anger is not IMMINENT without supported intent and near-term evidence. Other-directed IMMINENT requires HARM_TO_OTHERS, INTENT, and IMMEDIACY or PLAN_OR_ACCESS evidence. CONCERNING requires supported self-harm, suicidal/death, or harm-to-others evidence without established imminence. Historical, quoted, third-party, fictional, and educational content is SAFE without current personal-risk context. Select only evidence types directly supported by the message. For SELF use category SELF_HARM; for OTHER use HARM_TO_OTHERS; for BOTH or UNCLEAR use category null. SAFE requires target NONE, category null, and an empty evidence array. Return JSON only; do not include rationale, diagnosis, advice, method detail, or external actions.",
       },
     });
     const result = await Promise.race([
@@ -55,6 +57,7 @@ export async function classifySafetyRisk(text: string): Promise<ModelRiskAssessm
     if (!parsed.success) return null;
     return {
       level: parsed.data.level,
+      target: parsed.data.target,
       category: parsed.data.category,
       evidence: parsed.data.evidence,
     };

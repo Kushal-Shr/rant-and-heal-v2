@@ -71,6 +71,7 @@ export async function recordMomoSafetyEvent({
     requiresHumanReview: evaluation.requiresHumanReview,
     reviewUrgency: evaluation.reviewUrgency,
     triggerType: evaluation.triggerType,
+    safetyTarget: evaluation.safetyTarget,
     ...(evaluation.deterministic.category ? { category: evaluation.deterministic.category } : {}),
     matchedSignals: evaluation.deterministic.matchedSignals,
     source,

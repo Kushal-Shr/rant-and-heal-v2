@@ -46,14 +46,23 @@ export async function POST(request: NextRequest) {
             const eventRef = db.collection("users").doc(userId).collection("safety_events").doc(eventId);
             await eventRef.update({ supportNotificationStatus: "REQUESTED", supportNotificationUpdatedAt: FieldValue.serverTimestamp() });
             await eventRef.update({ supportNotificationStatus: "STARTED", supportNotificationUpdatedAt: FieldValue.serverTimestamp() });
-            const status = await notifySafetySupport({ eventId, category: safety.category, source: "VOICE", state: evaluation.state });
+            const status = await notifySafetySupport({
+              eventId,
+              category: safety.category,
+              safetyTarget: evaluation.safetyTarget,
+              source: "VOICE",
+              state: evaluation.state,
+            });
             await eventRef.update({ supportNotificationStatus: status, supportNotificationUpdatedAt: FieldValue.serverTimestamp() });
           }
         } catch (error) {
           console.error("MOMO VOICE SAFETY FOLLOW-UP ERROR:", getErrorMessage(error));
         }
       });
-      return NextResponse.json({ ok: true, safety: { level: "IMMINENT", category: safety.category } });
+      return NextResponse.json({
+        ok: true,
+        safety: { level: "IMMINENT", category: safety.category, safetyTarget: evaluation.safetyTarget },
+      });
     }
 
     const batch = db.batch();

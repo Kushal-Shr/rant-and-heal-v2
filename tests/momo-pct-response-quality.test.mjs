@@ -57,6 +57,21 @@ test("global PCT contract distinguishes stated, suggested, and unknown content",
   assert.match(prompt, /no unnecessary preamble/i);
 });
 
+test("grounded reflection adds significance without parroting or unsupported interpretation", () => {
+  const prompt = composeMomoSystemInstruction(baseInstruction, decisionFor("LISTEN"));
+  assert.match(prompt, /Distinguish CONTENT .* GROUNDED SIGNIFICANCE .* and INTERPRETATION/is);
+  assert.match(prompt, /why confirmed details matter based only on connections the user supplied/i);
+  assert.match(prompt, /combine content with grounded significance/i);
+  assert.match(prompt, /must not present interpretation as fact/i);
+  assert.match(prompt, /Grounded significance can notice an established mismatch, effort, consequence, priority, repeated event, or stated comparison/i);
+  assert.match(prompt, /cannot manufacture the user's internal state/i);
+  assert.match(prompt, /Do not merely restate the message/i);
+  assert.match(prompt, /lightly paraphrase it/i);
+  assert.match(prompt, /swap words for synonyms/i);
+  assert.match(prompt, /transcript confirmation/i);
+  assert.match(prompt, /brief acknowledgement or useful clarification is better than invented depth/i);
+});
+
 test("assumption regression corpus never requires an unstated emotion or hidden cause", () => {
   const cases = [
     ["I failed my exam.", ["ashamed", "exhausted", "anxious", "disappointed", "devastated"]],
@@ -115,15 +130,69 @@ test("mode policies enforce brevity and one purposeful question", () => {
   assert.match(listen, /one to three short sentences/i);
   assert.match(listen, /question is optional/i);
   assert.match(listen, /ask at most one/i);
+  assert.match(listen, /conversational space is acceptable/i);
+  assert.match(listen, /Do not merely paraphrase or synonym-swap/i);
   assert.match(work, /two to four short sentences/i);
   assert.match(work, /at most one useful question/i);
+  assert.match(work, /Do not rush into automatic-thought identification/i);
   assert.match(direct, /one to three useful points/i);
   assert.match(direct, /no unnecessary empathy preamble/i);
+  assert.match(direct, /respect, specificity, and agency/i);
   assert.match(direct, /Do not respond with another unnecessary question/i);
   assert.match(regulate, /one manageable instruction or anchor at a time/i);
   assert.match(regulate, /very short language/i);
+  assert.match(regulate, /Avoid psychological interpretation/i);
   assert.match(unclear, /exactly one natural question to clarify/i);
+  assert.match(unclear, /Leave unknown meaning open/i);
   assert.match(unclear, /multiple questions/i);
+});
+
+test("questions require a purpose and an explicit request to stop questions wins", () => {
+  const conversation = input("Stop asking me questions and just give me one next step.", [
+    { role: "USER", text: "I keep falling behind on this assignment." },
+    { role: "MOMO", text: "What part feels hardest?" },
+    { role: "USER", text: "The research section." },
+    { role: "MOMO", text: "What about the research section is difficult?" },
+  ]);
+  const decision = planMomoResponse(conversation, "NORMAL", inferenceFor("LISTEN"));
+  const prompt = composeMomoSystemInstruction(baseInstruction, decision);
+
+  assert.equal(decision.supportMode, "DIRECT_HELP");
+  assert.equal(decision.userPreferenceOverride, true);
+  assert.match(prompt, /clarifying meaning, identifying what matters, determining desired support, or continuing user-led exploration/i);
+  assert.match(prompt, /Questions are optional in listening/i);
+  assert.match(prompt, /not required merely to sound empathic or keep the conversation moving/i);
+  assert.match(prompt, /Do not respond with another unnecessary question/i);
+});
+
+test("normal PCT does not automatically become analysis, CBT, problem-solving, or advice", () => {
+  const listen = composeMomoSystemInstruction(baseInstruction, decisionFor("LISTEN"));
+  const work = momoDecisionInstruction(decisionFor("WORK_THROUGH"));
+
+  assert.match(listen, /Do not automatically turn person-centered listening into thought analysis/i);
+  assert.match(listen, /automatic-thought identification/i);
+  assert.match(listen, /belief examination/i);
+  assert.match(listen, /cognitive restructuring/i);
+  assert.match(listen, /problem-solving, or advice/i);
+  assert.match(listen, /only when the active support mode or intervention calls for them, or the user explicitly requests them/i);
+  assert.match(listen, /Listening and understanding may stand on their own/i);
+  assert.match(work, /unless the selected intervention and user's request call for it/i);
+});
+
+test("a user correction replaces rather than preserves a prior responder inference", () => {
+  const conversation = input("No, I'm not anxious. I'm irritated that they changed the deadline.", [
+    { role: "USER", text: "My manager moved the deadline to tomorrow." },
+    { role: "MOMO", text: "You sound anxious about whether you can finish." },
+  ]);
+  const decision = planMomoResponse(conversation, "NORMAL", inferenceFor("LISTEN"));
+  const prompt = composeMomoSystemInstruction(baseInstruction, decision);
+
+  assert.equal(decision.supportMode, "LISTEN");
+  assert.match(conversation.messageText, /not anxious/i);
+  assert.match(conversation.messageText, /irritated/i);
+  assert.match(prompt, /treat the user's safe description of their own experience as authoritative/i);
+  assert.match(prompt, /Update immediately/i);
+  assert.match(prompt, /do not defend or repeat the rejected interpretation/i);
 });
 
 test("repetitive empathy and understanding-check tics are explicitly discouraged", () => {
@@ -233,6 +302,8 @@ test("naturalness corpus keeps normal distress in mode-specific PCT response pol
     assert.match(prompt, /Be concise/i, message);
     assert.match(prompt, /USER-STATED/i, message);
     assert.match(prompt, /no unnecessary preamble/i, message);
+    assert.match(prompt, /Scale response length to the message's complexity/i, message);
+    assert.match(prompt, /concise and conversational/i, message);
   }
 });
 
