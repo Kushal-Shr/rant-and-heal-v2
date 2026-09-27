@@ -1,6 +1,7 @@
 import type { Content } from "@google/genai";
 import { composeMomoSystemInstruction } from "@/src/lib/momo/responder";
 import { continuityResponseViolations } from "@/src/lib/momo/continuity";
+import { responseStyleViolations } from "@/src/lib/momo/responseStyle";
 import type { MomoDecision, NormalizedConversationInput } from "@/src/lib/momo/schemas";
 import { enforceBackendActionTruthfulness } from "@/src/lib/safety/actionTruthfulness";
 import { getGeminiClient, MOMO_TEXT_MODEL } from "./gemini";
@@ -21,6 +22,7 @@ export async function generateMomoResponse(
     conversationModality: "TEXT",
     continuityState: input.continuityState,
     participant: input.participant,
+    userMessageText: input.messageText,
   });
   let retryInstruction = "";
   for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -36,13 +38,12 @@ export async function generateMomoResponse(
     const reply = result.text?.trim();
     if (!reply) throw new Error("Gemini returned an empty response.");
     const truthfulReply = enforceBackendActionTruthfulness(reply);
-    const violations = continuityResponseViolations(
-      truthfulReply,
-      input,
-      input.continuityState
-    );
+    const violations = [
+      ...continuityResponseViolations(truthfulReply, input, input.continuityState),
+      ...responseStyleViolations(truthfulReply, input, decision),
+    ];
     if (violations.length === 0) return truthfulReply;
-    retryInstruction = `Rewrite the answer because it violated these conversation-continuity constraints: ${violations.join(", ")}. Keep the same helpful intent, but obey the bounded continuity state. Do not explain the rewrite or mention internal policy.`;
+    retryInstruction = `Rewrite the answer because it violated these response constraints: ${violations.join(", ")}. Keep the same helpful intent, but obey the bounded continuity state. Do not explain the rewrite or mention internal policy.`;
   }
-  throw new Error("Gemini could not produce a continuity-safe response.");
+  throw new Error("Gemini could not produce a policy-compliant response.");
 }

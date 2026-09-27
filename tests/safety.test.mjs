@@ -10,6 +10,7 @@ import {
 import { getSafetyPolicy, shouldAttemptSafetySupportNotification } from "../src/lib/safety/policy.ts";
 import { safetyResponseFor } from "../src/lib/safety/responses.ts";
 import { orchestrateMomoTurn } from "../src/lib/momo/orchestrator.ts";
+import { internalUserFacingTerminologyViolations } from "../src/lib/momo/responseStyle.ts";
 
 const input = (messageText, history = []) => ({ messageText, history });
 const responseFor = (messageText, history = []) => {
@@ -17,6 +18,7 @@ const responseFor = (messageText, history = []) => {
   return { evaluation, response: safetyResponseFor(evaluation, { messageText }) };
 };
 const questionCount = (text) => (text.match(/\?/g) ?? []).length;
+const internalSafetyCopy = /\bCBT\b|\bsafety\s+(?:state|mode)\b|\bclassifier\b|\bworkflows?\b|\bplanners?\b|\binterventions?\b|\bescalation\s+(?:state|logic)\b|मानव समीक्षा|कार्यप्रवाह|वर्गीकरणकर्ता|योजनाकार|हस्तक्षेप/i;
 
 test("distinguishes self-harm concern from imminent suicidal intent", () => {
   const selfHarm = assessMomoSafety("I want to hurt myself");
@@ -153,6 +155,28 @@ test("every safety assessment response contains at most one question", () => {
     "I am bleeding badly and it won't stop.",
   ]) {
     const { response } = responseFor(message);
+    assert.ok(questionCount(response) <= 1, response);
+  }
+});
+
+test("safety responses stay direct and never narrate internal system behavior", () => {
+  const scenarios = [
+    responseFor("I can't do this anymore."),
+    responseFor("I want to hurt myself."),
+    responseFor("Sometimes I wish I could die."),
+    responseFor("I'm going to kill myself tonight."),
+    responseFor("I am bleeding badly and it won't stop."),
+    responseFor("मलाई आत्महत्या गर्ने सोच छ"),
+  ];
+
+  for (const { response } of scenarios) {
+    assert.doesNotMatch(response, internalSafetyCopy, response);
+    assert.deepEqual(
+      internalUserFacingTerminologyViolations(response, "I need help right now."),
+      [],
+      response
+    );
+    assert.ok(response.split(/\s+/).length <= 45, response);
     assert.ok(questionCount(response) <= 1, response);
   }
 });

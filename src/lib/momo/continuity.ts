@@ -397,6 +397,10 @@ function questions(text: string): string[] {
   return text.split(/(?<=[?.!])\s+|\n+/).filter((part) => part.includes("?"));
 }
 
+function usesStockOpening(text: string): boolean {
+  return /^(?:it sounds like|it seems like|i hear you|that sounds really|it['’]s understandable|thank you for sharing|what comes to mind|what feels most helpful|does that resonate)\b/i.test(text.trim());
+}
+
 function explicitlyRequestsApproach(message: string, approach: InterventionApproach): boolean {
   const patterns = APPROACH_PATTERNS[approach];
   if (!patterns.length || !matchesAny(message, patterns)) return false;
@@ -439,7 +443,10 @@ export function continuityResponseViolations(
     violations.push("REPEATED_QUESTION");
   }
   const candidateOpening = contentTokens(candidate).slice(0, 4).join(" ");
-  if (candidateOpening.split(" ").length >= 3 && recentMomo.some((reply) => contentTokens(reply).slice(0, 4).join(" ") === candidateOpening)) {
+  if (
+    (usesStockOpening(candidate) && recentMomo.some(usesStockOpening))
+    || (candidateOpening.split(" ").length >= 3 && recentMomo.some((reply) => contentTokens(reply).slice(0, 4).join(" ") === candidateOpening))
+  ) {
     violations.push("REPEATED_OPENING");
   }
   if (recentMomo.some((reply) => similarity(candidate, reply) >= 0.78)) violations.push("RECYCLED_RESPONSE");
