@@ -14,7 +14,7 @@ import {
   internalUserFacingTerminologyViolations,
   userExplicitlyAsksAboutSystem,
   userFacingSystemLanguageInstruction,
-} from "../src/lib/momo/userFacingLanguage.ts";
+} from "../src/lib/momo/responseStyle.ts";
 
 const input = (messageText, history = []) => ({ messageText, history });
 const responseFor = (messageText, history = []) => {
@@ -22,7 +22,7 @@ const responseFor = (messageText, history = []) => {
   return { evaluation, response: safetyResponseFor(evaluation, { messageText }) };
 };
 const questionCount = (text) => (text.match(/\?/g) ?? []).length;
-const internalSafetyCopy = /\bCBT\b|\bsafety\s+(?:state|mode)\b|\bclassifier\b|\bworkflows?\b|\bplanners?\b|\binterventions?\b|\bescalation\s+state\b|मानव समीक्षा|कार्यप्रवाह|वर्गीकरणकर्ता|योजनाकार|हस्तक्षेप/i;
+const internalSafetyCopy = /\bCBT\b|\bsafety\s+(?:state|mode)\b|\bclassifier\b|\bworkflows?\b|\bplanners?\b|\binterventions?\b|\bescalation\s+(?:state|logic)\b|मानव समीक्षा|कार्यप्रवाह|वर्गीकरणकर्ता|योजनाकार|हस्तक्षेप/i;
 
 test("distinguishes self-harm concern from imminent suicidal intent", () => {
   const selfHarm = assessMomoSafety("I want to hurt myself");
@@ -163,7 +163,7 @@ test("every safety assessment response contains at most one question", () => {
   }
 });
 
-test("safety responses use direct human language without internal system terminology", () => {
+test("safety responses stay direct and never narrate internal system behavior", () => {
   const scenarios = [
     responseFor("I can't do this anymore."),
     responseFor("I want to hurt myself."),
@@ -183,7 +183,6 @@ test("safety responses use direct human language without internal system termino
     evaluation: awaitingOtherSafetyCheck,
     response: safetyResponseFor(awaitingOtherSafetyCheck, { messageText: "I was angry." }),
   });
-
   for (const { response } of scenarios) {
     assert.doesNotMatch(response, internalSafetyCopy, response);
     assert.deepEqual(
@@ -191,6 +190,7 @@ test("safety responses use direct human language without internal system termino
       [],
       response
     );
+    assert.ok(response.split(/\s+/).length <= 45, response);
     assert.ok(questionCount(response) <= 1, response);
   }
 });
@@ -230,7 +230,6 @@ test("responder contract forbids internal narration and keeps system explanation
   assert.match(systemQuestionContract, /high level/i);
   assert.match(systemQuestionContract, /do not reveal hidden reasoning/i);
 });
-
 test("every non-normal state overrides ordinary LISTEN, WORK_THROUGH, and DIRECT_HELP behavior", async () => {
   for (const message of [
     "I can't do this anymore.",

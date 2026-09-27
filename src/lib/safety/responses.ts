@@ -64,22 +64,22 @@ function englishResponse(evaluation: SafetyEvaluation, messageText: string): str
 
   if (evaluation.assessmentStep === "AWAIT_HUMAN_REVIEW") {
     if (evaluation.state === "MEDICAL_EMERGENCY") {
-      return "Thank you for clarifying. I can’t treat the earlier emergency statement as fully resolved from one answer alone. Are you currently safe and free from injury or bleeding?";
+      return "Thanks for answering. I still need to make sure you’re okay. Are you injured or bleeding right now?";
     }
     if (evaluation.state === "IMMINENT") {
       switch (evaluation.safetyTarget) {
         case "SELF":
-          return "Thank you for clarifying. I can’t treat the earlier statement as resolved from one denial alone. Are you currently safe from harming yourself?";
+          return "Thanks for answering. Are you safe from hurting yourself right now?";
         case "OTHER":
-          return "Thank you for clarifying. I can’t treat the earlier threat as resolved from one denial alone. Are you currently separated from the person who may be at risk?";
+          return "Thanks for answering. Are you away from the person who may be at risk right now?";
         case "BOTH":
-          return "Thank you for clarifying. I can’t treat the earlier threat as resolved from one denial alone. Are you currently separated from other people and away from dangerous items?";
+          return "Thanks for answering. Are you away from other people and dangerous items right now?";
         default:
-          return "Thank you for clarifying. I can’t treat the earlier threat as resolved from one denial alone. Is anyone in immediate danger right now?";
+          return "Thanks for answering. Is anyone in immediate danger right now?";
       }
     }
     if (evaluation.state === "CLARIFY" && (evaluation.safetyTarget === "OTHER" || evaluation.safetyTarget === "BOTH")) {
-      return "Thank you for answering. I still need to make sure everyone is safe. Are you currently separated from the person who may be at risk?";
+      return "Thanks for answering. Are you away from the person who may be at risk right now?";
     }
   }
 
@@ -99,7 +99,7 @@ function englishResponse(evaluation: SafetyEvaluation, messageText: string): str
     if (evaluation.state === "MEDICAL_EMERGENCY") {
       return "This may need urgent medical help. Call your local emergency services or go to the nearest emergency department now. If you can, get someone nearby to help you.";
     }
-    return "I hear that this is difficult to answer, and I won’t treat uncertainty as a no. Are you physically safe right now?";
+    return "It’s okay if you’re not sure. Are you physically safe right now?";
   }
 
   switch (evaluation.state) {
@@ -109,25 +109,25 @@ function englishResponse(evaluation: SafetyEvaluation, messageText: string): str
           ? "I’m taking what you said seriously. Do you think you may act on harming someone now or very soon?"
           : `When you say “${userPhrase(messageText)},” do you mean you might actually hurt someone, or are you expressing how angry you feel?`;
       }
-      return `It sounds like things feel overwhelming. When you say “${userPhrase(messageText)},” what do you mean?`;
+      return `When you say “${userPhrase(messageText)},” what do you mean?`;
     case "SELF_HARM":
       switch (evaluation.assessmentStep) {
         case "CHECK_ALREADY_ACTED":
-          return "Thank you for explaining what you mean. I’m not going to minimize the urge because you don’t want to die. Have you already hurt yourself today?";
+          return "Thanks for explaining. I won’t assume the urge is less serious because you don’t want to die. Have you already hurt yourself today?";
         case "MEDICAL_TRIAGE":
-          return "Thank you for telling me you already hurt yourself. Is there serious bleeding, trouble breathing, loss of consciousness, or another injury that needs urgent medical help right now?";
+          return "You said you already hurt yourself. Is there serious bleeding, trouble breathing, loss of consciousness, or another injury that needs urgent medical help right now?";
         case "CHECK_CURRENT_IMMEDIACY":
           return "I’m glad you told me directly. Do you feel that you may hurt yourself now or very soon?";
         case "CHECK_SAFE_PERSON":
           return "Let’s keep the focus on getting through this safely. Is there someone you trust who can be with you while the urge is strong?";
         default:
-          return "Thank you for telling me. I want to understand without assuming that self-harm means you want to die. Are you also thinking about ending your life, or do you want to hurt yourself without dying?";
+          return "Thanks for telling me. Are you also thinking about ending your life, or do you want to hurt yourself without dying?";
       }
     case "SUICIDAL":
       if (evaluation.assessmentStep === "CHECK_SAFE_PERSON" || evaluation.assessmentStep === "AWAIT_HUMAN_REVIEW") {
-        return "Thank you for telling me directly. Is there someone you trust who can stay with you or talk with you right now?";
+        return "Thanks for telling me. Is there someone you trust who can stay with you or talk with you right now?";
       }
-      return "Thank you for telling me directly. Do you feel that you might act on these thoughts now or today?";
+      return "Thanks for telling me. Do you think you might act on these thoughts now or today?";
     case "IMMINENT":
       switch (evaluation.safetyTarget) {
         case "SELF":
@@ -167,7 +167,7 @@ function nepaliResponse(evaluation: SafetyEvaluation): string {
       return "स्पष्ट पार्नुभएकोमा धन्यवाद। एउटा उत्तरकै आधारमा पहिलेको आपतकालीन कुरा पूर्ण रूपमा समाधान भएको मान्न सक्दिनँ। के तपाईं अहिले सुरक्षित र चोट वा रक्तस्रावबाट मुक्त हुनुहुन्छ?";
     }
     if (evaluation.safetyTarget === "OTHER" || evaluation.safetyTarget === "BOTH") {
-      return "स्पष्ट पार्नुभएकोमा धन्यवाद। सबैजना सुरक्षित छन् कि छैनन् भनेर अझै बुझ्न आवश्यक छ। के तपाईं अहिले जोखिममा रहेको व्यक्तिबाट टाढा हुनुहुन्छ?";
+      return "स्पष्ट पार्नुभएकोमा धन्यवाद। के तपाईं अहिले जोखिममा रहेको व्यक्तिबाट टाढा हुनुहुन्छ?";
     }
     return "स्पष्ट पार्नुभएकोमा धन्यवाद। एउटा अस्वीकारकै आधारमा पहिलेको कुरा समाधान भएको मान्न सक्दिनँ। के तपाईं अहिले आफ्नो जीवन अन्त्य गर्ने सोचअनुसार काम नगरी सुरक्षित रहन सक्नुहुन्छ?";
   }

@@ -10,6 +10,11 @@ import {
   composeMomoSystemInstruction,
   momoDecisionInstruction,
 } from "../src/lib/momo/responder.ts";
+import {
+  internalUserFacingTerminologyViolations,
+  responseStyleViolations,
+  userExplicitlyAsksAboutSystem,
+} from "../src/lib/momo/responseStyle.ts";
 
 const input = (messageText, history = []) => ({ messageText, history });
 
@@ -140,18 +145,142 @@ test("mode policies produce distinct conversational shapes", () => {
   assert.match(direct, /no unnecessary empathy preamble or generic overview/i);
   assert.match(regulate, /Avoid psychological interpretation, filler, and elaborate empathy/i);
   assert.match(regulate, /one manageable instruction or anchor at a time/i);
+  assert.match(regulate, /Do not default to breathing or offer a menu of techniques/i);
   assert.match(unclear, /exactly one natural question to clarify/i);
   assert.match(unclear, /keep it concise/i);
   assert.match(unclear, /do not add multiple questions, a questionnaire/i);
 });
 
+test("normal replies cannot expose internal system terminology unless the user asks about the system", () => {
+  const leaked = "The classifier moved you into a safety state, so the planner paused CBT intervention workflow.";
+  assert.deepEqual(
+    internalUserFacingTerminologyViolations(leaked, "I feel overwhelmed."),
+    ["CBT", "safety state", "classifier", "workflow", "planner", "intervention"]
+  );
+  assert.ok(responseStyleViolations(
+    leaked,
+    input("I feel overwhelmed."),
+    decisionFor("LISTEN")
+  ).includes("INTERNAL_SYSTEM_TERMINOLOGY"));
+
+  assert.equal(userExplicitlyAsksAboutSystem("How does your safety classifier work?"), true);
+  assert.deepEqual(
+    internalUserFacingTerminologyViolations(leaked, "How does your safety classifier work?"),
+    []
+  );
+});
+
+test("response checks allow question-free conversation and enforce mode-specific shape", () => {
+  const listenInput = input("I just need to rant.");
+  assert.deepEqual(
+    responseStyleViolations("Okay. Go on.", listenInput, decisionFor("LISTEN", listenInput)),
+    []
+  );
+  assert.ok(responseStyleViolations(
+    "What happened first? What happened next?",
+    listenInput,
+    decisionFor("LISTEN", listenInput)
+  ).includes("TOO_MANY_QUESTIONS"));
+  assert.ok(responseStyleViolations(
+    "You should write down every task.",
+    listenInput,
+    decisionFor("LISTEN", listenInput)
+  ).includes("LISTEN_ADVICE"));
+
+  const directInput = input("Tell me what to do first.");
+  const directDecision = decisionFor("DIRECT_HELP", directInput);
+  assert.ok(responseStyleViolations(
+    "What deadline matters most?",
+    directInput,
+    directDecision
+  ).includes("DIRECT_HELP_INTERROGATION"));
+  assert.equal(
+    responseStyleViolations("Start with the item due first. Give it twenty focused minutes.", directInput, directDecision)
+      .includes("DIRECT_HELP_INTERROGATION"),
+    false
+  );
+
+  const unclearInput = input("I'm not sure what I need.");
+  assert.ok(responseStyleViolations(
+    "Okay.",
+    unclearInput,
+    decisionFor("UNCLEAR", unclearInput)
+  ).includes("UNCLEAR_QUESTION_COUNT"));
+});
+
+test("regulation selects one grounded step instead of default breathing or a technique menu", () => {
+  const regulateInput = input("Help me settle down for a minute.");
+  const regulateDecision = decisionFor("REGULATE", regulateInput);
+  assert.ok(responseStyleViolations(
+    "Take a slow breath in and out.",
+    regulateInput,
+    regulateDecision
+  ).includes("REGULATE_DEFAULT_BREATHING"));
+  assert.ok(responseStyleViolations(
+    "1. Try breathing\n2. Try grounding\n3. Picture a calm place",
+    regulateInput,
+    regulateDecision
+  ).includes("REGULATE_TECHNIQUE_MENU"));
+
+  const requestedBreathing = input("Can we try breathing for a minute?");
+  assert.equal(responseStyleViolations(
+    "Let your next breath out slowly.",
+    requestedBreathing,
+    decisionFor("REGULATE", requestedBreathing)
+  ).includes("REGULATE_DEFAULT_BREATHING"), false);
+});
+
+test("grounding checks reject unsupported emotion assignments and honor corrections", () => {
+  const factualInput = input("My coworker got credit for everything I did.");
+  assert.ok(responseStyleViolations(
+    "You're frustrated and betrayed.",
+    factualInput,
+    decisionFor("LISTEN", factualInput)
+  ).includes("UNSUPPORTED_EMOTION_INFERENCE"));
+  assert.equal(responseStyleViolations(
+    "So your supervisor came away thinking your coworker did the work.",
+    factualInput,
+    decisionFor("LISTEN", factualInput)
+  ).includes("UNSUPPORTED_EMOTION_INFERENCE"), false);
+
+  const correctionInput = input("I'm not frustrated. Mostly confused.");
+  assert.ok(responseStyleViolations(
+    "You sound frustrated.",
+    correctionInput,
+    decisionFor("LISTEN", correctionInput)
+  ).includes("UNSUPPORTED_EMOTION_INFERENCE"));
+});
+
+test("canned greetings are rejected and an ongoing conversation is never greeted again", () => {
+  const firstTurn = input("Hey");
+  assert.ok(responseStyleViolations(
+    "Hi there. How can I help today?",
+    firstTurn,
+    decisionFor("LISTEN", firstTurn)
+  ).includes("CANNED_GREETING"));
+
+  const ongoing = input("And then they changed the deadline.", [
+    { role: "USER", text: "My manager rejected the draft." },
+    { role: "MOMO", text: "What happened after that?" },
+  ]);
+  assert.ok(responseStyleViolations(
+    "Hey. What happened next?",
+    ongoing,
+    decisionFor("LISTEN", ongoing)
+  ).includes("REPEATED_GREETING"));
+});
+
 test("recent assistant turns must be used to prevent stock-phrase repetition", () => {
   const stockPhrases = [
     "It sounds like",
+    "It seems like",
+    "That sounds really",
     "It's understandable",
     "Thank you for sharing",
     "I hear you",
+    "What comes to mind",
     "What feels most helpful",
+    "Does that resonate",
     "Do any of these options resonate",
   ];
   const history = stockPhrases.flatMap((phrase, index) => [

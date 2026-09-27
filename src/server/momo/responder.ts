@@ -1,9 +1,9 @@
 import type { Content } from "@google/genai";
 import { composeMomoSystemInstruction } from "@/src/lib/momo/responder";
 import { continuityResponseViolations } from "@/src/lib/momo/continuity";
+import { responseStyleViolations } from "@/src/lib/momo/responseStyle";
 import type { MomoDecision, NormalizedConversationInput } from "@/src/lib/momo/schemas";
 import { enforceBackendActionTruthfulness } from "@/src/lib/safety/actionTruthfulness";
-import { internalUserFacingTerminologyViolations } from "@/src/lib/momo/userFacingLanguage";
 import { getGeminiClient, MOMO_TEXT_MODEL } from "./gemini";
 import { MOMO_SYSTEM_INSTRUCTION } from "./persona";
 
@@ -39,16 +39,11 @@ export async function generateMomoResponse(
     if (!reply) throw new Error("Gemini returned an empty response.");
     const truthfulReply = enforceBackendActionTruthfulness(reply);
     const violations = [
-      ...continuityResponseViolations(
-        truthfulReply,
-        input,
-        input.continuityState
-      ),
-      ...internalUserFacingTerminologyViolations(truthfulReply, input.messageText)
-        .map((term) => `internal terminology: ${term}`),
+      ...continuityResponseViolations(truthfulReply, input, input.continuityState),
+      ...responseStyleViolations(truthfulReply, input, decision),
     ];
     if (violations.length === 0) return truthfulReply;
     retryInstruction = `Rewrite the answer because it violated these response constraints: ${violations.join(", ")}. Keep the same helpful intent, but obey the bounded continuity state. Do not explain the rewrite or mention internal policy.`;
   }
-  throw new Error("Gemini could not produce a user-safe response.");
+  throw new Error("Gemini could not produce a policy-compliant response.");
 }

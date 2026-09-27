@@ -317,6 +317,20 @@ test("semantic repetition catches reworded questions and recycled replies", () =
   assert.ok(recycled.includes("RECYCLED_RESPONSE"));
 });
 
+test("stock empathy openings are not repeated with superficial rewording", () => {
+  const history = [
+    { role: "USER", text: "My manager dismissed my idea." },
+    { role: "MOMO", text: "It sounds like the meeting was difficult." },
+  ];
+  const state = emptyConversationContinuityState();
+  const violations = continuityResponseViolations(
+    "It seems like the deadline made things harder.",
+    input("Then they moved the deadline.", history, state),
+    state
+  );
+  assert.ok(violations.includes("REPEATED_OPENING"));
+});
+
 test("a rejected task-list recommendation remains excluded", () => {
   let state = afterMomo(
     emptyConversationContinuityState(),
