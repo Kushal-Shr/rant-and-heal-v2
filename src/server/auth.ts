@@ -1,6 +1,9 @@
 import type { DecodedIdToken } from "firebase-admin/auth";
 import type { NextRequest } from "next/server";
+import { safetyReviewerRoleFromClaims, type SafetyReviewerRole } from "@/src/lib/safety/reviewerAuth";
 import { getAdminAuth } from "./firebaseAdmin";
+
+export type SafetyReviewerActorRole = SafetyReviewerRole;
 
 export function extractBearerToken(request: NextRequest): string | null {
   const authorizationHeader = request.headers.get("authorization");
@@ -24,4 +27,11 @@ export async function verifyFirebaseBearerToken(request: NextRequest): Promise<D
   } catch {
     return null;
   }
+}
+
+export function safetyReviewerRole(token: DecodedIdToken): SafetyReviewerActorRole | null {
+  return safetyReviewerRoleFromClaims({
+    admin: token.admin,
+    safetyReviewer: token.safetyReviewer,
+  });
 }

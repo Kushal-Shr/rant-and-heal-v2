@@ -8,12 +8,14 @@ export function proxy(request: NextRequest) {
   const patientRoutes = ["/dashboard", "/momo", "/therapy", "/vault", "/settings"];
   const therapistRoutes = ["/portal", "/messages", "/patients", "/session"];
   const adminRoutes = ["/admin"];
+  const safetyRoutes = ["/safety"];
 
   const isPatientRoute = patientRoutes.some(route => pathname.startsWith(route));
   const isTherapistRoute = therapistRoutes.some(route => pathname.startsWith(route));
   const isAdminRoute = adminRoutes.some(route => pathname.startsWith(route));
+  const isSafetyRoute = safetyRoutes.some(route => pathname.startsWith(route));
 
-  if (!isPatientRoute && !isTherapistRoute && !isAdminRoute) {
+  if (!isPatientRoute && !isTherapistRoute && !isAdminRoute && !isSafetyRoute) {
     return NextResponse.next();
   }
 

@@ -6,7 +6,8 @@ import {
   assertSucceeds,
   initializeTestEnvironment,
 } from "@firebase/rules-unit-testing";
-import { doc, getDoc, serverTimestamp, setDoc, Timestamp } from "firebase/firestore";
+import { collection, doc, getDoc, getDocs, runTransaction, serverTimestamp, setDoc, Timestamp } from "firebase/firestore";
+import { safetyCaseAssignmentDecision } from "../src/lib/safety/cases.ts";
 
 const projectId = "demo-rant-and-heal";
 const rules = await readFile(new URL("../firestore.rules", import.meta.url), "utf8");
@@ -55,6 +56,14 @@ before(async () => {
       relationshipId: "rel-secure", patientId: "patient-secure", therapistId: "therapist-secure",
       status: "ACTIVE", expiresAt: Timestamp.fromMillis(Date.now() + 60_000), createdAt: Timestamp.now(),
     });
+    await setDoc(doc(db, "safety_cases/case-1"), {
+      userId: "patient-1", sessionId: "session-1", currentState: "SUICIDAL",
+      status: "OPEN", reviewUrgency: "URGENT", relevantUserText: "minimum context",
+      createdAt: Timestamp.now(), updatedAt: Timestamp.now(),
+    });
+    await setDoc(doc(db, "safety_cases/case-1/actions/action-1"), {
+      type: "CASE_CREATED", actorUid: "SYSTEM", actorRole: "SYSTEM", createdAt: Timestamp.now(),
+    });
   });
 });
 
@@ -69,6 +78,67 @@ test("clients cannot access backend encrypted communication, drafts, reports or 
       text: "plaintext", senderId: uid, senderRole: "USER", createdAt: serverTimestamp(),
     }));
   }
+});
+
+test("only explicit safety reviewer or admin claims can read safety cases", async () => {
+  const patientDb = environment.authenticatedContext("patient-1", { role: "USER" }).firestore();
+  const therapistDb = environment.authenticatedContext("therapist-1", { role: "THERAPIST" }).firestore();
+  const reviewerDb = environment.authenticatedContext("reviewer-1", { safetyReviewer: true }).firestore();
+  const adminDb = environment.authenticatedContext("admin-1", { admin: true }).firestore();
+  const path = "safety_cases/case-1";
+  await assertFails(getDoc(doc(patientDb, path)));
+  await assertFails(getDoc(doc(therapistDb, path)));
+  await assertSucceeds(getDoc(doc(reviewerDb, path)));
+  await assertSucceeds(getDoc(doc(adminDb, path)));
+  await assertSucceeds(getDoc(doc(reviewerDb, `${path}/actions/action-1`)));
+});
+
+test("direct safety case and audit mutations are rejected even for reviewers", async () => {
+  const reviewerDb = environment.authenticatedContext("reviewer-1", { safetyReviewer: true }).firestore();
+  await assertFails(setDoc(doc(reviewerDb, "safety_cases/case-1"), { status: "RESOLVED" }, { merge: true }));
+  await assertFails(setDoc(doc(reviewerDb, "safety_cases/case-1/actions/forged"), {
+    type: "RESOLVED", actorUid: "reviewer-1", actorRole: "SAFETY_REVIEWER", createdAt: serverTimestamp(),
+  }));
+});
+
+test("two reviewer assignment transactions produce one owner and one audit entry", async () => {
+  await environment.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), "safety_cases/race-case"), {
+      userId: "patient-1", sessionId: "session-race", currentState: "SUICIDAL",
+      status: "ACKNOWLEDGED", assignedReviewerUid: null, createdAt: Timestamp.now(), updatedAt: Timestamp.now(),
+    });
+  });
+
+  async function claim(reviewerUid) {
+    return environment.withSecurityRulesDisabled(async (context) => {
+      const db = context.firestore();
+      const caseRef = doc(db, "safety_cases/race-case");
+      return runTransaction(db, async (transaction) => {
+        const snapshot = await transaction.get(caseRef);
+        const current = snapshot.data()?.assignedReviewerUid ?? undefined;
+        const decision = safetyCaseAssignmentDecision(current, reviewerUid);
+        if (decision === "CONFLICT") throw new Error("assignment conflict");
+        if (decision === "CLAIMED") {
+          transaction.update(caseRef, { assignedReviewerUid: reviewerUid, updatedAt: serverTimestamp() });
+          transaction.set(doc(collection(caseRef, "actions")), {
+            type: "ASSIGNED", actorUid: reviewerUid, actorRole: "SAFETY_REVIEWER", createdAt: serverTimestamp(),
+          });
+        }
+        return decision;
+      });
+    });
+  }
+
+  const results = await Promise.allSettled([claim("reviewer-a"), claim("reviewer-b")]);
+  assert.equal(results.filter((item) => item.status === "fulfilled").length, 1);
+  assert.equal(results.filter((item) => item.status === "rejected").length, 1);
+  await environment.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    const snapshot = await getDoc(doc(db, "safety_cases/race-case"));
+    assert.ok(["reviewer-a", "reviewer-b"].includes(snapshot.data()?.assignedReviewerUid));
+    const actions = await getDocs(collection(db, "safety_cases/race-case/actions"));
+    assert.equal(actions.size, 1);
+  });
 });
 
 test("Momo continuity state is server-owned while session shells remain owner-managed", async () => {
