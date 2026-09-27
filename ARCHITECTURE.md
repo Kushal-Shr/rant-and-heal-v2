@@ -59,7 +59,7 @@ The project follows a hybrid directory layout:
 │   │   ├── crypto/                   # Client-only journal Vault cryptography
 │   │   ├── momo/                     # Orchestration, planning, schemas, prompt policy
 │   │   ├── reports/                  # Weekly report schemas and safe source contracts
-│   │   ├── safety/                   # Detection, normalized states, schemas, policy
+│   │   ├── safety/                   # Detection, clinical state, reviewer case workflow, policy
 │   │   └── therapy/                  # Relationship, access, notes, consent, envelope rules
 │   ├── server/                       # Firebase Admin, Gemini, KMS, server-only adapters
 │   └── types/                        # Shared application TypeScript declarations
@@ -79,7 +79,7 @@ The project follows a hybrid directory layout:
 - `MomoDecision` is structured routing metadata only. No model chain-of-thought is requested or stored.
 - Text sessions maintain a bounded, server-updated `continuityState` on `users/{uid}/sessions/{sessionId}`. It stores the current support goal/mode, categorical interaction preferences, brief explicit corrections, option/question fatigue, bounded response metadata, and user-reported intervention outcomes. The planner receives this state alongside selective recent turns; the responder uses it to avoid rejected approaches, repeated questions, recycled replies, and option overload. This is current-session working memory, not cross-session profiling, and it excludes journals, therapy conversations, diagnoses, and model rationale.
 - The chat route may derive an ephemeral greeting identity from the authenticated `users/{uid}` profile. Only a sanitized first name or an anonymous marker reaches the responder; incognito and placeholder profiles never expose their generated handle as a name. This hint is not written to continuity state or message metadata.
-- Safety normalizes evidence into `NORMAL`, `CLARIFY`, `SELF_HARM`, `SUICIDAL`, `IMMINENT`, or `MEDICAL_EMERGENCY`, then applies a centralized behavioral policy. Human escalation ownership and the clinician-approved launch protocol remain future work.
+- Safety normalizes evidence into `NORMAL`, `CLARIFY`, `SELF_HARM`, `SUICIDAL`, `IMMINENT`, or `MEDICAL_EMERGENCY`, then applies a centralized behavioral policy. A separate Day 4 workflow tracks human operations as `OPEN`, `ACKNOWLEDGED`, `HUMAN_CONNECTED`, `EXTERNAL_HANDOFF`, or `RESOLVED`; workflow progress never changes clinical state.
 - Weekly-report Gemini generation consumes mood records, Momo summaries, reviewed therapy notes, objective activity, and aggregate `journal_metrics`. Raw journal documents and decrypted journal content are excluded by contract and tests.
 - Journal Vault encryption is client-only. Therapy messages, notes, and reports use a distinct application-managed relationship key wrapped by Cloud KMS. Neither key model may be substituted for the other.
 - Server feature flags default weekly reports, AI therapy notes, and the future dashboard on; Momo voice defaults off. The Live implementation is preserved, but token minting and trial UI remain disabled until real-time safety interruption exists.
@@ -123,6 +123,9 @@ The project follows a hybrid directory layout:
 - The Momo safety interceptor runs in the authenticated chat and transcript handlers before normal persistence/generation. Direct, high-confidence self-harm or harm-to-others signals bypass Gemini, save a fixed support reply, and write a minimal server-only audit event at `users/{uid}/safety_events/{eventId}`. Browser clients cannot read or write safety events.
 - Text is intercepted before it reaches Gemini. Momo Live voice is screened after its completed user transcript is received; since its audio reaches Gemini Live directly, the voice path must not be represented as real-time crisis moderation.
 - When enabled by server configuration, a minimal email notification is sent to the designated Rant & Heal support address only when deterministic rules and the structured Gemini classifier agree on imminent risk. No automatic calling, emergency-contact storage, delayed dispatch, IP-location, or police workflow exists. The email contains event metadata only, and it must not be represented as a monitored or emergency-response service.
+- Day 3 review intent transactionally creates or updates a top-level `safety_cases/{caseId}` record. A server-only `safety_case_episodes` pointer prevents duplicate cases within an unresolved Momo session. Audit entries live at `safety_cases/{caseId}/actions/{actionId}` and are append-only from the client perspective.
+- `/safety` and `/safety/[caseId]` require `safetyReviewer: true` or `admin: true` custom claims at the API and Firestore layers. USER ownership and THERAPIST role alone do not grant access. Firestore clients may listen for authorized real-time reads, but every mutation uses the Admin SDK transaction service and a request idempotency key.
+- Cases contain only the triggering user text, session/event references, structured safety assessment, workflow ownership/timestamps, and concise reviewer actions. They do not query journals, full Momo transcripts, unrelated therapy data, or model rationale.
 
 ### Therapy Connection MVP
 - Therapist directory profiles live at `therapists/{therapistUid}`. Public applicants may create and edit a `PENDING` profile, but cannot change `isVerified`, `verificationStatus`, or their account role. The patient directory only reads profiles where `isVerified == true`.

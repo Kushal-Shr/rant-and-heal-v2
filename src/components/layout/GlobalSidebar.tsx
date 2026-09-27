@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { authService } from "@/src/services/authService";
@@ -28,6 +28,7 @@ const therapistLinks = [
 const adminLinks = [
   { label: "Therapist review", href: "/admin/therapists", icon: "verified_user" },
 ];
+const safetyLink = { label: "Safety review", href: "/safety", icon: "health_and_safety" };
 
 export function GlobalSidebar() {
   const { lockVault } = useVault();
@@ -37,8 +38,18 @@ export function GlobalSidebar() {
   const mobileMenu = useRef<HTMLDetailsElement>(null);
   const [signingOut, setSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState(false);
+  const [safetyAccess, setSafetyAccess] = useState(false);
   const role = profile?.role;
-  const workspaceLinks = role === UserRole.ADMIN ? adminLinks : role === UserRole.THERAPIST ? therapistLinks : role === UserRole.USER ? patientLinks : [];
+  useEffect(() => {
+    let active = true;
+    if (!user) return;
+    user.getIdTokenResult().then((result) => {
+      if (active) setSafetyAccess(result.claims.safetyReviewer === true || result.claims.admin === true);
+    }).catch(() => { if (active) setSafetyAccess(false); });
+    return () => { active = false; };
+  }, [user]);
+  const baseWorkspaceLinks = role === UserRole.ADMIN ? adminLinks : role === UserRole.THERAPIST ? therapistLinks : role === UserRole.USER ? patientLinks : [];
+  const workspaceLinks = safetyAccess ? [...baseWorkspaceLinks, safetyLink] : baseWorkspaceLinks;
   const links = user ? [...workspaceLinks, publicLinks[1]] : publicLinks;
   const home = role === UserRole.ADMIN ? "/admin/therapists" : role === UserRole.THERAPIST ? "/portal" : role === UserRole.USER ? "/dashboard" : "/";
   const subtitle = loading ? "Preparing your space" : role === UserRole.ADMIN ? "Reviewer workspace" : role === UserRole.THERAPIST ? "Practitioner workspace" : role === UserRole.USER ? "Your personal sanctuary" : "A soft space to begin";

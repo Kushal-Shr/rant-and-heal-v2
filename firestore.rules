@@ -3,6 +3,10 @@ service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
     function owner(uid) { return signedIn() && request.auth.uid == uid; }
+    function safetyReviewer() {
+      return signedIn() &&
+        (request.auth.token.safetyReviewer == true || request.auth.token.admin == true);
+    }
     function rel(id) {
       return get(/databases/$(database)/documents/therapy_relationships/$(id));
     }
@@ -155,6 +159,22 @@ service cloud.firestore {
     match /patient_profiles/{patientId} {
       allow read: if owner(patientId) || currentTherapist(patientId);
       allow write: if false;
+    }
+
+    // Safety cases are readable only by explicit custom claim. All writes,
+    // including append-only actions, go through the authenticated Admin SDK
+    // transaction service so clients cannot forge or rewrite audit history.
+    match /safety_cases/{caseId} {
+      allow read: if safetyReviewer();
+      allow write: if false;
+      match /actions/{actionId} {
+        allow read: if safetyReviewer();
+        allow write: if false;
+      }
+    }
+
+    match /safety_case_episodes/{episodeId} {
+      allow read, write: if false;
     }
 
     match /therapists/{therapistId} {

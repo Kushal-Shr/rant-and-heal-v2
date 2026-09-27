@@ -10,6 +10,11 @@ import {
 import { getSafetyPolicy, shouldAttemptSafetySupportNotification } from "../src/lib/safety/policy.ts";
 import { safetyResponseFor } from "../src/lib/safety/responses.ts";
 import { orchestrateMomoTurn } from "../src/lib/momo/orchestrator.ts";
+import {
+  internalUserFacingTerminologyViolations,
+  userExplicitlyAsksAboutSystem,
+  userFacingSystemLanguageInstruction,
+} from "../src/lib/momo/userFacingLanguage.ts";
 
 const input = (messageText, history = []) => ({ messageText, history });
 const responseFor = (messageText, history = []) => {
@@ -17,6 +22,7 @@ const responseFor = (messageText, history = []) => {
   return { evaluation, response: safetyResponseFor(evaluation, { messageText }) };
 };
 const questionCount = (text) => (text.match(/\?/g) ?? []).length;
+const internalSafetyCopy = /\bCBT\b|\bsafety\s+(?:state|mode)\b|\bclassifier\b|\bworkflows?\b|\bplanners?\b|\binterventions?\b|\bescalation\s+state\b|मानव समीक्षा|कार्यप्रवाह|वर्गीकरणकर्ता|योजनाकार|हस्तक्षेप/i;
 
 test("distinguishes self-harm concern from imminent suicidal intent", () => {
   const selfHarm = assessMomoSafety("I want to hurt myself");
@@ -155,6 +161,74 @@ test("every safety assessment response contains at most one question", () => {
     const { response } = responseFor(message);
     assert.ok(questionCount(response) <= 1, response);
   }
+});
+
+test("safety responses use direct human language without internal system terminology", () => {
+  const scenarios = [
+    responseFor("I can't do this anymore."),
+    responseFor("I want to hurt myself."),
+    responseFor("Sometimes I wish I could die."),
+    responseFor("I'm going to kill myself tonight."),
+    responseFor("I am bleeding badly and it won't stop."),
+    responseFor("मलाई आत्महत्या गर्ने सोच छ"),
+  ];
+
+  const awaitingOtherSafetyCheck = {
+    ...evaluateDeterministicSafety("I can't do this anymore."),
+    state: "CLARIFY",
+    safetyTarget: "OTHER",
+    assessmentStep: "AWAIT_HUMAN_REVIEW",
+  };
+  scenarios.push({
+    evaluation: awaitingOtherSafetyCheck,
+    response: safetyResponseFor(awaitingOtherSafetyCheck, { messageText: "I was angry." }),
+  });
+
+  for (const { response } of scenarios) {
+    assert.doesNotMatch(response, internalSafetyCopy, response);
+    assert.deepEqual(
+      internalUserFacingTerminologyViolations(response, "I need help right now."),
+      [],
+      response
+    );
+    assert.ok(questionCount(response) <= 1, response);
+  }
+});
+
+test("internal terminology guard permits only explicit questions about the system", () => {
+  const leaked = "The classifier moved you into a safety state and safety mode, so the planner paused CBT intervention workflow at the escalation state before human review.";
+  assert.deepEqual(
+    internalUserFacingTerminologyViolations(leaked, "I feel overwhelmed."),
+    [
+      "CBT",
+      "safety state",
+      "safety mode",
+      "classifier",
+      "workflow",
+      "planner",
+      "intervention",
+      "escalation state",
+      "human review",
+    ]
+  );
+  assert.equal(userExplicitlyAsksAboutSystem("How does your safety classifier work?"), true);
+  assert.deepEqual(
+    internalUserFacingTerminologyViolations(leaked, "How does your safety classifier work?"),
+    []
+  );
+  assert.equal(userExplicitlyAsksAboutSystem("CBT has not helped me."), false);
+});
+
+test("responder contract forbids internal narration and keeps system explanations high level", () => {
+  const ordinaryContract = userFacingSystemLanguageInstruction("I feel overwhelmed.");
+  assert.match(ordinaryContract, /respond directly/i);
+  assert.match(ordinaryContract, /never narrate internal behavior/i);
+  assert.match(ordinaryContract, /one question|application decisions|therapeutic routing/i);
+
+  const systemQuestionContract = userFacingSystemLanguageInstruction("Why did your system respond that way?");
+  assert.match(systemQuestionContract, /explicitly asked how the system works/i);
+  assert.match(systemQuestionContract, /high level/i);
+  assert.match(systemQuestionContract, /do not reveal hidden reasoning/i);
 });
 
 test("every non-normal state overrides ordinary LISTEN, WORK_THROUGH, and DIRECT_HELP behavior", async () => {
