@@ -143,6 +143,19 @@ There are no emergency-contact calls, text-message fallbacks, delayed dispatches
 
 Configure Firestore TTL for `safety_events.expireAt` before relying on the 30-day retention target. TTL deletion is asynchronous. Do not enable email alerts without a named operating owner, clinician/legal review, a verified Resend sender, and a tested response protocol.
 
+### Day 4 human safety dashboard
+
+`/safety` and `/safety/[caseId]` provide an internal reviewer queue and auditable case workflow. Access requires the explicit Firebase Auth custom claim `safetyReviewer: true`; being a patient or therapist does not grant access. Existing `admin: true` accounts follow the privileged-access policy. Grant or revoke the reviewer claim from a trusted Admin SDK environment:
+
+```bash
+npm run set-safety-reviewer -- <firebase-auth-uid>
+npm run set-safety-reviewer -- <firebase-auth-uid> false
+```
+
+When Day 3 sets `requiresHumanReview=true`, the server transaction creates or updates one unresolved case for that Momo session. `SafetyState` remains the clinical concern; `SafetyCaseStatus` independently records `OPEN`, `ACKNOWLEDGED`, `HUMAN_CONNECTED`, `EXTERNAL_HANDOFF`, or `RESOLVED`. Case actions are server-owned transactions with idempotency keys and append-only audit documents. Assignment is compare-and-set, and success/handoff/resolution appears only after confirmed backend state.
+
+The case includes the triggering user text and bounded assessment metadata, not the full transcript, journal data, therapy history, or model reasoning. Firestore clients with the reviewer claim may read cases for real-time updates; all client writes are denied. See [the manual acceptance guide](./docs/SAFETY_DASHBOARD_ACCEPTANCE.md) and [clinician/legal review gaps](./docs/SAFETY_CLINICIAN_REVIEW.md).
+
 ## Therapy Connection MVP Status
 
 Completed so far:

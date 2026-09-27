@@ -5,7 +5,9 @@ export type ExternalAction =
   | "THERAPIST_HANDOFF"
   | "AMBULANCE"
   | "POLICE"
-  | "HOTLINE";
+  | "HOTLINE"
+  | "HUMAN_REVIEWER"
+  | "EMERGENCY_SERVICES";
 
 export type ExternalActionStates = Partial<Record<ExternalAction, ExternalActionStatus>>;
 
@@ -20,6 +22,10 @@ const CLAIMS: Array<{
   { action: "POLICE", allowed: ["CONFIRMED"], expression: /\b(?:the\s+)?police have been contacted\b[.!]?/gi },
   { action: "HOTLINE", allowed: ["CONFIRMED"], expression: /\byou are (?:now )?connected to (?:the|a) hotline\b[.!]?/gi },
   { action: "HOTLINE", allowed: ["STARTED", "CONFIRMED"], expression: /\bi(?:['’]m| am) starting the (?:hotline )?connection now\b[.!]?/gi },
+  { action: "HUMAN_REVIEWER", allowed: ["CONFIRMED"], expression: /\b(?:a|the) reviewer has taken over\b[.!]?/gi },
+  { action: "HUMAN_REVIEWER", allowed: ["CONFIRMED"], expression: /\b(?:a|the) professional is (?:now )?connected\b[.!]?/gi },
+  { action: "HUMAN_REVIEWER", allowed: ["CONFIRMED"], expression: /\bthey have been contacted\b[.!]?/gi },
+  { action: "EMERGENCY_SERVICES", allowed: ["CONFIRMED"], expression: /\b(?:the\s+)?emergency services? (?:have|has) been contacted\b[.!]?/gi },
 ];
 
 /**
