@@ -33,7 +33,7 @@ export function CrisisSupportPanel({ onClose }: CrisisSupportPanelProps) {
       )}
 
       <p className="mt-5 font-['Plus_Jakarta_Sans'] text-sm leading-6 text-[#5f5147]">
-        Rant &amp; Heal and Momo are not emergency services and cannot provide crisis intervention.
+        Rant &amp; Heal and Momo are not emergency services and cannot provide emergency or crisis care.
       </p>
 
       {onClose ? (

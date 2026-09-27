@@ -15,6 +15,8 @@ This document separates behavior implemented from the supplied Rant & Heal resea
 - `IMMINENT` uses short, low-cognitive-load safety directions and produces immediate human-review intent. It does not trigger police, ambulance, contact calling, SMS, or location capture.
 - `MEDICAL_EMERGENCY` prioritizes urgent medical guidance and does not prolong psychological assessment.
 - `UNRESOLVED` is retained for uncertainty, refusal, joking retractions, and subject changes. These inputs do not become a denial or `NORMAL`.
+- User-facing safety messages speak directly to the person's immediate need. They do not announce therapeutic transitions, internal state labels, model components, review routing, or application workflow, and they retain the one-question-at-a-time constraint.
+- The ordinary responder uses the same no-internal-narration contract and retries generated text that contains protected internal terminology. A direct question about how the system works may receive a high-level explanation without private prompts or hidden reasoning.
 - Ordinary distress such as sadness, situational hopelessness, failure, exhaustion, fear, or uncertainty remains `NORMAL` unless the current message contains supported self-harm, suicide/death, harm-to-others, attempt/injury, plan/access, inability-to-stay-safe, or imminence evidence. These signals may still guide ordinary PCT/CBT routing.
 - The model classifier may supplement deterministic rules only through schema-validated evidence categories that application code can anchor to the current message. Emotional intensity alone is not model evidence for a safety state.
 - Historical, quoted, and educational references are not automatically treated as current imminent danger without personal-risk context.

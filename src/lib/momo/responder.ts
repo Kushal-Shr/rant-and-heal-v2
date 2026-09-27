@@ -5,6 +5,7 @@ import {
   naturalConversationStyle,
   type ConversationModality,
 } from "./prompts/naturalConversation.ts";
+import { userFacingSystemLanguageInstruction } from "./userFacingLanguage.ts";
 
 export function momoDecisionInstruction(decision: MomoDecision): string {
   const modeDirections: Record<MomoDecision["supportMode"], string> = {
@@ -37,6 +38,7 @@ export function composeMomoSystemInstruction(
     conversationModality?: ConversationModality;
     continuityState?: ConversationContinuityState;
     participant?: ConversationParticipant;
+    userMessageText?: string;
   } = {}
 ): string {
   const style = naturalConversationStyle({
@@ -44,5 +46,5 @@ export function composeMomoSystemInstruction(
     safetyState: decision.safetyState,
     participant: options.participant,
   });
-  return `${baseInstruction}\n\n${style}\n\n${continuityInstruction(options.continuityState)}\n\n${momoDecisionInstruction(decision)}`;
+  return `${baseInstruction}\n\n${style}\n\n${continuityInstruction(options.continuityState)}\n\n${userFacingSystemLanguageInstruction(options.userMessageText)}\n\n${momoDecisionInstruction(decision)}`;
 }

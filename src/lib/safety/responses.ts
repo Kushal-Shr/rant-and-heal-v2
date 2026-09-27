@@ -79,7 +79,7 @@ function englishResponse(evaluation: SafetyEvaluation, messageText: string): str
       }
     }
     if (evaluation.state === "CLARIFY" && (evaluation.safetyTarget === "OTHER" || evaluation.safetyTarget === "BOTH")) {
-      return "Thank you for answering. The earlier threat still needs human review. Are you currently separated from the person who may be at risk?";
+      return "Thank you for answering. I still need to make sure everyone is safe. Are you currently separated from the person who may be at risk?";
     }
   }
 
@@ -125,9 +125,9 @@ function englishResponse(evaluation: SafetyEvaluation, messageText: string): str
       }
     case "SUICIDAL":
       if (evaluation.assessmentStep === "CHECK_SAFE_PERSON" || evaluation.assessmentStep === "AWAIT_HUMAN_REVIEW") {
-        return "Thank you for telling me directly. I’m keeping the focus on safety rather than starting CBT. Is there someone you trust you can contact and stay connected with right now?";
+        return "Thank you for telling me directly. Is there someone you trust who can stay with you or talk with you right now?";
       }
-      return "Thank you for telling me directly. I’m keeping the focus on your safety rather than starting CBT. Do you feel that you might act on these thoughts now or today?";
+      return "Thank you for telling me directly. Do you feel that you might act on these thoughts now or today?";
     case "IMMINENT":
       switch (evaluation.safetyTarget) {
         case "SELF":
@@ -167,7 +167,7 @@ function nepaliResponse(evaluation: SafetyEvaluation): string {
       return "स्पष्ट पार्नुभएकोमा धन्यवाद। एउटा उत्तरकै आधारमा पहिलेको आपतकालीन कुरा पूर्ण रूपमा समाधान भएको मान्न सक्दिनँ। के तपाईं अहिले सुरक्षित र चोट वा रक्तस्रावबाट मुक्त हुनुहुन्छ?";
     }
     if (evaluation.safetyTarget === "OTHER" || evaluation.safetyTarget === "BOTH") {
-      return "स्पष्ट पार्नुभएकोमा धन्यवाद। पहिलेको धम्की अझै मानव समीक्षामा जानुपर्छ। के तपाईं अहिले जोखिममा रहेको व्यक्तिबाट टाढा हुनुहुन्छ?";
+      return "स्पष्ट पार्नुभएकोमा धन्यवाद। सबैजना सुरक्षित छन् कि छैनन् भनेर अझै बुझ्न आवश्यक छ। के तपाईं अहिले जोखिममा रहेको व्यक्तिबाट टाढा हुनुहुन्छ?";
     }
     return "स्पष्ट पार्नुभएकोमा धन्यवाद। एउटा अस्वीकारकै आधारमा पहिलेको कुरा समाधान भएको मान्न सक्दिनँ। के तपाईं अहिले आफ्नो जीवन अन्त्य गर्ने सोचअनुसार काम नगरी सुरक्षित रहन सक्नुहुन्छ?";
   }
@@ -199,7 +199,7 @@ function nepaliResponse(evaluation: SafetyEvaluation): string {
       ? "मलाई स्पष्ट बताउनुभएकोमा धन्यवाद। के तपाईंले आज आफूलाई चोट पुर्‍याइसक्नुभएको छ?"
       : "मलाई बताउनुभएकोमा धन्यवाद। के तपाईंलाई आफ्नो जीवन अन्त्य गर्ने सोच पनि आएको छ, वा नमरीकन आफूलाई चोट पुर्‍याउन चाहनुभएको हो?";
   }
-  return "मलाई सीधै बताउनुभएकोमा धन्यवाद। अहिले सामान्य CBT भन्दा तपाईंको सुरक्षा महत्त्वपूर्ण छ। के तपाईंलाई अहिले वा आज यी सोचअनुसार काम गर्न सक्छु जस्तो लाग्छ?";
+  return "मलाई सीधै बताउनुभएकोमा धन्यवाद। के तपाईंलाई अहिले वा आज यी सोचअनुसार काम गर्न सक्छु जस्तो लाग्छ?";
 }
 
 export function safetyResponseFor(
