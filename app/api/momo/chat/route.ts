@@ -10,7 +10,7 @@ import { recordMomoSafetyEvent } from "@/src/server/momo/safety";
 import { assessMomoTurnSafety } from "@/src/server/momo/turnSafety";
 import { notifySafetySupport, safetySupportNotificationsEnabled } from "@/src/server/safety/notifications";
 import { orchestrateMomoTurn } from "@/src/lib/momo/orchestrator";
-import type { ConversationTurn } from "@/src/lib/momo/schemas";
+import type { ConversationContinuityState, ConversationTurn } from "@/src/lib/momo/schemas";
 import {
   finalizeContinuityState,
   parseConversationContinuityState,
@@ -18,6 +18,7 @@ import {
 } from "@/src/lib/momo/continuity";
 import { conversationParticipantFromProfile } from "@/src/lib/momo/identity";
 import { safetyResponseFor } from "@/src/lib/safety/responses";
+import { safetyEvaluationSchema } from "@/src/lib/safety/schemas";
 import { shouldAttemptSafetySupportNotification } from "@/src/lib/safety/policy";
 import { planMomoResponseWithInference } from "@/src/server/momo/planner";
 import { generateMomoResponse } from "@/src/server/momo/responder";
@@ -77,8 +78,10 @@ export async function POST(request: NextRequest) {
     let cachedReply: string | null = null;
     let cachedSafety: Record<string, unknown> | null = null;
     let storedContinuityState: unknown;
+    let storedSafetyEvaluation: unknown;
     let storedDisplayName: unknown;
     let storedIncognito: unknown;
+    let preparedContinuity: ConversationContinuityState | undefined = undefined;
 
     await db.runTransaction(async (transaction) => {
       const [sessionSnap, requestSnap, userSnap] = await Promise.all([
@@ -97,6 +100,7 @@ export async function POST(request: NextRequest) {
       const session = sessionSnap.data();
       const userProfile = userSnap.data();
       storedContinuityState = session?.continuityState;
+      storedSafetyEvaluation = session?.safetyEvaluation;
       storedDisplayName = userProfile?.displayName;
       storedIncognito = userProfile?.isIncognito;
       const activeAge = session?.activeRequestAt instanceof Timestamp
@@ -125,6 +129,7 @@ export async function POST(request: NextRequest) {
         const sessionSnap = await transaction.get(sessionRef);
         if (sessionSnap.data()?.activeRequestId === requestId) {
           transaction.set(sessionRef, {
+            ...(preparedContinuity ? { continuityState: preparedContinuity } : {}),
             activeRequestId: FieldValue.delete(),
             activeRequestAt: FieldValue.delete(),
           }, { merge: true });
@@ -139,13 +144,17 @@ export async function POST(request: NextRequest) {
       { messageText },
       parseConversationContinuityState(storedContinuityState)
     );
+    preparedContinuity = continuityState;
     const participant = conversationParticipantFromProfile({
       displayName: storedDisplayName,
       isIncognito: storedIncognito,
       authAnonymous: token.firebase?.sign_in_provider === "anonymous",
     });
     const outcome = await orchestrateMomoTurn(
-      { messageText, history: recentHistory, continuityState, participant },
+      {
+        messageText, history: recentHistory, continuityState, participant,
+        previousSafetyEvaluation: safetyEvaluationSchema.safeParse(storedSafetyEvaluation).data,
+      },
       {
         evaluateSafety: (_messageText, input) => assessMomoTurnSafety(input!),
         plan: planMomoResponseWithInference,
@@ -180,6 +189,7 @@ export async function POST(request: NextRequest) {
         }
         transaction.set(requestRef, { status: "COMPLETED", reply, safety: safetyPayload, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
         transaction.set(sessionRef, {
+          safetyEvaluation: outcome.safety,
           activeRequestId: FieldValue.delete(),
           activeRequestAt: FieldValue.delete(),
         }, { merge: true });
@@ -237,6 +247,7 @@ export async function POST(request: NextRequest) {
       transaction.set(sessionRef, {
         title: messageText.slice(0, 64),
         continuityState: finalizedContinuity.state,
+        safetyEvaluation: outcome.safety,
         activeRequestId: FieldValue.delete(),
         activeRequestAt: FieldValue.delete(),
         updatedAt: FieldValue.serverTimestamp(),

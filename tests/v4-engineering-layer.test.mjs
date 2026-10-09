@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { orchestrateMomoTurn } from "../src/lib/momo/orchestrator.ts";
-import { AI_MODELS, THINKING_LEVELS } from "../src/lib/ai/models.ts";
+import { AI_MODEL_CONFIGS, AI_MODELS, THINKING_LEVELS } from "../src/lib/ai/models.ts";
 import { planMomoResponse } from "../src/lib/momo/planner.ts";
 import { momoDecisionSchema } from "../src/lib/momo/schemas.ts";
 import { evaluateDeterministicSafety } from "../src/lib/safety/detector.ts";
@@ -25,7 +25,7 @@ const validDecision = {
 test("V4 model registry and thinking levels match the centralized architecture", () => {
   assert.deepEqual(AI_MODELS, {
     MOMO_PLANNER: "gemini-3.8-flash",
-    MOMO_RESPONSE: "gemini-3.8-flash",
+    MOMO_RESPONSE: "gpt-5.6-luna",
     SAFETY_CLASSIFIER: "gemini-3.8-flash",
     SAFETY_SUPERVISOR: "gemini-3.8-flash",
     MOOD_EXTRACTION: "gemini-3.8-flash",
@@ -37,6 +37,10 @@ test("V4 model registry and thinking levels match the centralized architecture",
     VOICE: "gemini-3.8-live",
     TRANSCRIPTION: "gemini-3.5-transcribe",
     EMBEDDING: "gemini-embedding-2",
+  });
+  assert.deepEqual(AI_MODEL_CONFIGS.MOMO_RESPONSE, {
+    provider: "openai",
+    model: "gpt-5.6-luna",
   });
   assert.deepEqual(THINKING_LEVELS, {
     MOMO_PLANNER: "low",

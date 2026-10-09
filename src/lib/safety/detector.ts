@@ -21,6 +21,7 @@ export type MomoSafetyAssessment = RuleRiskAssessment;
 export interface SafetyConversationInput {
   messageText: string;
   history: Array<{ role: "USER" | "MOMO"; text: string }>;
+  previousSafetyEvaluation?: SafetyEvaluation;
 }
 
 interface DetectedSignal {
@@ -98,7 +99,7 @@ const AMBIGUOUS_PATTERNS: Array<[string, RegExp]> = [
 
 const PERSONAL_RISK_EXCLUSION = /\b(?:for (?:an? )?(?:essay|assignment|research|article|story|screenplay)|in (?:a|the|my) (?:novel|book|movie|show|article|story|screenplay)|fictional(?:ly| character)?|the (?:character|client|patient|villain) (?:said|says)|(?:he|she|they|someone|my|a|the) (?:friend|partner|sibling|coworker|character|client|patient|villain)?\s*(?:said|says|told me|wrote)|what (?:is|does|are) (?:self[- ]?harm|suicidal ideation|suicidal thoughts?|violence risk)|signs of (?:suicide|self[- ]?harm)|(?:suicide|violence) prevention education|quoted? (?:text|statement))\b/i;
 const HISTORICAL_RESOLVED = /\b(?:yesterday|last (?:week|month|year)|years? ago|when i was younger|i used to)\b.{0,120}\b(?:but|and)\b.{0,60}\b(?:not now|no longer|recovered|safe now|am safe now)\b/i;
-const EXPLICIT_DENIAL = /\b(?:do not|don['’]t|never|no longer|am not|i['’]m not)\b.{0,24}\b(?:hurt|harm|cut|kill)\s+myself\b/i;
+const EXPLICIT_DENIAL = /\b(?:do not|don['’]t|never|no longer|am not|i['’]m not)\b[^.!?;\n]{0,24}\b(?:hurt(?:ing)?|harm(?:ing)?|cut(?:ting)?|kill(?:ing)?|injur(?:e|ing))\s+myself\b/i;
 const OTHER_HARM_DENIAL = new RegExp(
   `\\b(?:do not|don['’]t|never|will not|won['’]t|would not|wouldn['’]t|am not|i['’]m not)\\b.{0,32}\\b${OTHER_HARM_ACTION}\\s+${OTHER_TARGET}\\b`,
   "i"
@@ -109,11 +110,40 @@ const UNRESOLVED_ANSWER = /^(?:i\s+)?(?:don['’]t know|do not know|am not sure|
 const JOKING_RETRACTION = /\b(?:i was|i['’]m|just) joking\b|\b(?:relax|forget it),?\s*(?:i was joking|it was a joke)?/i;
 const CLEAR_NON_SAFETY_MEANING = /\b(?:(?:i\s+)?mean|i meant|what i mean|what i meant|i was talking about)\b.{0,160}\b(?:college|school|course|job|work|relationship|argument|conversation|situation|project|exams?|deadlines?|studying|leave|quit|stop|exhausted|tired|burned out|overwhelmed)\b/i;
 const CLEAR_CONTEXTUAL_EXPLANATION = /\b(?:exhausted|tired|burned out|overwhelmed)\b.{0,100}\b(?:from|because of|with)\b.{0,80}\b(?:exams?|school|college|course|studying|work|job|project|deadlines?)\b/i;
-const AFFIRMATIVE_ANSWER = /^(?:yes|yeah|yep|i am|i do|i did|right now|today|tonight)\b/i;
-const NEGATIVE_ANSWER = /^(?:no|nope|not right now|not today|i am not|i['’]m not|i do not|i don['’]t|i did not|i didn['’]t)\b/i;
+const AFFIRMATIVE_ANSWER = /^(?:yes|yeah|yep)\b|^(?:i am|i do|i did|right now|today|tonight)[.!\s]*$/i;
+const NEGATIVE_ANSWER = /^(?:no|nope)(?:\s*[,!.]|\s*$)|^(?:not right now|not today|i am not|i['’]m not|i do not|i don['’]t|i did not|i didn['’]t)\b/i;
 
 function normalized(text: string): string {
   return text.normalize("NFKC").trim();
+}
+
+function withoutDeniedHarmAssertions(text: string): string {
+  // Remove the denied assertion, not the entire message: another clause may
+  // still disclose injury, current intent, or risk to a different person.
+  return text.split(/([.!?;\n]+|\b(?:but|and|however|yet)\b)/i).map((clause) => {
+    // Uncertainty about intent is not a denial. Retain it for the existing
+    // safety rules; only unambiguous negative assertions can be removed.
+    if (/\b(?:not sure|don['’]t know|do not know|uncertain)\b/i.test(clause)) return clause;
+    return clause
+      .replace(new RegExp(EXPLICIT_DENIAL.source, "gi"), " ")
+      .replace(new RegExp(OTHER_HARM_DENIAL.source, "gi"), " ");
+  }).join("");
+}
+
+function currentPersonalRiskText(text: string): string {
+  // Exclude only a clearly attributed fictional speaker's quoted words.
+  // Keep everything outside the quotation available to the same risk rules.
+  // An unattributed quotation is not automatically fictional or safe.
+  const value = normalized(text);
+  const attributedQuote = /\b(?:(?:a|the)\s+)?(?:character|narrator|protagonist|villain)\s+(?:says|said|saying)\s*[:,]?\s*("[^"]*"|“[^”]*”)/gi;
+  const personalText = value.replace(attributedQuote, " ");
+  // Quoting a character does not make a user's own endorsement safe. Be
+  // conservative when first-person identification remains outside the quote.
+  const personalIdentification = /\b(?:i|me|myself|mine)\b|\bmy\s+(?!(?:essay|paper|story|novel|book|article|assignment|screenplay)\b)|\b(?:same here|relate|relatable|too)\b/i;
+  if (personalText !== value && personalIdentification.test(personalText)) {
+    return withoutDeniedHarmAssertions(value.replace(attributedQuote, "$1"));
+  }
+  return withoutDeniedHarmAssertions(personalText);
 }
 
 function isClearNonSafetyExplanation(text: string): boolean {
@@ -181,7 +211,7 @@ function supportedModelAssessment(
   if (!parsed.success) return null;
   if (parsed.data.level === "SAFE") return parsed.data;
 
-  const value = normalized(text);
+  const value = currentPersonalRiskText(text);
   if (PERSONAL_RISK_EXCLUSION.test(value) || HISTORICAL_RESOLVED.test(value)) return null;
   const evidence = parsed.data.evidence.filter((item) => MODEL_EVIDENCE_PATTERNS[item].test(value));
   const substantive = evidence.filter((item) =>
@@ -214,9 +244,8 @@ function supportedModelAssessment(
 }
 
 function signalFor(text: string): DetectedSignal | null {
-  const value = normalized(text);
+  const value = currentPersonalRiskText(text);
   if (!value || PERSONAL_RISK_EXCLUSION.test(value) || HISTORICAL_RESOLVED.test(value)) return null;
-  if ((EXPLICIT_DENIAL.test(value) || OTHER_HARM_DENIAL.test(value)) && !/\bbut\b/i.test(value)) return null;
 
   for (const [id, expression] of MEDICAL_PATTERNS) {
     if (expression.test(value)) {
@@ -541,11 +570,13 @@ export function evaluateConversationSafety(
   input: SafetyConversationInput,
   model: ModelRiskAssessment | null = null
 ): SafetyEvaluation {
-  let evaluation = evaluationFrom(
+  let evaluation = input.previousSafetyEvaluation ?? evaluationFrom(
     { level: "SAFE", target: "NONE", suggestedState: "NORMAL", matchedSignals: [] }, null
   );
 
-  for (const turn of input.history) {
+  // A checkpoint already includes the history. Replaying it would apply old
+  // answers to a later assessment step. History is only a legacy bootstrap.
+  for (const turn of input.previousSafetyEvaluation ? [] : input.history) {
     if (turn.role !== "USER") continue;
     const current = evaluateDeterministicSafety(turn.text);
     evaluation = transitionFrom(evaluation, turn.text, current);

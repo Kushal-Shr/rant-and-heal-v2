@@ -1,4 +1,3 @@
-import { ThinkingLevel, type ThinkingConfig } from "@google/genai";
 import { AI_MODELS, THINKING_LEVELS } from "@/src/lib/ai/models";
 import {
   planMomoResponseWithModel,
@@ -11,6 +10,7 @@ import {
 } from "@/src/lib/momo/schemas";
 import type { SafetyState } from "@/src/lib/safety/schemas";
 import { getGeminiClient } from "./gemini";
+import { thinkingConfigFor } from "./thinkingConfig";
 
 const RECENT_PLANNER_TURNS = 12;
 
@@ -28,30 +28,6 @@ const plannerResponseJsonSchema = {
   required: ["supportMode", "primaryNeed", "intervention", "confidence", "shouldClarify", "clarificationTarget"],
 } as const;
 
-function plannerThinkingLevel(): ThinkingLevel {
-  const configuredLevel: string = THINKING_LEVELS.MOMO_PLANNER;
-  switch (configuredLevel) {
-    case "high": return ThinkingLevel.HIGH;
-    case "medium": return ThinkingLevel.MEDIUM;
-    default: return ThinkingLevel.LOW;
-  }
-}
-
-function plannerThinkingConfig(model: string): ThinkingConfig {
-  // Gemini 2.5 accepts token budgets rather than thinkingLevel. Keep this
-  // model-aware so a future Gemini 3 planner can continue using named levels.
-  if (/gemini-2\.5/i.test(model)) {
-    const configuredLevel: string = THINKING_LEVELS.MOMO_PLANNER;
-    const thinkingBudget = configuredLevel === "high"
-      ? 4_096
-      : configuredLevel === "medium"
-        ? 2_048
-        : 512;
-    return { thinkingBudget };
-  }
-  return { thinkingLevel: plannerThinkingLevel() };
-}
-
 async function inferMomoRouting(input: NormalizedConversationInput): Promise<unknown> {
   const recentConversation = input.history.slice(-RECENT_PLANNER_TURNS);
   const model = process.env.GEMINI_PLANNER_MODEL ?? AI_MODELS.MOMO_PLANNER;
@@ -67,7 +43,7 @@ async function inferMomoRouting(input: NormalizedConversationInput): Promise<unk
     }],
     config: {
       systemInstruction: MOMO_PLANNER_PROMPT,
-      thinkingConfig: plannerThinkingConfig(model),
+      thinkingConfig: thinkingConfigFor(THINKING_LEVELS.MOMO_PLANNER, model),
       responseMimeType: "application/json",
       responseJsonSchema: plannerResponseJsonSchema,
     },

@@ -220,6 +220,8 @@ export const normalizedConversationInputSchema = z.object({
   history: z.array(conversationTurnSchema).max(50),
   continuityState: conversationContinuityStateSchema.optional(),
   participant: conversationParticipantSchema.optional(),
+  // Server-owned checkpoint after the last committed turn, never client input.
+  previousSafetyEvaluation: safetyEvaluationSchema.optional(),
 }).strict();
 export type NormalizedConversationInput = z.infer<typeof normalizedConversationInputSchema>;
 

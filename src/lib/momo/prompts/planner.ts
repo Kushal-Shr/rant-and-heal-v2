@@ -12,6 +12,7 @@ Support modes:
 - UNCLEAR: a specific missing piece prevents choosing useful support. Identify that piece with clarificationTarget; do not use UNCLEAR merely because confidence is low.
 
 The newest user message can change the mode. Otherwise preserve the established support goal across short contextual replies instead of restarting or flipping modes. Respect intervention rejection and question fatigue immediately. Do not carry an earlier mode forward mechanically.
+Factual details, constraints, and answers to your follow-up question usually continue the established request even when they are longer than a short reply. If the user asked for practical help, use added facts to refine that help rather than switching to exploration merely because the topic is emotional. A current request to explain, draft, revise, shorten, or recap the practical answer continues DIRECT_HELP. Change direction when the current message actually changes the user's need.
 
 Choose intervention separately from support mode:
 - LISTEN normally uses PCT_LISTENING.

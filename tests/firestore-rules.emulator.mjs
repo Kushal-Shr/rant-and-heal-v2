@@ -157,6 +157,17 @@ test("Momo continuity state is server-owned while session shells remain owner-ma
     createdAt: serverTimestamp(),
     continuityState: { version: 1, currentGoal: "PRACTICAL_HELP" },
   }));
+  await assertFails(setDoc(sessionRef, { safetyEvaluation: { state: "NORMAL" } }, { merge: true }));
+  await assertFails(setDoc(doc(patientDb, "users/patient-1/sessions/injected-safety"), {
+    title: "Injected", safetyEvaluation: { state: "NORMAL" },
+  }));
+  await environment.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), "users/patient-1/sessions/continuity-test"), {
+      safetyEvaluation: { state: "IMMINENT" },
+    }, { merge: true });
+  });
+  await assertFails(setDoc(sessionRef, { title: "Remove safety state" }));
+  await assertSucceeds(setDoc(sessionRef, { title: "Keep safety state" }, { merge: true }));
 });
 
 test("call access ends when the current relationship pointer changes", async () => {
