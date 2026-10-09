@@ -17,7 +17,7 @@ The project follows a hybrid directory layout:
 │   ├── (patient)/                    # Patient-specific routes (authenticated)
 │   │   ├── layout.tsx                # Patient spacing and role guard
 │   │   ├── dashboard/
-│   │   ├── momo/                     # AI Guide ("Momo") text and video calls
+│   │   ├── momo/                     # AI Guide ("Momo") text and voice calls
 │   │   ├── therapy/                  # Therapist chat and sessions
 │   │   └── vault/                    # Patient secure journal/data vault
 │   ├── (therapist)/                  # Therapist-specific routes (authenticated)
@@ -61,7 +61,7 @@ The project follows a hybrid directory layout:
 │   │   ├── reports/                  # Weekly report schemas and safe source contracts
 │   │   ├── safety/                   # Detection, clinical state, reviewer case workflow, policy
 │   │   └── therapy/                  # Relationship, access, notes, consent, envelope rules
-│   ├── server/                       # Firebase Admin, Gemini, KMS, server-only adapters
+│   ├── server/                       # Firebase Admin, OpenAI/Gemini, KMS, server-only adapters
 │   └── types/                        # Shared application TypeScript declarations
 ```
 
@@ -71,14 +71,14 @@ The project follows a hybrid directory layout:
 
 ### Service-Oriented Architecture (SOA)
 - Client-side Firebase helpers live in `src/services/` for user, therapist, and connection flows.
-- Privileged server integrations live in `src/server/`, including Firebase Admin initialization, Firebase ID-token verification, Gemini configuration, and shared Momo persona instructions.
+- Privileged server integrations live in `src/server/`, including Firebase Admin initialization, Firebase ID-token verification, OpenAI/Gemini configuration, and shared Momo persona instructions.
 - UI components should not perform privileged writes directly. Sensitive mutations, such as Momo message creation, should go through authenticated Route Handlers.
 
 ### V4 domain boundaries
 - Ordinary responder composition begins with `MOMO_CONVERSATION_CONTRACT`, then applies the existing persona, style, continuity, and routing guidance. `src/lib/momo/examples/selector.ts` locally selects 2–4 cases from a 52-case library and projects only transferable principles into the prompt; no example dialogue, fictional facts, backend statuses, or new persisted state are introduced. Safety states bypass this path. `grounding.ts` provides bounded assertion checks; `supportPreferences.ts` shares explicit-intent detection between planning and continuity.
 - Momo uses one visible identity. `orchestrateMomoTurn` owns the safety → planner → responder sequence, while the existing route retains authentication, quotas, idempotency, and Firestore transactions.
 - `MomoDecision` is structured routing metadata only. No model chain-of-thought is requested or stored.
-- The Momo text responder alone crosses a minimal provider boundary in `src/server/momo/textProvider.ts`. Its default is OpenAI Responses with `gpt-5.6-luna`, `reasoning.effort=medium`, and `store=false`; `MOMO_TEXT_PROVIDER=gemini` restores the prior Gemini request without a code change. The same completed response string enters the existing truthfulness and conversation validators. Requests do not silently fall back between providers. Planner, safety, voice, and all other AI roles remain Gemini-backed.
+- The Momo text responder crosses a minimal provider boundary in `src/server/momo/textProvider.ts`. Its default is OpenAI Responses with `gpt-5.6-luna`, `reasoning.effort=medium`, and `store=false`; `MOMO_TEXT_PROVIDER=gemini` restores the prior Gemini request without a code change. The same completed response string enters the existing truthfulness and conversation validators. Voice uses OpenAI Live `gpt-live-1`, but delegates substantive replies through that same trusted safety → planner → Luna responder pipeline. Requests do not silently fall back between providers; all other AI roles remain Gemini-backed.
 - Text sessions also persist a bounded server-owned `safetyEvaluation` checkpoint with each completed request, including safety responses, before releasing the session lease. The next turn advances that checkpoint once rather than reconstructing unresolved risk from an expiring 12-message window. Older sessions bootstrap from available history until their next committed turn. Firestore rules prevent client creation, update, or removal of the checkpoint. Existing safety thresholds and transition rules remain authoritative.
 - Failed ordinary generation retains prepared interaction preferences/corrections in failure cleanup without fabricating a reply. Coarse repetition warnings cause one rewrite; they alone do not suppress delivery after retry. Hard grounding, preference, rejected-approach and safety constraints remain enforced.
 - Text sessions maintain a bounded, server-updated `continuityState` on `users/{uid}/sessions/{sessionId}`. It stores the current support goal/mode, categorical interaction preferences, brief explicit corrections, option/question fatigue, bounded response metadata, and user-reported intervention outcomes. The planner receives this state alongside selective recent turns; the responder uses it to avoid rejected approaches, repeated questions, recycled replies, and option overload. This is current-session working memory, not cross-session profiling, and it excludes journals, therapy conversations, diagnoses, and model rationale.
@@ -86,7 +86,7 @@ The project follows a hybrid directory layout:
 - Safety normalizes evidence into `NORMAL`, `CLARIFY`, `SELF_HARM`, `SUICIDAL`, `IMMINENT`, or `MEDICAL_EMERGENCY`, then applies a centralized behavioral policy. A separate Day 4 workflow tracks human operations as `OPEN`, `ACKNOWLEDGED`, `HUMAN_CONNECTED`, `EXTERNAL_HANDOFF`, or `RESOLVED`; workflow progress never changes clinical state.
 - Weekly-report Gemini generation consumes mood records, Momo summaries, reviewed therapy notes, objective activity, and aggregate `journal_metrics`. Raw journal documents and decrypted journal content are excluded by contract and tests.
 - Journal Vault encryption is client-only. Therapy messages, notes, and reports use a distinct application-managed relationship key wrapped by Cloud KMS. Neither key model may be substituted for the other.
-- Server feature flags default weekly reports, AI therapy notes, and the future dashboard on; Momo voice defaults off. The Live implementation is preserved, but token minting and trial UI remain disabled until real-time safety interruption exists.
+- Server feature flags default weekly reports, AI therapy notes, and the future dashboard on; Momo voice defaults off. Live WebRTC and a trusted sideband are implemented, but session creation and trial UI remain disabled until real-audio safety interruption, cleanup, and deployment durability pass acceptance.
 
 ### Auth-to-Database Bridge (Atomic Registration)
 - User sign-ups require atomic syncing between Firebase Auth and Firestore.
@@ -121,11 +121,11 @@ The project follows a hybrid directory layout:
 
 ### Momo Data Boundary
 - Patient clients may listen to their own Momo sessions and messages.
-- Message writes are server-owned. `/api/momo/chat` verifies the Firebase ID token, prevents cross-user spoofing, calls Gemini, and writes both USER and MOMO messages through the Admin SDK.
+- Message writes are server-owned. `/api/momo/chat` verifies the Firebase ID token, prevents cross-user spoofing, invokes the configured responder, and writes both USER and MOMO messages through the Admin SDK. The voice sideband likewise owns trusted voice transcript and approved-response writes.
 - Firestore rules intentionally deny direct client writes to `users/{uid}/sessions/{sessionId}/messages`.
 - The authenticated text route updates session `continuityState` atomically with the server-generated reply and stores bounded response-function/intervention metadata on the Momo message. Raw chat messages remain the conversation record; continuity state is a compact index of future-turn interaction facts rather than another transcript. No user-level or cross-session intervention profile exists.
-- The Momo safety interceptor runs in the authenticated chat and transcript handlers before normal persistence/generation. Direct, high-confidence self-harm or harm-to-others signals bypass Gemini, save a fixed support reply, and write a minimal server-only audit event at `users/{uid}/safety_events/{eventId}`. Browser clients cannot read or write safety events.
-- Text is intercepted before it reaches Gemini. Momo Live voice is screened after its completed user transcript is received; since its audio reaches Gemini Live directly, the voice path must not be represented as real-time crisis moderation.
+- The Momo safety interceptor runs in authenticated chat and in the trusted Live sideband before ordinary support is delegated. Non-normal safety states bypass ordinary response generation, use centralized safety copy, and write a minimal server-only audit event at `users/{uid}/safety_events/{eventId}`. Browser clients cannot read or write safety events.
+- `/api/momo/live-session` authenticates the Firebase user, enforces session ownership/quota and one fresh monitored call per Momo session, builds the same canonical Momo behavior policy used by text plus a delivery-only overlay, and negotiates OpenAI Live WebRTC. It attaches a server-only sideband before returning SDP. The sideband consumes incremental transcripts, owns safety and substantive reply generation, applies the existing backend-action truthfulness guard to spoken transcript deltas, sends same-session interruption instructions, publishes a trusted interrupt counter, and fails closed on disconnect or stale browser-observed heartbeat. It is an in-process WebSocket and requires a long-lived Node deployment.
 - When enabled by server configuration, a minimal email notification is sent to the designated Rant & Heal support address only when deterministic rules and the structured Gemini classifier agree on imminent risk. No automatic calling, emergency-contact storage, delayed dispatch, IP-location, or police workflow exists. The email contains event metadata only, and it must not be represented as a monitored or emergency-response service.
 - Day 3 review intent transactionally creates or updates a top-level `safety_cases/{caseId}` record. A server-only `safety_case_episodes` pointer prevents duplicate cases within an unresolved Momo session. Audit entries live at `safety_cases/{caseId}/actions/{actionId}` and are append-only from the client perspective.
 - `/safety` and `/safety/[caseId]` require `safetyReviewer: true` or `admin: true` custom claims at the API and Firestore layers. USER ownership and THERAPIST role alone do not grant access. Firestore clients may listen for authorized real-time reads, but every mutation uses the Admin SDK transaction service and a request idempotency key.

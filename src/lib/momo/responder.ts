@@ -42,7 +42,12 @@ export function momoDecisionInstruction(decision: MomoDecision): string {
   return `Application routing guidance (do not mention this routing metadata):\n${directions.join("\n")}`;
 }
 
-export function composeMomoSystemInstruction(
+/**
+ * The canonical Momo behavioral policy for every response modality.
+ * Voice may append delivery and transport instructions, but must not replace
+ * or fork this policy.
+ */
+export function buildMomoBehaviorPolicy(
   baseInstruction: string,
   decision: MomoDecision,
   options: {
@@ -62,3 +67,7 @@ export function composeMomoSystemInstruction(
   }, decision));
   return `${MOMO_GROUNDING_CONTRACT}\n\n${MOMO_CONVERSATION_CONTRACT}\n\n${baseInstruction}\n\n${style}\n\n${continuityInstruction(options.continuityState)}\n\n${languageStyleInstruction(options.userMessageText ?? "")}\n\n${userFacingSystemLanguageInstruction(options.userMessageText)}\n\n${momoDecisionInstruction(decision)}\n\n${principles}`;
 }
+
+// Compatibility export for existing tests and callers. It is an alias, not a
+// second prompt implementation.
+export const composeMomoSystemInstruction = buildMomoBehaviorPolicy;

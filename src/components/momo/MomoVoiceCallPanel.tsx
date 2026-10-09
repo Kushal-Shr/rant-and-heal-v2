@@ -1,31 +1,23 @@
 "use client";
 
 import Link from "next/link";
-import { MomoPortrait } from "@/src/components/shared/MomoPortrait";
-
-import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
+import { MomoPortrait } from "@/src/components/shared/MomoPortrait";
 import { Spinner } from "@/src/components/ui/Spinner";
 import { useAuth } from "@/src/context/AuthContext";
-import { AudioRecorder } from "@/src/lib/momo/audio/AudioRecorder";
-import { AudioStreamer } from "@/src/lib/momo/audio/AudioStreamer";
 import { MomoLiveClient } from "@/src/lib/momo/live/MomoLiveClient";
 
 type CallState = "IDLE" | "CONNECTING" | "CONNECTED" | "DISCONNECTED" | "ERROR";
-type LiveStatus = "idle" | "connecting" | "ready" | "listening";
-type AudioContextWindow = Window &
-  typeof globalThis & {
-    webkitAudioContext?: typeof AudioContext;
-  };
+type LiveStatus = "idle" | "connecting" | "ready" | "listening" | "speaking";
+type PermissionState = "prompt" | "granted" | "denied";
 
-interface LiveTokenResponse {
-  token?: string;
-  model?: string;
-  error?: string;
-}
-
-interface TranscriptResponse {
-  safety?: { level?: string };
+interface MonitorStatus {
+  monitorStatus?: "CONNECTING" | "ACTIVE" | "FAILED" | "CLOSED";
+  safetyBlocked?: boolean;
+  safetyState?: string;
+  interruptVersion?: number;
+  heartbeatAgeMs?: number | null;
   error?: string;
 }
 
@@ -34,330 +26,268 @@ interface MomoVoiceCallPanelProps {
   sessionId?: string | null;
 }
 
+const MAX_CAPTION_CHARS = 260;
+
 export function MomoVoiceCallPanel({ embedded = false, sessionId }: MomoVoiceCallPanelProps) {
   const { user, loading } = useAuth();
   const router = useRouter();
-
   const [callState, setCallState] = useState<CallState>("IDLE");
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [isPulseActive, setIsPulseActive] = useState(false);
   const [liveStatus, setLiveStatus] = useState<LiveStatus>("idle");
-
-  const recorderRef = useRef<AudioRecorder | null>(null);
-  const streamerRef = useRef<AudioStreamer | null>(null);
-  const playbackContextRef = useRef<AudioContext | null>(null);
+  const [permissionState, setPermissionState] = useState<PermissionState>("prompt");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [callNotice, setCallNotice] = useState<string | null>(null);
+  const [muted, setMuted] = useState(false);
+  const [safetyState, setSafetyState] = useState("NORMAL");
+  const [userCaption, setUserCaption] = useState("");
+  const [momoCaption, setMomoCaption] = useState("");
   const liveClientRef = useRef<MomoLiveClient | null>(null);
-  const isBackendReadyRef = useRef(false);
-  const intentionalCloseRef = useRef(false);
+  const monitorTimerRef = useRef<number | null>(null);
   const setupTimeoutRef = useRef<number | null>(null);
   const generationRef = useRef(0);
+  const interruptVersionRef = useRef(0);
+  const liveStatusRef = useRef<LiveStatus>("idle");
+  const intentionalCloseRef = useRef(false);
 
-  const cleanupCallResources = () => {
+  function updateLiveStatus(status: LiveStatus) {
+    liveStatusRef.current = status;
+    setLiveStatus(status);
+  }
+
+  function clearTimers() {
+    if (monitorTimerRef.current !== null) window.clearInterval(monitorTimerRef.current);
+    if (setupTimeoutRef.current !== null) window.clearTimeout(setupTimeoutRef.current);
+    monitorTimerRef.current = null;
+    setupTimeoutRef.current = null;
+  }
+
+  function releaseResources() {
     generationRef.current += 1;
-    if (setupTimeoutRef.current) {
-      window.clearTimeout(setupTimeoutRef.current);
-      setupTimeoutRef.current = null;
-    }
-
-    liveClientRef.current?.close();
+    clearTimers();
+    liveClientRef.current?.forceClose();
     liveClientRef.current = null;
-    recorderRef.current?.close();
-    recorderRef.current = null;
-    streamerRef.current?.reset();
-    streamerRef.current = null;
+    updateLiveStatus("idle");
+    setMuted(false);
+  }
 
-    if (playbackContextRef.current) {
-      void playbackContextRef.current.close();
-      playbackContextRef.current = null;
-    }
-
-    isBackendReadyRef.current = false;
-    setLiveStatus("idle");
-    setIsPulseActive(false);
-  };
-
-  const endCall = () => {
+  async function endCall() {
     intentionalCloseRef.current = true;
-    cleanupCallResources();
-    setCallState("IDLE");
+    clearTimers();
+    const client = liveClientRef.current;
+    liveClientRef.current = null;
+    await client?.close();
+    updateLiveStatus("idle");
+    setMuted(false);
+    setCallState("DISCONNECTED");
     setErrorMessage(null);
-  };
+    setCallNotice(null);
+  }
 
   useEffect(() => {
-    if (!loading && !user) {
-      router.push("/auth/login");
-    }
+    if (!loading && !user) router.push("/auth/login");
   }, [loading, router, user]);
 
-  useEffect(() => {
-    return () => {
-      cleanupCallResources();
-    };
+  useEffect(() => () => {
+    generationRef.current += 1;
+    if (monitorTimerRef.current !== null) window.clearInterval(monitorTimerRef.current);
+    if (setupTimeoutRef.current !== null) window.clearTimeout(setupTimeoutRef.current);
+    liveClientRef.current?.forceClose();
+    liveClientRef.current = null;
   }, []);
 
-  async function createPlaybackContext() {
-    const AudioContextConstructor =
-      window.AudioContext || (window as AudioContextWindow).webkitAudioContext;
-
-    if (!AudioContextConstructor) {
-      throw new Error("This browser does not support Web Audio.");
-    }
-
-    const playbackContext = new AudioContextConstructor();
-    playbackContextRef.current = playbackContext;
-    streamerRef.current = new AudioStreamer(playbackContext, {
-      onPlaybackStart: () => setIsPulseActive(true),
-      onPlaybackEnd: () => setIsPulseActive(false),
-    });
+  async function failClosed(message: string) {
+    intentionalCloseRef.current = true;
+    clearTimers();
+    const client = liveClientRef.current;
+    liveClientRef.current = null;
+    await client?.close().catch(() => client.forceClose());
+    setCallState("ERROR");
+    updateLiveStatus("idle");
+    setErrorMessage(message);
   }
 
-  async function saveTranscript(sender: "USER" | "MOMO", text: string) {
-    if (!user?.uid || !sessionId) {
-      console.warn("MOMO TRANSCRIPT SKIPPED:", "missing-user-or-session", { sender, hasUser: Boolean(user?.uid), sessionId });
-      return;
-    }
-
-    try {
-      const idToken = await user.getIdToken();
-      const response = await fetch("/api/momo/transcript", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${idToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          userId: user.uid,
-          sessionId,
-          requestId: crypto.randomUUID(),
-          sender,
-          text,
-        }),
-      });
-
-      const payload = (await response.json().catch(() => null)) as TranscriptResponse | null;
-      if (!response.ok) {
-        console.error("MOMO TRANSCRIPT ERROR:", response.status, payload?.error ?? "Failed to save transcript.");
-        setErrorMessage("The voice transcript could not be saved. Please try the call again.");
-        return;
+  function beginMonitorPolling(generation: number) {
+    monitorTimerRef.current = window.setInterval(async () => {
+      if (!user || !sessionId || generationRef.current !== generation) return;
+      try {
+        const idToken = await user.getIdToken();
+        const response = await fetch(
+          `/api/momo/live-session/status?sessionId=${encodeURIComponent(sessionId)}`,
+          { headers: { Authorization: `Bearer ${idToken}` } }
+        );
+        const status = (await response.json().catch(() => null)) as MonitorStatus | null;
+        if (!response.ok || !status || status.monitorStatus === "FAILED" ||
+            (typeof status.heartbeatAgeMs === "number" && status.heartbeatAgeMs > 15_000)) {
+          await failClosed("Momo voice paused because trusted safety monitoring became unavailable.");
+          return;
+        }
+        if (status.monitorStatus === "CLOSED" && !intentionalCloseRef.current) {
+          await failClosed("The monitored voice session ended.");
+          return;
+        }
+        setSafetyState(status.safetyState ?? "NORMAL");
+        const version = status.interruptVersion ?? 0;
+        if (version > interruptVersionRef.current) {
+          interruptVersionRef.current = version;
+          liveClientRef.current?.interruptPlayback();
+        }
+      } catch {
+        await failClosed("Momo voice paused because trusted safety monitoring became unavailable.");
       }
-
-      if (sender === "USER" && payload?.safety?.level === "IMMINENT") {
-        intentionalCloseRef.current = true;
-        cleanupCallResources();
-        setCallState("DISCONNECTED");
-        router.push("/crisis?source=momo-voice");
-      }
-    } catch (error) {
-      console.error("MOMO TRANSCRIPT ERROR:", error);
-    }
+    }, 1_000);
   }
 
-  const startCall = async () => {
-    if (!user) {
-      return;
-    }
-    if (!sessionId) {
+  async function startCall() {
+    if (!user || !sessionId) {
       setErrorMessage("Create or select a conversation before calling.");
       return;
     }
-
     const generation = generationRef.current + 1;
     generationRef.current = generation;
-    setCallState("CONNECTING");
-    setErrorMessage(null);
     intentionalCloseRef.current = false;
-    setLiveStatus("connecting");
-    isBackendReadyRef.current = false;
+    interruptVersionRef.current = 0;
+    setCallState("CONNECTING");
+    updateLiveStatus("connecting");
+    setErrorMessage(null);
+    setCallNotice(null);
+    setSafetyState("NORMAL");
+    setUserCaption("");
+    setMomoCaption("");
 
     try {
       const idToken = await user.getIdToken();
-      const tokenResponse = await fetch("/api/momo/live-token", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${idToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ sessionId }),
-      });
-      const tokenPayload = (await tokenResponse.json().catch(() => null)) as LiveTokenResponse | null;
-
-      if (!tokenResponse.ok || !tokenPayload?.token || !tokenPayload.model) {
-        throw new Error(tokenPayload?.error ?? "Could not create a secure Momo voice token.");
-      }
-      if (generationRef.current !== generation) return;
-
-      await createPlaybackContext();
-      if (generationRef.current !== generation) {
-        cleanupCallResources();
-        return;
-      }
-
-      setupTimeoutRef.current = window.setTimeout(() => {
-        if (!isBackendReadyRef.current) {
-          setCallState("ERROR");
-          setErrorMessage("Momo did not finish warming up. Please try again.");
-          cleanupCallResources();
-        }
-      }, 10000);
-
-      const liveClient = new MomoLiveClient({
-        token: tokenPayload.token,
-        model: tokenPayload.model,
+      const client = new MomoLiveClient({
+        idToken,
+        sessionId,
         onReady: () => {
           if (generationRef.current !== generation) return;
-          if (setupTimeoutRef.current) {
-            window.clearTimeout(setupTimeoutRef.current);
-            setupTimeoutRef.current = null;
-          }
-          isBackendReadyRef.current = true;
+          if (setupTimeoutRef.current !== null) window.clearTimeout(setupTimeoutRef.current);
+          setupTimeoutRef.current = null;
+          setPermissionState("granted");
           setCallState("CONNECTED");
-          setLiveStatus("ready");
+          updateLiveStatus("ready");
+          beginMonitorPolling(generation);
         },
-        onAudio: (base64Audio) => {
+        onTranscriptDelta: (sender, delta) => {
+          const update = (current: string) => `${current}${delta}`.slice(-MAX_CAPTION_CHARS);
+          if (sender === "USER") setUserCaption(update);
+          else setMomoCaption(update);
+        },
+        onListening: () => {
           if (generationRef.current !== generation) return;
-          streamerRef.current?.playBase64Pcm16(base64Audio);
+          if (liveStatusRef.current === "speaking") client.interruptPlayback();
+          updateLiveStatus("listening");
         },
-        onTranscript: (sender, text) => {
-          void saveTranscript(sender, text);
-        },
-        onTurnComplete: () => {
-          if (generationRef.current === generation) setLiveStatus("ready");
+        onSpeaking: () => {
+          if (generationRef.current === generation) {
+            setCallNotice(null);
+            updateLiveStatus("speaking");
+          }
         },
         onInterrupted: () => {
-          if (generationRef.current === generation) streamerRef.current?.reset();
+          if (generationRef.current === generation) updateLiveStatus("listening");
+        },
+        onModeration: (message) => {
+          if (generationRef.current !== generation) return;
+          console.warn("GPT-Live paused a moderated generation.");
+          setCallNotice(message);
+          updateLiveStatus("listening");
         },
         onError: (error) => {
           if (generationRef.current !== generation) return;
-          console.error("Gemini Live error:", error);
-          setCallState("ERROR");
-          setErrorMessage("Connection lost.");
-          cleanupCallResources();
+          console.error("GPT-Live error:", error);
+          void failClosed("The GPT-Live connection was lost.");
         },
-        onClose: (event) => {
+        onClose: (clean) => {
           if (generationRef.current !== generation) return;
-          console.log(
-            `Gemini Live closed: code=${event.code}, reason=${event.reason}, wasClean=${event.wasClean}`
-          );
-          cleanupCallResources();
-
-          if (intentionalCloseRef.current || event.code === 1000) {
+          releaseResources();
+          if (intentionalCloseRef.current || clean) {
             setCallState("DISCONNECTED");
             setErrorMessage(null);
-            return;
+          } else {
+            setCallState("ERROR");
+            setErrorMessage("The GPT-Live connection ended unexpectedly.");
           }
-
-          setCallState("ERROR");
-          setErrorMessage(event.reason || "Connection closed before Momo was ready.");
         },
       });
-      liveClientRef.current = liveClient;
-      await liveClient.connect();
-      if (generationRef.current !== generation) {
-        liveClient.close();
-        return;
-      }
-
-      const recorder = new AudioRecorder();
-      recorderRef.current = recorder;
-      await recorder.start((base64Audio) => {
-        if (liveClientRef.current && isBackendReadyRef.current) {
-          setLiveStatus("listening");
-          liveClientRef.current.sendAudio(base64Audio);
+      liveClientRef.current = client;
+      setupTimeoutRef.current = window.setTimeout(() => {
+        if (generationRef.current === generation && callState !== "CONNECTED") {
+          void failClosed("Momo did not finish connecting. Please try again.");
         }
-      });
-      if (generationRef.current !== generation) recorder.close();
-    } catch (err: unknown) {
-      console.error(err);
-      setCallState("ERROR");
-      setErrorMessage(err instanceof Error ? err.message : "Could not access microphone.");
-      cleanupCallResources();
+      }, 20_000);
+      await client.connect();
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "NotAllowedError") {
+        setPermissionState("denied");
+      }
+      console.error("MOMO VOICE START ERROR:", error);
+      await failClosed(error instanceof Error ? error.message : "Could not access the microphone.");
     }
-  };
+  }
+
+  function toggleMute() {
+    const nextMuted = !muted;
+    liveClientRef.current?.setMuted(nextMuted);
+    setMuted(nextMuted);
+    if (!nextMuted) updateLiveStatus("listening");
+  }
 
   if (loading) {
-    return (
-      <div className="flex min-h-40 items-center justify-center">
-        <Spinner size="lg" label="Loading Momo..." />
-      </div>
-    );
+    return <div className="flex min-h-40 items-center justify-center"><Spinner size="lg" label="Loading Momo..." /></div>;
   }
-
-  if (!user) {
-    return null;
-  }
+  if (!user) return null;
 
   const isCallable = Boolean(sessionId);
-  const statusText =
-    callState === "IDLE"
-      ? sessionId
-        ? "Ready to call inside this chat."
-        : "Ready when you are."
-      : callState === "CONNECTING"
-        ? "Connecting..."
-        : callState === "CONNECTED" && liveStatus === "ready"
-          ? "Connected. Rant away!"
-          : callState === "CONNECTED" && liveStatus === "listening"
-            ? "Listening..."
-            : callState === "CONNECTED" && liveStatus === "connecting"
-              ? "Warming up Momo..."
-              : callState === "DISCONNECTED"
-                ? "Call ended."
+  const statusText = callState === "IDLE"
+    ? sessionId ? "Ready for an AI voice conversation." : "Create or select a chat before calling."
+    : callState === "CONNECTING" ? "Connecting securely..."
+      : callState === "CONNECTED" && muted ? "Microphone muted."
+        : callState === "CONNECTED" && liveStatus === "speaking" ? "Momo is speaking"
+          : callState === "CONNECTED" && liveStatus === "listening" ? "Listening..."
+            : callState === "CONNECTED" ? "Connected"
+              : callState === "DISCONNECTED" ? "Call ended."
                 : errorMessage ?? "Something went wrong.";
+  const active = callState === "CONNECTING" || callState === "CONNECTED";
 
   return (
-    <div
-      className={
-        embedded
-          ? "border-b border-[#ffeada] bg-[#fff8f5]/80 px-4 py-3 sm:px-6"
-          : "flex min-h-[75dvh] flex-col items-center justify-center gap-6 py-6 text-[#2c1601]"
-      }
-    >
+    <div className={embedded
+      ? "border-b border-[#ffeada] bg-[#fff8f5]/80 px-4 py-3 sm:px-6"
+      : "flex min-h-[75dvh] flex-col items-center justify-center gap-6 py-6 text-[#2c1601]"}>
       {!embedded && <Link className="self-start rounded-full bg-white/70 px-4 py-2 text-sm text-[#325347]" href="/momo">← Back to conversation</Link>}
-      <div
-        className={
-        embedded
-            ? "mx-auto flex max-w-3xl flex-col gap-4 rounded-[1.5rem] border border-white/80 bg-white/80 p-4 shadow-[0_12px_28px_-18px_rgba(121,88,65,0.25),inset_0_2px_4px_rgba(255,255,255,0.8)] sm:flex-row sm:items-center sm:justify-between"
-            : "flex w-full max-w-md flex-col items-center rounded-[2.5rem] border border-white/80 bg-white/80 p-8 shadow-[0_20px_40px_-20px_rgba(121,88,65,0.24),inset_0_2px_4px_rgba(255,255,255,0.8)]"
-        }
-      >
+      <div className={embedded
+        ? "mx-auto flex max-w-3xl flex-col gap-4 rounded-[1.5rem] border border-white/80 bg-white/80 p-4 shadow-[0_12px_28px_-18px_rgba(121,88,65,0.25),inset_0_2px_4px_rgba(255,255,255,0.8)] sm:flex-row sm:items-center sm:justify-between"
+        : "flex w-full max-w-md flex-col items-center rounded-[2.5rem] border border-white/80 bg-white/80 p-8 shadow-[0_20px_40px_-20px_rgba(121,88,65,0.24),inset_0_2px_4px_rgba(255,255,255,0.8)]"}>
         <div className={embedded ? "flex items-center gap-4" : "flex flex-col items-center"}>
-          <div className={embedded ? "relative flex h-16 w-16 items-center justify-center" : "relative mb-12 flex h-48 w-48 items-center justify-center"}>
-            <div
-              className={`absolute inset-0 rounded-full bg-[#abcebf] ${isPulseActive ? "animate-ping" : ""}`}
-              style={{ opacity: isPulseActive ? 0.6 : 0.2 }}
-            />
+          <div className={embedded ? "relative flex h-16 w-16 items-center justify-center" : "relative mb-8 flex h-48 w-48 items-center justify-center"}>
+            <div className={`absolute inset-0 rounded-full bg-[#abcebf] ${liveStatus === "speaking" ? "animate-ping" : ""}`} style={{ opacity: liveStatus === "speaking" ? 0.6 : 0.2 }} />
             <MomoPortrait className={embedded ? "relative z-10 size-12" : "relative z-10 size-40"} />
           </div>
-
           <div className={embedded ? "" : "text-center"}>
-            <p className="font-['Plus_Jakarta_Sans'] text-xs font-medium uppercase tracking-[0.12em] text-[#4a6b5e]/70">
-              Momo Voice
-            </p>
-            <h2 className={embedded ? "mt-1 font-['Plus_Jakarta_Sans'] text-lg font-medium text-[#325347]" : "mb-4 mt-2 text-center text-3xl font-medium tracking-[-0.03em] text-[#325347]"}>
-              Talk to Momo
-            </h2>
-            <p className={`font-['Plus_Jakarta_Sans'] text-sm ${callState === "ERROR" ? "text-[#ba1a1a]" : "text-[#414845]"}`}>
-              {isCallable ? statusText : "Create or select a chat before calling."}
-            </p>
+            <p className="font-['Plus_Jakarta_Sans'] text-xs font-medium uppercase tracking-[0.12em] text-[#4a6b5e]/70">Momo AI Voice</p>
+            <h2 className={embedded ? "mt-1 font-['Plus_Jakarta_Sans'] text-lg font-medium text-[#325347]" : "mb-3 mt-2 text-center text-3xl font-medium tracking-[-0.03em] text-[#325347]"}>Talk to Momo</h2>
+            <p aria-live="polite" className={`font-['Plus_Jakarta_Sans'] text-sm ${callState === "ERROR" ? "text-[#ba1a1a]" : "text-[#414845]"}`}>{statusText}</p>
+            {callNotice && callState === "CONNECTED" && <p role="status" className="mt-2 rounded-xl bg-[#fff8e8] px-3 py-2 text-xs text-[#654f18]">{callNotice}</p>}
+            {permissionState === "denied" && <p className="mt-2 text-xs text-[#93000a]">Microphone permission was denied. Enable it in browser settings to try again.</p>}
+            {safetyState !== "NORMAL" && <p className="mt-2 rounded-xl bg-[#fff1e8] px-3 py-2 text-xs text-[#6f3b16]">Momo is focused on immediate safety. <Link className="underline" href="/crisis?source=momo-voice">Open crisis support</Link></p>}
+            {!embedded && active && (userCaption || momoCaption) && (
+              <div className="mt-4 max-h-28 overflow-y-auto rounded-2xl bg-[#f5faf7] p-3 text-left text-xs text-[#414845]" aria-live="polite">
+                {userCaption && <p><span className="font-semibold">You:</span> {userCaption}</p>}
+                {momoCaption && <p className="mt-2"><span className="font-semibold">Momo:</span> {momoCaption}</p>}
+              </div>
+            )}
           </div>
         </div>
 
-        {callState === "IDLE" || callState === "DISCONNECTED" || callState === "ERROR" ? (
-          <button
-            className={embedded ? "rounded-full bg-[#325347] px-5 py-3 font-['Plus_Jakarta_Sans'] text-sm font-medium text-white shadow-[0_8px_16px_-6px_rgba(50,83,71,0.3),inset_0_1px_0_rgba(255,255,255,0.4)] transition-all hover:bg-[#4a6b5e] active:scale-95 disabled:pointer-events-none disabled:opacity-50" : "w-full rounded-full bg-[#325347] py-4 text-lg font-medium text-white shadow-[0_8px_16px_-6px_rgba(50,83,71,0.3),inset_0_1px_0_rgba(255,255,255,0.4)] transition-all hover:bg-[#4a6b5e] active:scale-95 disabled:pointer-events-none disabled:opacity-50"}
-            disabled={!isCallable}
-            onClick={startCall}
-          >
-            Start Rant
-          </button>
-        ) : (
-          <button
-            className={embedded ? "rounded-full bg-[#ffdad6] px-5 py-3 font-['Plus_Jakarta_Sans'] text-sm font-medium text-[#93000a] shadow-[0_8px_16px_-6px_rgba(186,26,26,0.2),inset_0_1px_0_rgba(255,255,255,0.55)] transition-all hover:bg-[#ffb4ab] active:scale-95" : "w-full rounded-full bg-[#ffdad6] py-4 text-lg font-medium text-[#93000a] shadow-[0_8px_16px_-6px_rgba(186,26,26,0.2),inset_0_1px_0_rgba(255,255,255,0.55)] transition-all hover:bg-[#ffb4ab] active:scale-95"}
-            onClick={endCall}
-          >
-            End Rant
-          </button>
-        )}
+        <div className={embedded ? "flex gap-2" : "mt-5 flex w-full gap-3"}>
+          {!active ? (
+            <button className="flex-1 rounded-full bg-[#325347] px-5 py-3 text-sm font-medium text-white shadow-[0_8px_16px_-6px_rgba(50,83,71,0.3)] transition-all hover:bg-[#4a6b5e] active:scale-95 disabled:pointer-events-none disabled:opacity-50" disabled={!isCallable} onClick={() => void startCall()}>Start call</button>
+          ) : (
+            <>
+              <button className="flex-1 rounded-full bg-[#edf5f1] px-4 py-3 text-sm font-medium text-[#325347]" disabled={callState !== "CONNECTED"} onClick={toggleMute}>{muted ? "Unmute" : "Mute"}</button>
+              <button className="flex-1 rounded-full bg-[#ffdad6] px-4 py-3 text-sm font-medium text-[#93000a]" onClick={() => void endCall()}>End call</button>
+            </>
+          )}
+        </div>
       </div>
     </div>
   );
