@@ -31,6 +31,7 @@ FIREBASE_ADMIN_PRIVATE_KEY=
 GEMINI_API_KEY=
 GEMINI_MODEL=gemini-3.8-flash
 GEMINI_SAFETY_MODEL=gemini-3.8-flash
+MOMO_SAFETY_CLASSIFIER_TIMEOUT_MS=10000
 GEMINI_LIVE_MODEL=gemini-3.8-live
 
 # Trial feature flags. Voice stays off until live audio can be interrupted by

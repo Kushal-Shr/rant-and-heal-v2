@@ -19,7 +19,7 @@ const SYSTEM_TOPIC = /\b(?:system|app|application|assistant|bot|model|momo|CBT|c
 const SYSTEM_QUESTION = /\?|\b(?:how|why|what|when|where|which|who|explain|describe|tell\s+me|do|does|did|is|are|can|could|would|will)\b/i;
 const DIRECT_BEHAVIOR_QUESTION = /\b(?:how|why|what)\b.{0,32}\b(?:you|your)\b.{0,32}\b(?:work|decide|choose|respond|route|detect|assess)\b/i;
 const BREATHING = /\b(?:breath(?:e|ing)?|deep breaths?)\b|सास|saas/i;
-const LISTEN_ADVICE = /(?:^|[.!?]\s+)(?:you should|you need to|(?:maybe\s+)?try\b|start by\b|make sure\b|first,?\s)/i;
+const LISTEN_ADVICE = /(?:^|[.!?]\s+)(?:you should|you need to|(?:maybe\s+)?try\b|start by\b|make sure\b|first,?\s)|\b(?:(?:you|we)\s+(?:can|could|might|may want to)\s+(?:address|clarify|document|plan|raise|record|think through|work out)|i\s+can\s+help\s+you\s+(?:address|clarify|document|draft|plan|respond)|if\s+you\s+want\s+to\s+(?:address|clarify|document|plan|respond)|(?:you|we)\s+can\s+focus\s+on\s+what\s+you\s+want\s+to\s+do|can be addressed\b|what (?:do you want|would you like) to (?:say|do)(?: or (?:say|do))?(?: about it| next)?\?|what would you like to happen next\?)/i;
 const CANNED_GREETING = /^(?:hi there|hello)[!.]?\s+(?:how can i help|what would you like to talk about)/i;
 const GREETING_OPENING = /^(?:hey+|hi|hello)\b/i;
 const DEVANAGARI = /[\u0900-\u097f]/u;
@@ -91,6 +91,7 @@ export type ResponseStyleViolation =
   | "UNCLEAR_QUESTION_COUNT"
   | "DIRECT_HELP_INTERROGATION"
   | "LISTEN_ADVICE"
+  | "EXPLICIT_NO_ADVICE"
   | "REGULATE_TECHNIQUE_MENU"
   | "REGULATE_DEFAULT_BREATHING"
   | "CANNED_GREETING"
@@ -100,6 +101,7 @@ export type ResponseStyleViolation =
   | "SCRIPT_STYLE_MISMATCH"
   | "UNNECESSARY_LIST_STRUCTURE"
   | "REPEATED_FACT_MIRRORING"
+  | "UNNECESSARY_FACT_MIRRORING"
   | GroundingViolation;
 
 function structuralListItemCount(candidate: string): number {
@@ -137,11 +139,34 @@ function repeatsFactMirroring(candidate: string, input: NormalizedConversationIn
   return false;
 }
 
+function unnecessarilyMirrorsCurrentFact(
+  candidate: string,
+  input: NormalizedConversationInput,
+  decision: MomoDecision
+): boolean {
+  if (decision.supportMode !== "LISTEN" && decision.supportMode !== "WORK_THROUGH") return false;
+  if (/\b(?:recap|summari[sz]e|repeat|reflect back|what did i say)\b/i.test(input.messageText)) return false;
+  const firstClause = candidate.split(/(?<=[.!?।])\s+|\n+/, 1)[0] ?? candidate;
+  if (firstClause.includes("?") || firstClause.split(/\s+/).length < 5) return false;
+  return userFactCoverage(firstClause, input.messageText) >= 0.55;
+}
+
 function breathingWasGrounded(input: NormalizedConversationInput): boolean {
   if (BREATHING.test(input.messageText)) return true;
   return input.continuityState?.recentInterventions.some(
     (item) => item.approach === "BREATHING" && item.outcome === "HELPED"
   ) ?? false;
+}
+
+function containsListenActionOrientation(candidate: string): boolean {
+  const actionConcept = /\b(?:address|correct|document|draft|plan|raise|record|respond|response|solution|solve|think through|what to (?:do|say)|want to (?:do|say)|work out)\b/i;
+  return candidate.split(/(?<=[.!?।])\s+|[;\n]+/).some((clause) => {
+    if (!actionConcept.test(clause)) return false;
+    const assistantOffer = /\b(?:i|we)\s+(?:can|could|might)|\bhelp\s+you\b/i.test(clause);
+    const userDirective = /\byou\s+(?:can|could|should|need|might|may want)\b/i.test(clause);
+    const actionQuestion = clause.includes("?") && /\b(?:what|how|which)\b.{0,50}\byou\b/i.test(clause);
+    return assistantOffer || userDirective || actionQuestion;
+  });
 }
 
 export function responseStyleViolations(
@@ -163,7 +188,9 @@ export function responseStyleViolations(
   if (decision.supportMode === "UNCLEAR" && decision.shouldClarify && questionCount !== 1) {
     violations.push("UNCLEAR_QUESTION_COUNT");
   }
-  if (decision.supportMode === "DIRECT_HELP" && candidate.trimStart().split(/[.!\n]/, 1)[0]?.includes("?")) {
+  const candidateWithoutQuotes = candidate.replace(/"[^"\n]*"|“[^”\n]*”/g, "").trimStart();
+  if (decision.supportMode === "DIRECT_HELP"
+      && /^(?:how|what|when|where|which|who|why|do|does|did|is|are|can|could|would|will)\b[^?]*\?/i.test(candidateWithoutQuotes)) {
     violations.push("DIRECT_HELP_INTERROGATION");
   }
   // Scope-sensitive verbosity signal, never a hard reason to withhold help.
@@ -176,8 +203,12 @@ export function responseStyleViolations(
   if (listItemCount > 2 && !listWasRequested(input.messageText)) {
     violations.push("UNNECESSARY_LIST_STRUCTURE");
   }
-  if (decision.supportMode === "LISTEN" && LISTEN_ADVICE.test(candidate)) {
+  if (decision.supportMode === "LISTEN" && (LISTEN_ADVICE.test(candidate) || containsListenActionOrientation(candidate))) {
     violations.push("LISTEN_ADVICE");
+    if (input.continuityState?.explicitPreferences.includes("NO_ADVICE")
+        || /\b(?:no advice|do not|don['’]t|not|stop|skip|leave)\b.{0,32}\b(?:advice|breath(?:ing)?|exercise|technique)\b/i.test(input.messageText)) {
+      violations.push("EXPLICIT_NO_ADVICE");
+    }
   }
   if (decision.supportMode === "REGULATE" && (listItemCount > 1 || /\b(?:choose|pick) (?:one|between|from)\b/i.test(candidate))) {
     violations.push("REGULATE_TECHNIQUE_MENU");
@@ -192,6 +223,7 @@ export function responseStyleViolations(
     violations.push("SCRIPT_STYLE_MISMATCH");
   }
   if (repeatsFactMirroring(candidate, input)) violations.push("REPEATED_FACT_MIRRORING");
+  if (unnecessarilyMirrorsCurrentFact(candidate, input, decision)) violations.push("UNNECESSARY_FACT_MIRRORING");
 
   violations.push(...groundingViolations(candidate, input));
   return [...new Set(violations)];

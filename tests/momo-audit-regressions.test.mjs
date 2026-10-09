@@ -95,8 +95,11 @@ test('repetition signals cannot waive hard preference, grounding or approach con
  await import('../scripts/momo-audit-loader.mjs');
  const {hasBlockingResponseViolation}=await import('../src/server/momo/responder.ts');
  assert.equal(hasBlockingResponseViolation(['REPEATED_SHAPE','RECYCLED_RESPONSE']),false);
- for(const violation of ['QUESTION_FATIGUE','REJECTED_APPROACH','REASSESSMENT_REQUIRED','OPTION_OVERLOAD','UNSUPPORTED_EMOTION_INFERENCE','INTERNAL_SYSTEM_TERMINOLOGY','TOO_MANY_QUESTIONS']) {
+ for(const violation of ['QUESTION_FATIGUE','REJECTED_APPROACH','REASSESSMENT_REQUIRED','OPTION_OVERLOAD','UNSUPPORTED_EVENT_INFERENCE','UNSUPPORTED_DIAGNOSIS','INTERNAL_SYSTEM_TERMINOLOGY','TOO_MANY_QUESTIONS']) {
   assert.equal(hasBlockingResponseViolation(['REPEATED_SHAPE',violation]),true,violation);
+ }
+ for(const violation of ['UNSUPPORTED_EMOTION_INFERENCE','UNSUPPORTED_PSYCHOLOGICAL_IMPLICATION','UNNECESSARY_FACT_MIRRORING']) {
+  assert.equal(hasBlockingResponseViolation([violation]),false,violation);
  }
 });
 test('attributed fictional quotes are separated from current personal risk outside the quote',()=>{

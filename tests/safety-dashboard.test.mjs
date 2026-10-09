@@ -143,3 +143,8 @@ test("attempted or failed backend actions cannot produce success language", () =
     /emergency services have been contacted/i
   );
 });
+
+test("truthfulness filtering preserves valid paragraph and line structure", () => {
+  const response = "First paragraph.\n\nSecond paragraph with  two intentional spaces.\nLine two.";
+  assert.equal(enforceBackendActionTruthfulness(response), response);
+});

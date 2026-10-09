@@ -96,6 +96,7 @@ export function emptyConversationContinuityState(): ConversationContinuityState 
   return {
     version: 1,
     currentGoal: "UNKNOWN",
+    provenance: { currentGoal: "SYSTEM" },
     explicitPreferences: [],
     rejectedApproaches: [],
     recentInterventions: [],
@@ -211,7 +212,10 @@ export function prepareContinuityState(
   const recordedAt = now.toISOString();
 
   const goal = detectGoal(text);
-  if (goal) state.currentGoal = goal;
+  if (goal) {
+    state.currentGoal = goal;
+    state.provenance.currentGoal = "EXPLICIT_USER";
+  }
 
   if (/\bno advice\b|\b(?:do not|don['’]t) (?:want advice|(?:give|offer) me advice)\b/i.test(text)) {
     state.explicitPreferences = addPreference(state.explicitPreferences, "NO_ADVICE");
@@ -234,6 +238,11 @@ export function prepareContinuityState(
   const preference = detectExplicitSupportPreference(text);
   if (preference) {
     state.currentSupportMode = preference.supportMode;
+    state.currentPrimaryNeed = preference.primaryNeed;
+    state.supportPreference = preference.supportMode;
+    state.provenance.currentSupportMode = "EXPLICIT_USER";
+    state.provenance.primaryNeed = "EXPLICIT_USER";
+    state.provenance.supportPreference = "EXPLICIT_USER";
     if (preference.supportMode === "LISTEN") {
       state.explicitPreferences = addPreference(state.explicitPreferences, "NO_ADVICE");
     } else {
@@ -337,9 +346,15 @@ export function finalizeContinuityState(
   now = new Date()
 ): { state: ConversationContinuityState; metadata: ContinuityTurnMetadata } {
   const next = structuredClone(state);
-  if (decision.supportMode !== "UNCLEAR") next.currentSupportMode = decision.supportMode;
+  if (decision.supportMode !== "UNCLEAR") {
+    next.currentSupportMode = decision.supportMode;
+    next.provenance.currentSupportMode = decision.userPreferenceOverride ? "EXPLICIT_USER" : "INFERRED";
+  }
+  next.currentPrimaryNeed = decision.primaryNeed;
+  next.provenance.primaryNeed = decision.userPreferenceOverride ? "EXPLICIT_USER" : "INFERRED";
   if (next.currentGoal === "UNKNOWN" || decision.userPreferenceOverride) {
     next.currentGoal = goalForDecision(decision);
+    next.provenance.currentGoal = decision.userPreferenceOverride ? "EXPLICIT_USER" : "INFERRED";
   }
 
   const responseShapes = classifyResponseShapes(responseText, decision);
@@ -389,11 +404,16 @@ function label(value: string): string {
 
 export function continuityInstruction(state?: ConversationContinuityState): string {
   const current = state ?? emptyConversationContinuityState();
+  const modeSource = current.provenance.currentSupportMode ?? "INFERRED";
+  const goalSource = current.provenance.currentGoal;
+  const needSource = current.provenance.primaryNeed ?? "INFERRED";
   const lines = [
     "Conversation continuity (bounded working memory; never mention this metadata):",
-    `- Current support mode: ${current.currentSupportMode ?? "not established"}. Current user goal: ${label(current.currentGoal)}. Continue that goal unless the newest user turn changes it.`,
+    `- ${modeSource === "EXPLICIT_USER" ? "Explicit user mode preference" : "Inferred working mode"}: ${current.currentSupportMode ?? "not established"}. ${goalSource === "EXPLICIT_USER" ? "Explicit user goal" : "Inferred working goal"}: ${label(current.currentGoal)}. Inference is routing context, never a user-stated fact.`,
+    `- ${needSource === "EXPLICIT_USER" ? "Explicit user primary need" : "Inferred working primary need"}: ${current.currentPrimaryNeed ? label(current.currentPrimaryNeed) : "not established"}.`,
+    `- Explicit support preference: ${current.supportPreference ? label(current.supportPreference) : "none recorded"}.`,
     `- Explicit interaction preferences: ${current.explicitPreferences.length ? current.explicitPreferences.map(label).join(", ") : "none recorded"}.`,
-    "- Treat stored items only as user-reported interaction facts. Do not turn them into diagnoses, traits, causes, or claims about what universally works for the user.",
+    "- Only fields marked explicit user may be described as user-stated. Treat inferred fields only as revisable routing context. Do not turn any stored item into a diagnosis, trait, cause, feeling, meaning, or claim about what universally works for the user.",
   ];
   if (current.userCorrections.length) {
     lines.push(`- Active user corrections: ${current.userCorrections.map((item) => `${JSON.stringify(item.rejectedTerm)} was corrected to ${JSON.stringify(item.preferredTerm)}`).join("; ")}. Use the correction without making the user repeat it.`);
@@ -486,10 +506,10 @@ export function continuityResponseViolations(
   }
   const menuItems = (candidate.match(/(?:^|\s)(?:\d+[.)]|[-*])\s+/g)?.length ?? 0)
     + (candidate.match(/\s-\s/g)?.length ?? 0);
-  const actionDirectives = (candidate.match(/\b(?:aim|book|choose|circle|clear|create|decide|drink|fill|focus|handle|make|open|pick|put|send|set|start|take|use|work|write)\b/gi)?.length ?? 0)
+  const actionDirectives = (candidate.match(/\b(?:aim|book|call|choose|circle|clear|create|decide|drink|fill|finish|focus|handle|identify|ignore|make|open|pick|put|send|set|start|take|text|use|work|write)\b/gi)?.length ?? 0)
     + (candidate.match(/\b(?:gara|gar|hera|khol|lekha|piu|rakha)\b/gi)?.length ?? 0);
   const overlyLongForOverload = candidate.trim().split(/\s+/).length > 45;
-  if (state.optionOverload && (menuItems > 1 || approaches.length > 1 || actionDirectives > 2 || overlyLongForOverload || /\b(?:choose|pick) (?:one|between|from)\b/i.test(candidate))) {
+  if (state.optionOverload && (menuItems > 1 || approaches.length > 1 || actionDirectives > 2 || (actionDirectives > 1 && /\bthen\b/i.test(candidate)) || overlyLongForOverload || /\b(?:choose|pick) (?:one|between|from)\b/i.test(candidate))) {
     violations.push("OPTION_OVERLOAD");
   }
   if (state.questionFatigue && candidate.includes("?")) violations.push("QUESTION_FATIGUE");

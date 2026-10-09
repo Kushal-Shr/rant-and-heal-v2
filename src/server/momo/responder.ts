@@ -1,6 +1,7 @@
 import { composeMomoSystemInstruction } from "@/src/lib/momo/responder";
 import { continuityResponseViolations } from "@/src/lib/momo/continuity";
 import { responseStyleViolations } from "@/src/lib/momo/responseStyle";
+import { groundingViolationDetails } from "@/src/lib/momo/grounding";
 import type { MomoDecision, NormalizedConversationInput } from "@/src/lib/momo/schemas";
 import { enforceBackendActionTruthfulness } from "@/src/lib/safety/actionTruthfulness";
 import { MOMO_SYSTEM_INSTRUCTION } from "./persona";
@@ -12,6 +13,8 @@ const STYLE_ONLY_VIOLATIONS = new Set([
   "REPEATED_SHAPE", "REPEATED_OPENING", "RECYCLED_RESPONSE", "REPEATED_QUESTION",
   "EXCESSIVE_DIRECT_HELP", "CANNED_GREETING", "REPEATED_GREETING",
   "UNNECESSARY_LIST_STRUCTURE", "REPEATED_FACT_MIRRORING", "SCRIPT_STYLE_MISMATCH",
+  "UNNECESSARY_FACT_MIRRORING", "UNSUPPORTED_EMOTION_INFERENCE",
+  "UNSUPPORTED_PSYCHOLOGICAL_IMPLICATION", "LISTEN_ADVICE",
 ]);
 
 export function partitionResponseViolations(violations: readonly string[]): {
@@ -39,6 +42,61 @@ function responseViolations(
     ...continuityResponseViolations(reply, input, input.continuityState),
     ...responseStyleViolations(reply, input, decision),
   ];
+}
+
+function excerpt(text: string, max = 180): string {
+  const compact = text.replace(/\s+/g, " ").trim();
+  return JSON.stringify(compact.length > max ? `${compact.slice(0, max - 1)}…` : compact);
+}
+
+function repairInstruction(
+  reply: string,
+  violations: readonly string[],
+  input: NormalizedConversationInput
+): string {
+  const guidance: string[] = [];
+  const factMirroring = violations.includes("UNNECESSARY_FACT_MIRRORING") || violations.includes("REPEATED_FACT_MIRRORING");
+  const listenAdvice = violations.includes("LISTEN_ADVICE") || violations.includes("EXPLICIT_NO_ADVICE");
+  const grounding = groundingViolationDetails(reply, input);
+  for (const detail of grounding.slice(0, 2)) {
+    if (detail.code === "UNSUPPORTED_DIAGNOSIS") {
+      guidance.push(`Remove the unsupported diagnostic claim ${excerpt(detail.claim)}; the user did not establish that diagnosis.`);
+    } else if (detail.code === "UNSUPPORTED_EVENT_INFERENCE") {
+      guidance.push(`Remove or neutralize the unsupported event or intent claim ${excerpt(detail.claim)}; state only the reported event.`);
+    } else {
+      guidance.push(`Remove the unsupported psychological claim ${excerpt(detail.claim)}; the user did not state that feeling or meaning.`);
+    }
+  }
+  if (factMirroring) {
+    const opening = reply.split(/(?<=[.!?।])\s+|\n+/, 1)[0] ?? reply;
+    guidance.push(`Do not repeat or paraphrase any fact, feeling, or wording from the user's latest message as ${excerpt(opening)} does. Rewrite without describing their situation or state: use only a brief acknowledgement, conversational space, or one neutral useful question.`);
+  }
+  if (violations.includes("TOO_MANY_QUESTIONS") || violations.includes("UNCLEAR_QUESTION_COUNT") || violations.includes("DIRECT_HELP_INTERROGATION") || violations.includes("QUESTION_FATIGUE") || violations.includes("REPEATED_QUESTION")) {
+    const questions = reply.split(/(?<=\?)\s+|\n+/).filter((part) => part.includes("?")).join(" ");
+    guidance.push(`Fix the questioning in ${excerpt(questions || reply)}: keep at most the one permitted useful question, or none when questions were declined.`);
+  }
+  if (violations.includes("LISTEN_ADVICE") || violations.includes("EXPLICIT_NO_ADVICE") || violations.includes("REJECTED_APPROACH") || violations.includes("REASSESSMENT_REQUIRED") || violations.includes("REGULATE_DEFAULT_BREATHING") || violations.includes("REGULATE_TECHNIQUE_MENU")) {
+    guidance.push(`Remove the unsolicited, rejected, or repeated technique from ${excerpt(reply)} and stay with the user's current request.`);
+  }
+  if (violations.includes("UNNECESSARY_LIST_STRUCTURE") || violations.includes("OPTION_OVERLOAD") || violations.includes("EXCESSIVE_DIRECT_HELP")) {
+    guidance.push(`Condense the over-structured or overloaded passage ${excerpt(reply)} to one immediately useful point in conversational prose.`);
+  }
+  if (violations.includes("SCRIPT_STYLE_MISMATCH")) {
+    guidance.push(`Rewrite ${excerpt(reply)} without introducing Devanagari; preserve the user's Latin-script choice.`);
+  }
+  if (violations.includes("INTERNAL_SYSTEM_TERMINOLOGY") || violations.includes("UNAUTHORIZED_SAFETY_ASSESSMENT")) {
+    guidance.push(`Remove the internal-routing or unauthorized safety language from ${excerpt(reply)} and answer at the user-facing level.`);
+  }
+  if (guidance.length === 0) {
+    guidance.push(`Rewrite the problematic wording in ${excerpt(reply)} while preserving only grounded, current-conversation content.`);
+  }
+  const finalConstraint = factMirroring || grounding.length > 0
+    ? " For this rewrite, use one sentence that does not begin with ‘that,’ ‘this,’ ‘it,’ ‘you,’ or ‘your’; do not describe or evaluate the reported event. A neutral acknowledgement, invitation to continue, or necessary fact question is enough."
+    : "";
+  const adviceConstraint = listenAdvice
+    ? " For this LISTEN rewrite, do not mention correcting, addressing, documenting, planning, responding, options, or what to do next. Use only a neutral acknowledgement, an invitation to keep talking, or one missing-fact question."
+    : "";
+  return `Rewrite once, concisely. ${guidance.slice(0, 4).join(" ")} Keep the same helpful intent, but do not add a new evaluation (such as unfair, difficult, rough, serious, significant, or worth addressing), advice, action, emotion, or meaning that the user did not state.${finalConstraint}${adviceConstraint} Do not explain the rewrite or mention internal policy.`;
 }
 
 function asksAboutExternalAction(input: NormalizedConversationInput): boolean {
@@ -145,6 +203,7 @@ export async function generateMomoResponseWithGenerator(
   });
   let retryInstruction = "";
   let lastViolations: string[] = [];
+  let lastReply = "";
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const reply = await generator({
       instructions: retryInstruction
@@ -154,12 +213,15 @@ export async function generateMomoResponseWithGenerator(
       messageText: input.messageText,
     });
     const truthfulReply = enforceBackendActionTruthfulness(reply);
+    lastReply = truthfulReply;
     const violations = responseViolations(truthfulReply, input, decision);
     if (violations.length === 0) return truthfulReply;
     lastViolations = violations;
     const partition = partitionResponseViolations(violations);
-    retryInstruction = `Rewrite once, concisely. Fix hard constraints [${partition.hard.join(", ") || "none"}] and style constraints [${partition.style.join(", ") || "none"}]. Keep the same helpful intent and use only grounded conversation context. Do not explain the rewrite or mention internal policy.`;
+    if (attempt === 1 && partition.hard.length === 0) return truthfulReply;
+    retryInstruction = repairInstruction(truthfulReply, violations, input);
   }
+  if (partitionResponseViolations(lastViolations).hard.length === 0) return lastReply;
   const fallback = enforceBackendActionTruthfulness(await safeMomoFallback(input, decision));
   const fallbackViolations = responseViolations(fallback, input, decision);
   const hardFallbackViolations = partitionResponseViolations(fallbackViolations).hard;

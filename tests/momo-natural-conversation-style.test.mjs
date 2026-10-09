@@ -407,6 +407,6 @@ test("AI honesty and PCT assumption protection remain part of the natural style"
   assert.match(prompt, /Natural wording never permits invented emotion, motive, diagnosis, hidden meaning/i);
   assert.match(prompt, /personal experience, human feelings, a body, or physical presence/i);
   assert.match(prompt, /Do not claim to know exactly how the user feels/i);
-  assert.match(prompt, /USER-STATED facts, emotions, concerns, and preferences/i);
-  assert.match(prompt, /UNKNOWN emotions, motives, diagnoses, meanings, and hidden causes must not be invented/i);
+  assert.match(prompt, /Use only facts, emotions, meanings, preferences, motives, and causal connections the user explicitly established/i);
+  assert.match(prompt, /Do not infer why an event matters, how it affected the user/i);
 });

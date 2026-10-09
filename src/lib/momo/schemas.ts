@@ -199,10 +199,24 @@ export const userCorrectionSchema = z.object({
 }).strict();
 export type UserCorrection = z.infer<typeof userCorrectionSchema>;
 
+export const CONTINUITY_SOURCES = ["EXPLICIT_USER", "INFERRED", "SYSTEM"] as const;
+export const continuitySourceSchema = z.enum(CONTINUITY_SOURCES);
+export type ContinuitySource = z.infer<typeof continuitySourceSchema>;
+
+export const continuityProvenanceSchema = z.object({
+  currentGoal: continuitySourceSchema,
+  currentSupportMode: continuitySourceSchema.optional(),
+  primaryNeed: continuitySourceSchema.optional(),
+  supportPreference: continuitySourceSchema.optional(),
+}).strict();
+
 export const conversationContinuityStateSchema = z.object({
   version: z.literal(1),
   currentSupportMode: supportModeSchema.optional(),
   currentGoal: continuityGoalSchema,
+  currentPrimaryNeed: primaryNeedSchema.optional(),
+  supportPreference: supportModeSchema.exclude(["UNCLEAR"]).optional(),
+  provenance: continuityProvenanceSchema.default({ currentGoal: "INFERRED" }),
   explicitPreferences: z.array(continuityPreferenceSchema).max(8),
   rejectedApproaches: z.array(interventionApproachSchema).max(9),
   recentInterventions: z.array(interventionOutcomeRecordSchema).max(8),

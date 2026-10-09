@@ -6,6 +6,7 @@ const {
   buildGeminiResponseRequest,
   buildOpenAIResponseRequest,
   generateMomoTextWithProvider,
+  assertMomoResponseModel,
   resolveMomoTextConfig,
 } = await import("../src/server/momo/textProvider.ts");
 
@@ -45,6 +46,11 @@ test("provider selection defaults to OpenAI and has an explicit Gemini rollback"
     model: "gemini-test",
   });
   assert.throws(() => resolveMomoTextConfig({ MOMO_TEXT_PROVIDER: "other" }), /openai or gemini/);
+  assert.doesNotThrow(() => assertMomoResponseModel({ provider: "openai", model: "gpt-5.6-luna" }));
+  assert.throws(
+    () => assertMomoResponseModel({ provider: "openai", model: "gpt-5.1" }),
+    /must use gpt-5\.6-luna; received gpt-5\.1/
+  );
 });
 
 test("Responses API mapping preserves instructions and bounded conversation exactly", () => {
