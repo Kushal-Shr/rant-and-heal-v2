@@ -133,7 +133,7 @@ export function detectOfferedInterventionApproaches(text: string): InterventionA
 }
 
 function detectOutcome(text: string): InterventionOutcome | null {
-  if (/\b(?:made|makes|making) (?:me (?:feel )?|it |things )?(?:worse|dizzy|more anxious|uncomfortable|panicky)\b|\bstresses me out more\b|\bfeel(?:s|ing)? (?:worse|bad)\b|\bmore uncomfortable\b/i.test(text)) {
+  if (/\b(?:make|made|makes|making) (?:me (?:feel )?|it |things )?(?:worse|dizzy|more anxious|uncomfortable|panicky)\b|\bstresses me out more\b|\bfeel(?:s|ing)? (?:worse|bad)\b|\bmore uncomfortable\b/i.test(text)) {
     return "WORSE";
   }
   if (/\b(?:nothing|not much) changed\b|\b(?:did not|didn['’]t|does not|doesn['’]t|is not|isn['’]t) (?:help(?:ing|ed)?|doing anything)\b|\b(?:feel|felt) (?:exactly )?the same\b/i.test(text)) {

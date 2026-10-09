@@ -16,17 +16,22 @@ import {
   notifySafetySupport,
   safetySupportNotificationsEnabled,
 } from "@/src/server/safety/notifications";
-import type { MomoLiveBootstrap } from "@/src/server/momo/liveSession";
+import {
+  buildMomoLiveOpeningInstruction,
+  type MomoLiveBootstrap,
+} from "@/src/server/momo/liveSession";
 
 const SIDEBAND_OPEN_TIMEOUT_MS = 5_000;
 const TRANSCRIPT_SETTLE_MS = 180;
 const HEARTBEAT_MS = 5_000;
 const MAX_TRANSCRIPT_CHARS = 8_000;
+const THINKING_UPDATE_DELAY_MS = 750;
 
 interface LiveEvent {
   type?: string;
   delta?: string;
   end_ms?: number;
+  client_event_id?: string;
   delegation?: { id?: string; target?: string };
   error?: { message?: string };
 }
@@ -40,6 +45,11 @@ interface VoiceSessionState {
 }
 
 const monitors = new Map<string, MomoLiveSideband>();
+const conversationMonitors = new Map<string, MomoLiveSideband>();
+
+function conversationMonitorKey(userId: string, conversationId: string): string {
+  return `${userId}:${conversationId}`;
+}
 
 function boundedAppend(current: string, delta: string): string {
   return `${current}${delta}`.slice(-MAX_TRANSCRIPT_CHARS);
@@ -65,7 +75,12 @@ class MomoLiveSideband {
   private interruptVersion = 0;
   private lastSafetyFingerprint = "";
   private truthfulnessInterrupted = false;
+  private openingSent = false;
+  private openingEventId: string | null = null;
+  private progressIndex = 0;
+  private readonly progressTimers = new Map<string, NodeJS.Timeout>();
   private closed = false;
+  private readonly conversationKey: string;
 
   constructor(
     private readonly providerSessionId: string,
@@ -76,8 +91,9 @@ class MomoLiveSideband {
     this.history = [...bootstrap.history];
     this.continuityState = bootstrap.continuityState;
     this.safetyEvaluation = bootstrap.safetyEvaluation;
+    this.conversationKey = conversationMonitorKey(bootstrap.userId, bootstrap.conversationId);
     this.sessionRef = getAdminDb().collection("users").doc(bootstrap.userId)
-      .collection("sessions").doc(bootstrap.sessionId);
+      .collection("sessions").doc(bootstrap.conversationId);
     this.socket = new WebSocket(
       `wss://api.openai.com/v1/live/sessions/${encodeURIComponent(providerSessionId)}/attach`,
       { headers: {
@@ -117,10 +133,24 @@ class MomoLiveSideband {
       interruptVersion: this.interruptVersion,
     }, true);
     this.heartbeat = setInterval(() => {
-      void this.sessionRef.set({
-        liveVoice: { monitorHeartbeatAt: FieldValue.serverTimestamp() },
-      }, { merge: true });
+      void this.refreshHeartbeat();
     }, HEARTBEAT_MS);
+  }
+
+  replaceForReconnect(): void {
+    if (this.closed) return;
+    this.closed = true;
+    if (this.heartbeat) clearInterval(this.heartbeat);
+    if (this.safetyTimer) clearTimeout(this.safetyTimer);
+    this.clearAllThinkingUpdates();
+    monitors.delete(this.providerSessionId);
+    if (conversationMonitors.get(this.conversationKey) === this) {
+      conversationMonitors.delete(this.conversationKey);
+    }
+    if (this.socket.readyState === WebSocket.OPEN) {
+      this.socket.send(JSON.stringify({ type: "session.close", event_id: eventId("reconnect") }));
+    }
+    this.socket.close();
   }
 
   private onMessage(raw: string): void {
@@ -130,8 +160,19 @@ class MomoLiveSideband {
     } catch {
       return;
     }
+    if (event.type === "session.started") {
+      this.sendOpeningOnce();
+      return;
+    }
+    if (event.type === "session.instructions.appended" &&
+        event.client_event_id === this.openingEventId) {
+      this.openingEventId = null;
+      return;
+    }
     if (event.type === "session.input_transcript.delta" && typeof event.delta === "string") {
-      if (this.assistantTranscript.trim()) void this.persistAssistantTranscript();
+      // Assistant speech is display-only here. The backend-approved response
+      // is persisted atomically with its user turn during delegation.
+      this.assistantTranscript = "";
       this.truthfulnessInterrupted = false;
       this.userTranscript = boundedAppend(this.userTranscript, event.delta);
       this.safetyRevision += 1;
@@ -150,9 +191,14 @@ class MomoLiveSideband {
     }
     if (event.type === "session.delegation.created" && event.delegation?.target === "client" && event.delegation.id) {
       const delegationId = event.delegation.id;
+      this.scheduleThinkingUpdate(delegationId);
       this.enqueue(async () => {
-        await new Promise((resolve) => setTimeout(resolve, TRANSCRIPT_SETTLE_MS));
-        await this.processDelegation(delegationId);
+        try {
+          await new Promise((resolve) => setTimeout(resolve, TRANSCRIPT_SETTLE_MS));
+          await this.processDelegation(delegationId);
+        } finally {
+          this.clearThinkingUpdate(delegationId);
+        }
       });
       return;
     }
@@ -169,6 +215,18 @@ class MomoLiveSideband {
     this.work = this.work.then(task, task).catch((error) => {
       console.error("MOMO LIVE SIDEBAND WORK ERROR:", error);
       return this.failClosed("Trusted voice processing failed.");
+    });
+  }
+
+  private sendOpeningOnce(): void {
+    if (this.openingSent) return;
+    this.openingSent = true;
+    this.openingEventId = eventId("momo_opening");
+    this.send({
+      type: "session.instructions.append",
+      event_id: this.openingEventId,
+      delegation_id: null,
+      content: buildMomoLiveOpeningInstruction(this.bootstrap),
     });
   }
 
@@ -212,6 +270,10 @@ class MomoLiveSideband {
       });
       return;
     }
+    if (!await this.isCurrentConnection()) {
+      this.replaceForReconnect();
+      return;
+    }
 
     const input = this.inputFor(messageText);
     const outcome = await orchestrateMomoTurn(input, {
@@ -237,12 +299,27 @@ class MomoLiveSideband {
     ].slice(-12);
     const messageId = crypto.randomUUID();
     await this.sessionRef.firestore.runTransaction(async (transaction) => {
+      const conversation = await transaction.get(this.sessionRef);
+      if (conversation.data()?.liveVoice?.connectionId !== this.providerSessionId) {
+        throw new Error("This GPT-Live connection was replaced by a newer connection.");
+      }
       transaction.set(this.sessionRef.collection("messages").doc(`${messageId}-user`), {
         text: messageText,
         sender: "USER",
         source: "VOICE",
+        modality: "VOICE",
         provenance: "SERVER_LIVE_SIDEBAND",
         order: 0,
+        timestamp: FieldValue.serverTimestamp(),
+      });
+      transaction.set(this.sessionRef.collection("messages").doc(`${messageId}-momo`), {
+        text: outcome.message,
+        sender: "MOMO",
+        source: "VOICE",
+        modality: "VOICE",
+        provenance: "SERVER_LIVE_SIDEBAND",
+        order: 1,
+        continuityMetadata: finalized.metadata,
         timestamp: FieldValue.serverTimestamp(),
       });
       transaction.set(this.sessionRef, {
@@ -260,6 +337,47 @@ class MomoLiveSideband {
     });
   }
 
+  private scheduleThinkingUpdate(delegationId: string): void {
+    this.clearThinkingUpdate(delegationId);
+    const timer = setTimeout(() => {
+      this.progressTimers.delete(delegationId);
+      if (this.closed || this.socket.readyState !== WebSocket.OPEN) return;
+      try {
+        this.sendThinkingUpdate(delegationId);
+      } catch (error) {
+        console.error("MOMO LIVE THINKING UPDATE ERROR:", error);
+      }
+    }, THINKING_UPDATE_DELAY_MS);
+    this.progressTimers.set(delegationId, timer);
+  }
+
+  private clearThinkingUpdate(delegationId: string): void {
+    const timer = this.progressTimers.get(delegationId);
+    if (timer) clearTimeout(timer);
+    this.progressTimers.delete(delegationId);
+  }
+
+  private clearAllThinkingUpdates(): void {
+    for (const timer of this.progressTimers.values()) clearTimeout(timer);
+    this.progressTimers.clear();
+  }
+
+  private sendThinkingUpdate(delegationId: string): void {
+    const updates = [
+      "You are still present with the caller and are taking a moment to think carefully about what they said.",
+      "You are taking a brief moment so you can respond thoughtfully to the caller.",
+      "You are still with the caller and are considering their words before you respond.",
+    ];
+    const content = updates[this.progressIndex % updates.length];
+    this.progressIndex += 1;
+    this.send({
+      type: "session.commentary.append",
+      event_id: eventId("momo_thinking_update"),
+      delegation_id: delegationId,
+      content,
+    });
+  }
+
   private async handleSafety(
     userText: string,
     evaluation: SafetyEvaluation,
@@ -269,6 +387,7 @@ class MomoLiveSideband {
     const fingerprint = `${userText}\n${evaluation.state}\n${evaluation.assessmentStep}`;
     const isNewSafetyTurn = fingerprint !== this.lastSafetyFingerprint;
     this.safetyEvaluation = evaluation;
+    this.clearAllThinkingUpdates();
     if (!isNewSafetyTurn) return;
     this.lastSafetyFingerprint = fingerprint;
     this.interruptVersion += 1;
@@ -290,7 +409,7 @@ class MomoLiveSideband {
       const safetyEventId = await recordMomoSafetyEvent({
         db: this.sessionRef.firestore,
         userId: this.bootstrap.userId,
-        sessionId: this.bootstrap.sessionId,
+        sessionId: this.bootstrap.conversationId,
         userText,
         source: "VOICE",
         evaluation,
@@ -353,20 +472,6 @@ class MomoLiveSideband {
     });
   }
 
-  private async persistAssistantTranscript(): Promise<void> {
-    const text = this.assistantTranscript.trim();
-    this.assistantTranscript = "";
-    if (!text) return;
-    await this.sessionRef.collection("messages").doc().set({
-      text,
-      sender: "MOMO",
-      source: "VOICE",
-      provenance: "SERVER_LIVE_SIDEBAND_TRANSCRIPT",
-      order: 1,
-      timestamp: FieldValue.serverTimestamp(),
-    });
-  }
-
   private send(payload: Record<string, unknown>): void {
     if (this.socket.readyState !== WebSocket.OPEN) {
       throw new Error("Momo Live safety sideband is not open.");
@@ -374,17 +479,51 @@ class MomoLiveSideband {
     this.socket.send(JSON.stringify(payload));
   }
 
+  private async isCurrentConnection(): Promise<boolean> {
+    const conversation = await this.sessionRef.get();
+    return conversation.data()?.liveVoice?.connectionId === this.providerSessionId;
+  }
+
+  private async refreshHeartbeat(): Promise<void> {
+    let replaced = false;
+    await this.sessionRef.firestore.runTransaction(async (transaction) => {
+      const conversation = await transaction.get(this.sessionRef);
+      if (conversation.data()?.liveVoice?.connectionId !== this.providerSessionId) {
+        replaced = true;
+        return;
+      }
+      transaction.set(this.sessionRef, {
+        liveVoice: { monitorHeartbeatAt: FieldValue.serverTimestamp() },
+      }, { merge: true });
+    }).catch((error) => {
+      console.error("MOMO LIVE HEARTBEAT ERROR:", error);
+    });
+    if (replaced) this.replaceForReconnect();
+  }
+
   private async writeState(state: VoiceSessionState, started = false): Promise<void> {
-    await this.sessionRef.set({
+    const update = {
       liveVoice: {
         provider: "openai",
         model: "gpt-live-1",
+        connectionId: this.providerSessionId,
         ...state,
         ...(started ? { startedAt: FieldValue.serverTimestamp() } : {}),
         monitorHeartbeatAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
       },
-    }, { merge: true });
+    };
+    if (started) {
+      await this.sessionRef.set(update, { merge: true });
+      return;
+    }
+    await this.sessionRef.firestore.runTransaction(async (transaction) => {
+      const conversation = await transaction.get(this.sessionRef);
+      if (conversation.data()?.liveVoice?.connectionId !== this.providerSessionId) {
+        throw new Error("This GPT-Live connection was replaced by a newer connection.");
+      }
+      transaction.set(this.sessionRef, update, { merge: true });
+    });
   }
 
   private async failClosed(reason: string): Promise<void> {
@@ -392,14 +531,22 @@ class MomoLiveSideband {
     this.closed = true;
     if (this.heartbeat) clearInterval(this.heartbeat);
     if (this.safetyTimer) clearTimeout(this.safetyTimer);
+    this.clearAllThinkingUpdates();
     monitors.delete(this.providerSessionId);
-    await this.sessionRef.set({
-      liveVoice: {
-        monitorStatus: "FAILED",
-        failureReason: reason,
-        updatedAt: FieldValue.serverTimestamp(),
-      },
-    }, { merge: true }).catch(() => undefined);
+    if (conversationMonitors.get(this.conversationKey) === this) {
+      conversationMonitors.delete(this.conversationKey);
+    }
+    await this.sessionRef.firestore.runTransaction(async (transaction) => {
+      const conversation = await transaction.get(this.sessionRef);
+      if (conversation.data()?.liveVoice?.connectionId !== this.providerSessionId) return;
+      transaction.set(this.sessionRef, {
+        liveVoice: {
+          monitorStatus: "FAILED",
+          failureReason: reason,
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+      }, { merge: true });
+    }).catch(() => undefined);
     if (this.socket.readyState === WebSocket.OPEN) {
       this.socket.send(JSON.stringify({ type: "session.close", event_id: eventId("fail_closed") }));
     }
@@ -411,15 +558,22 @@ class MomoLiveSideband {
     this.closed = true;
     if (this.heartbeat) clearInterval(this.heartbeat);
     if (this.safetyTimer) clearTimeout(this.safetyTimer);
+    this.clearAllThinkingUpdates();
     monitors.delete(this.providerSessionId);
-    await this.persistAssistantTranscript().catch(() => undefined);
-    await this.sessionRef.set({
-      liveVoice: {
-        monitorStatus: "CLOSED",
-        endedAt: FieldValue.serverTimestamp(),
-        updatedAt: FieldValue.serverTimestamp(),
-      },
-    }, { merge: true });
+    if (conversationMonitors.get(this.conversationKey) === this) {
+      conversationMonitors.delete(this.conversationKey);
+    }
+    await this.sessionRef.firestore.runTransaction(async (transaction) => {
+      const conversation = await transaction.get(this.sessionRef);
+      if (conversation.data()?.liveVoice?.connectionId !== this.providerSessionId) return;
+      transaction.set(this.sessionRef, {
+        liveVoice: {
+          monitorStatus: "CLOSED",
+          endedAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+      }, { merge: true });
+    });
     this.socket.close();
   }
 }
@@ -432,6 +586,11 @@ export async function attachMomoLiveSideband(options: {
 }): Promise<void> {
   const existing = monitors.get(options.providerSessionId);
   if (existing) return;
+  const conversationKey = conversationMonitorKey(
+    options.bootstrap.userId,
+    options.bootstrap.conversationId
+  );
+  conversationMonitors.get(conversationKey)?.replaceForReconnect();
   const monitor = new MomoLiveSideband(
     options.providerSessionId,
     options.apiKey,
@@ -439,10 +598,14 @@ export async function attachMomoLiveSideband(options: {
     options.bootstrap
   );
   monitors.set(options.providerSessionId, monitor);
+  conversationMonitors.set(conversationKey, monitor);
   try {
     await monitor.open();
   } catch (error) {
     monitors.delete(options.providerSessionId);
+    if (conversationMonitors.get(conversationKey) === monitor) {
+      conversationMonitors.delete(conversationKey);
+    }
     throw error;
   }
 }

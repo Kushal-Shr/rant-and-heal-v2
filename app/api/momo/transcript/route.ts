@@ -4,7 +4,7 @@ import { z } from "zod";
 import { verifyFirebaseBearerToken } from "@/src/server/auth";
 import { getErrorMessage } from "@/src/server/errors";
 import { getAdminDb } from "@/src/server/firebaseAdmin";
-import { MomoAccessError, consumeQuota, requireOwnedSession } from "@/src/server/momo/access";
+import { MomoAccessError, consumeQuota, requireOwnedConversation } from "@/src/server/momo/access";
 import { assessMomoSafety, recordMomoSafetyEvent } from "@/src/server/momo/safety";
 import { combineSafetyAssessments } from "@/src/lib/safety/detector";
 import { safetyResponseFor } from "@/src/lib/safety/responses";
@@ -14,7 +14,7 @@ import { notifySafetySupport, safetySupportNotificationsEnabled } from "@/src/se
 export const runtime = "nodejs";
 const schema = z.object({
   userId: z.string().trim().min(1).max(128),
-  sessionId: z.string().trim().min(1).max(128),
+  conversationId: z.string().trim().min(1).max(128),
   requestId: z.string().uuid(),
   sender: z.enum(["USER", "MOMO"]),
   text: z.string().trim().min(1).max(8000),
@@ -26,11 +26,12 @@ export async function POST(request: NextRequest) {
     if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     const parsed = schema.safeParse(await request.json().catch(() => null));
     if (!parsed.success) return NextResponse.json({ error: "Invalid transcript request" }, { status: 400 });
-    const { userId, sessionId, requestId, sender, text } = parsed.data;
+    const { userId, conversationId, requestId, sender, text } = parsed.data;
+    const sessionId = conversationId;
     if (token.uid !== userId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const db = getAdminDb();
-    const sessionRef = await requireOwnedSession(db, userId, sessionId);
+    const sessionRef = await requireOwnedConversation(db, userId, conversationId);
     await consumeQuota({ db, userId, key: "momo_transcript_minute", limit: 60, windowMs: 60_000 });
     const safety = sender === "USER" ? assessMomoSafety(text) : assessMomoSafety("");
 
@@ -71,6 +72,7 @@ export async function POST(request: NextRequest) {
       text,
       sender,
       source: "VOICE",
+      modality: "VOICE",
       provenance: "CLIENT_LIVE_TRANSCRIPT",
       timestamp: FieldValue.serverTimestamp(),
     });

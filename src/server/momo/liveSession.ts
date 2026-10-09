@@ -14,6 +14,7 @@ import type {
   ConversationTurn,
   MomoDecision,
 } from "@/src/lib/momo/schemas";
+import { safetyResponseFor } from "@/src/lib/safety/responses";
 import { safetyEvaluationSchema, type SafetyEvaluation } from "@/src/lib/safety/schemas";
 import { MOMO_SYSTEM_INSTRUCTION } from "@/src/server/momo/persona";
 
@@ -32,7 +33,7 @@ export const momoLiveOfferSchema = z.string()
 
 export interface MomoLiveBootstrap {
   userId: string;
-  sessionId: string;
+  conversationId: string;
   history: ConversationTurn[];
   continuityState: ConversationContinuityState;
   safetyEvaluation?: SafetyEvaluation;
@@ -82,6 +83,33 @@ function startupDecision(bootstrap: MomoLiveBootstrap): MomoDecision {
   }, bootstrap.safetyEvaluation?.state ?? "NORMAL");
 }
 
+export function buildMomoLiveOpeningInstruction(bootstrap: MomoLiveBootstrap): string {
+  const latestUserText = [...bootstrap.history].reverse().find((turn) => turn.role === "USER")?.text;
+  if (bootstrap.safetyEvaluation && bootstrap.safetyEvaluation.state !== "NORMAL") {
+    const response = safetyResponseFor(bootstrap.safetyEvaluation, { messageText: latestUserText });
+    return [
+      "Begin speaking immediately and continue the application's active safety flow.",
+      `Say exactly this, with a calm direct delivery and no additions: ${JSON.stringify(response)}`,
+      "Then pause and listen.",
+    ].join(" ");
+  }
+  if (bootstrap.history.length === 0) {
+    return [
+      "Begin speaking immediately. This is a new conversation.",
+      "Greet the caller warmly as Momo in one brief sentence and invite them to share what is on their mind.",
+      "Use English unless the caller's language is already known. This opening is not a substantive support response, so do not delegate it.",
+      "Then pause and listen.",
+    ].join(" ");
+  }
+  return [
+    "Begin speaking immediately in the language used in the completed conversation history.",
+    "Continue the existing conversation instead of greeting as though it were new.",
+    "Use the saved context to pick up the latest unresolved topic or question in one or two natural spoken sentences and invite the caller to continue.",
+    "Do not summarize, replay, quote, or reveal the hidden history, and do not invent details or feelings.",
+    "This opening is not a substantive support response, so do not delegate it. Then pause and listen.",
+  ].join(" ");
+}
+
 export function buildMomoLiveSessionRequest(offerSdp: string, bootstrap: MomoLiveBootstrap) {
   const decision = startupDecision(bootstrap);
   const latestUserText = [...bootstrap.history].reverse().find((turn) => turn.role === "USER")?.text;
@@ -90,7 +118,21 @@ export function buildMomoLiveSessionRequest(offerSdp: string, bootstrap: MomoLiv
     participant: bootstrap.participant,
     recentUserText: latestUserText,
   });
-  const input = bootstrap.history.slice(-HISTORY_LIMIT).map((turn) => ({
+  const trustedConversationContext = {
+    type: "message" as const,
+    role: "developer" as const,
+    status: "completed" as const,
+    content: [{
+      type: "input_text" as const,
+      text: [
+        "Trusted Rant & Heal conversation checkpoint. Use this only as silent context; never read it aloud, replay it, or summarize it. A separate trusted opening instruction will tell you whether to greet or continue.",
+        `Authoritative safety state: ${bootstrap.safetyEvaluation?.state ?? "NORMAL"}.`,
+        `Safety target: ${bootstrap.safetyEvaluation?.safetyTarget ?? "NONE"}.`,
+        "No external service, person, or handoff is confirmed unless the application explicitly supplies a confirmed result during this connection.",
+      ].join(" "),
+    }],
+  };
+  const priorMessages = bootstrap.history.slice(-HISTORY_LIMIT).map((turn) => ({
     type: "message" as const,
     role: turn.role === "MOMO" ? "assistant" as const : "user" as const,
     status: "completed" as const,
@@ -99,6 +141,7 @@ export function buildMomoLiveSessionRequest(offerSdp: string, bootstrap: MomoLiv
       text: turn.text,
     }],
   }));
+  const input = [trustedConversationContext, ...priorMessages];
 
   return {
     policy: voicePolicy,
@@ -108,7 +151,7 @@ export function buildMomoLiveSessionRequest(offerSdp: string, bootstrap: MomoLiv
         instructions: voicePolicy.instructions,
         input,
         store: false,
-        audio: { output: { voice: process.env.MOMO_VOICE_NAME ?? "marin" } },
+        audio: { output: { voice: process.env.MOMO_VOICE_NAME ?? "willow" } },
         delegation: { type: "client" },
         client: {
           data_channel: {
@@ -169,12 +212,12 @@ export function parseLiveBootstrapState(raw: {
   continuityState: unknown;
   safetyEvaluation: unknown;
   userId: string;
-  sessionId: string;
+  conversationId: string;
   participant?: ConversationParticipant;
 }): MomoLiveBootstrap {
   return {
     userId: raw.userId,
-    sessionId: raw.sessionId,
+    conversationId: raw.conversationId,
     history: raw.history.slice(-HISTORY_LIMIT),
     continuityState: parseConversationContinuityState(raw.continuityState),
     safetyEvaluation: safetyEvaluationSchema.safeParse(raw.safetyEvaluation).data,

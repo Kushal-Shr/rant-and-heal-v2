@@ -6,11 +6,11 @@ export class MomoAccessError extends Error {
   }
 }
 
-export async function requireOwnedSession(db: Firestore, userId: string, sessionId: string) {
-  const sessionRef = db.collection("users").doc(userId).collection("sessions").doc(sessionId);
-  const snapshot = await sessionRef.get();
+export async function requireOwnedConversation(db: Firestore, userId: string, conversationId: string) {
+  const conversationRef = db.collection("users").doc(userId).collection("sessions").doc(conversationId);
+  const snapshot = await conversationRef.get();
   if (!snapshot.exists) throw new MomoAccessError("Conversation was not found", 404);
-  return sessionRef;
+  return conversationRef;
 }
 
 export async function consumeQuota(options: {
