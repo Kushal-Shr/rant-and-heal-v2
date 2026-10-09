@@ -1,4 +1,6 @@
 import { getGeminiClient, SAFETY_CLASSIFIER_MODEL } from "@/src/server/momo/gemini";
+import { THINKING_LEVELS } from "@/src/lib/ai/models";
+import { thinkingConfigFor } from "@/src/server/momo/thinkingConfig";
 import {
   modelRiskAssessmentSchema,
   type ModelRiskAssessment,
@@ -15,6 +17,7 @@ export async function classifySafetyRisk(text: string): Promise<ModelRiskAssessm
       model: SAFETY_CLASSIFIER_MODEL,
       contents: [{ role: "user", parts: [{ text }]}],
       config: {
+        thinkingConfig: thinkingConfigFor(THINKING_LEVELS.SAFETY_CLASSIFIER, SAFETY_CLASSIFIER_MODEL),
         responseMimeType: "application/json",
         responseJsonSchema: {
           type: "object",

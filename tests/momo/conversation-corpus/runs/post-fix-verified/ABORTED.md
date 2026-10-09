@@ -1,0 +1,1 @@
+This incomplete trial was stopped after attribution tests showed the fictional-quotation parser also needed to preserve a user's explicit identification with a quoted character. Saved artifacts remain, but this trial is excluded from the final comparison. The final full comparison run is `post-fix-complete`.

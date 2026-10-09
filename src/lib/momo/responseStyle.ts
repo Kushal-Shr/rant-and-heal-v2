@@ -1,4 +1,5 @@
 import type { MomoDecision, NormalizedConversationInput } from "./schemas.ts";
+import { groundingViolations, type GroundingViolation } from "./grounding.ts";
 
 const INTERNAL_TERM_PATTERNS = [
   ["CBT", /\bCBT\b/i],
@@ -10,7 +11,7 @@ const INTERNAL_TERM_PATTERNS = [
   ["intervention", /\binterventions?\b|हस्तक्षेप/i],
   ["escalation state", /\bescalation\s+state\b|एस्केलेसन अवस्था/i],
   ["support mode", /\bsupport\s+mode\b|सहायता मोड/i],
-  ["human review", /\bhuman\s+review\b|मानव समीक्षा/i],
+  ["human review", /\bhuman[-\s]+review(?:er)?\b|मानव समीक्षा/i],
   ["therapeutic routing", /\b(?:therapeutic\s+routing|routing\s+decision)\b|चिकित्सकीय रूटिङ/i],
 ] as const;
 
@@ -21,7 +22,44 @@ const BREATHING = /\b(?:breath(?:e|ing)?|deep breaths?)\b|सास|saas/i;
 const LISTEN_ADVICE = /(?:^|[.!?]\s+)(?:you should|you need to|(?:maybe\s+)?try\b|start by\b|make sure\b|first,?\s)/i;
 const CANNED_GREETING = /^(?:hi there|hello)[!.]?\s+(?:how can i help|what would you like to talk about)/i;
 const GREETING_OPENING = /^(?:hey+|hi|hello)\b/i;
-const CONFIDENT_EMOTION_ASSIGNMENT = /\byou(?:['’]re|\s+(?:sound|seem|must be|must feel|are|are probably|are clearly|feel))\s+(?:really\s+|very\s+)?(frustrated|angry|anxious|afraid|scared|ashamed|embarrassed|betrayed|lonely|sad|devastated|overwhelmed|confused|irritated)\b/i;
+const DEVANAGARI = /[\u0900-\u097f]/u;
+const ROMANIZED_NEPALI = /\b(?:aba|aaja|ahile|bhayo|bhana|bujhe|cha|chha|chhoda|deu|dinus|dherai|gara|garna|hai|kura|malai|mero|nadeu|nadinu|pugyo|sabai|suna|timi|timro)\b/i;
+const ENGLISH_SIGNAL = /\b(?:advice|actually|and|do|feel|help|i|just|let|me|now|okay|please|should|start|stop|tell|the|what|work)\b/i;
+const UNAUTHORIZED_SAFETY_QUESTION = /(?:\b(?:are|do)\s+you\b.{0,60}\b(?:immediate\s+danger|safe\s+right\s+now|hurt(?:ing)?\s+yourself|kill(?:ing)?\s+yourself|suicid(?:e|al)|self[- ]?harm)\b|\b(?:thinking|thoughts?)\b.{0,40}\b(?:hurt(?:ing)?\s+yourself|kill(?:ing)?\s+yourself|suicid(?:e|al)|self[- ]?harm)\b)[^?]*\?/i;
+
+export type ConversationLanguageStyle =
+  | "ENGLISH"
+  | "NEPALI_DEVANAGARI"
+  | "NEPALI_ROMANIZED"
+  | "MIXED_EN_ROMANIZED"
+  | "MIXED_EN_DEVANAGARI";
+
+export function detectConversationLanguageStyle(text: string): ConversationLanguageStyle {
+  const hasDevanagari = DEVANAGARI.test(text);
+  const latinText = text.replace(/[\u0900-\u097f]/gu, " ");
+  const hasEnglish = ENGLISH_SIGNAL.test(latinText);
+  if (hasDevanagari) return hasEnglish ? "MIXED_EN_DEVANAGARI" : "NEPALI_DEVANAGARI";
+  const hasRomanizedNepali = ROMANIZED_NEPALI.test(text);
+  if (hasRomanizedNepali) return hasEnglish ? "MIXED_EN_ROMANIZED" : "NEPALI_ROMANIZED";
+  return "ENGLISH";
+}
+
+export function languageStyleInstruction(userMessageText: string): string {
+  const style = detectConversationLanguageStyle(userMessageText);
+  if (style === "MIXED_EN_ROMANIZED") {
+    return "Language/script guidance: the current user writes in English mixed with romanized Nepali. Keep any Nepali in Latin script and do not unexpectedly introduce Devanagari. Natural English is acceptable; do not force translation or mimic typos.";
+  }
+  if (style === "NEPALI_ROMANIZED") {
+    return "Language/script guidance: the current user writes Nepali in Latin script. Keep Nepali in Latin script and do not unexpectedly introduce Devanagari. Do not force exact mirroring or mimic typos.";
+  }
+  if (style === "MIXED_EN_DEVANAGARI") {
+    return "Language/script guidance: the current user mixes English with Nepali in Devanagari. Keep that script choice where practical without forcing exact mirroring.";
+  }
+  if (style === "NEPALI_DEVANAGARI") {
+    return "Language/script guidance: the current user writes Nepali in Devanagari. Keep that script choice where practical without forcing exact mirroring.";
+  }
+  return "Language/script guidance: use natural English unless the conversation context clearly calls for another language.";
+}
 
 export function userExplicitlyAsksAboutSystem(messageText: string): boolean {
   return (
@@ -57,13 +95,46 @@ export type ResponseStyleViolation =
   | "REGULATE_DEFAULT_BREATHING"
   | "CANNED_GREETING"
   | "REPEATED_GREETING"
-  | "UNSUPPORTED_EMOTION_INFERENCE";
+  | "EXCESSIVE_DIRECT_HELP"
+  | "UNAUTHORIZED_SAFETY_ASSESSMENT"
+  | "SCRIPT_STYLE_MISMATCH"
+  | "UNNECESSARY_LIST_STRUCTURE"
+  | "REPEATED_FACT_MIRRORING"
+  | GroundingViolation;
 
-function userLanguageContext(input: NormalizedConversationInput): string {
-  return [
-    ...input.history.filter((turn) => turn.role === "USER").slice(-6).map((turn) => turn.text),
-    input.messageText,
-  ].join(" ");
+function structuralListItemCount(candidate: string): number {
+  return candidate.match(/(?:^|\s)(?:[-*]|\d+[.)])\s+/g)?.length ?? 0;
+}
+
+function listWasRequested(messageText: string): boolean {
+  return /\b(?:list|bullet|numbered|steps?|step.by.step|options?|alternatives?|compare|plan)\b/i.test(messageText);
+}
+
+function factTokens(text: string): string[] {
+  const stop = new Set(["a", "an", "and", "are", "for", "i", "in", "is", "it", "me", "my", "of", "on", "or", "that", "the", "this", "to", "was", "we", "with", "you", "your"]);
+  return [...new Set((text.toLowerCase().match(/[a-z0-9']+/g) ?? [])
+    .filter((token) => token.length > 2 && !stop.has(token)))];
+}
+
+function userFactCoverage(response: string, userText: string): number {
+  const userTokens = factTokens(userText);
+  if (userTokens.length < 3) return 0;
+  const responseTokens = new Set(factTokens(response));
+  return userTokens.filter((token) => responseTokens.has(token)).length / userTokens.length;
+}
+
+function repeatsFactMirroring(candidate: string, input: NormalizedConversationInput): boolean {
+  const recent = input.history.slice(-4);
+  const currentCoverage = userFactCoverage(candidate, input.messageText);
+  for (let index = recent.length - 2; index >= 0; index -= 1) {
+    if (recent[index]?.role === "USER" && recent[index + 1]?.role === "MOMO") {
+      const priorWasMirrored = userFactCoverage(recent[index + 1].text, recent[index].text) >= 0.55;
+      if (!priorWasMirrored) continue;
+      if (currentCoverage >= 0.35) return true;
+      if (userFactCoverage(candidate, recent[index].text) >= 0.45) return true;
+    }
+  }
+  return false;
 }
 
 function breathingWasGrounded(input: NormalizedConversationInput): boolean {
@@ -80,17 +151,30 @@ export function responseStyleViolations(
 ): ResponseStyleViolation[] {
   const violations: ResponseStyleViolation[] = [];
   const questionCount = candidate.match(/\?/g)?.length ?? 0;
-  const listItemCount = candidate.match(/(?:^|\n)\s*(?:[-*]|\d+[.)])\s+/g)?.length ?? 0;
+  const listItemCount = structuralListItemCount(candidate);
 
   if (internalUserFacingTerminologyViolations(candidate, input.messageText).length > 0) {
     violations.push("INTERNAL_SYSTEM_TERMINOLOGY");
   }
   if (questionCount > 1) violations.push("TOO_MANY_QUESTIONS");
-  if (decision.supportMode === "UNCLEAR" && questionCount !== 1) {
+  if (decision.safetyState === "NORMAL" && UNAUTHORIZED_SAFETY_QUESTION.test(candidate)) {
+    violations.push("UNAUTHORIZED_SAFETY_ASSESSMENT");
+  }
+  if (decision.supportMode === "UNCLEAR" && decision.shouldClarify && questionCount !== 1) {
     violations.push("UNCLEAR_QUESTION_COUNT");
   }
   if (decision.supportMode === "DIRECT_HELP" && candidate.trimStart().split(/[.!\n]/, 1)[0]?.includes("?")) {
     violations.push("DIRECT_HELP_INTERROGATION");
+  }
+  // Scope-sensitive verbosity signal, never a hard reason to withhold help.
+  // Detailed plans, comparisons, or substantial source text may need more room.
+  const detailedRequest = /\b(?:detailed|comprehensive|step.by.step|compare|alternatives|options|full plan|explain fully|longer)\b/i.test(input.messageText);
+  if (decision.supportMode === "DIRECT_HELP" && input.messageText.split(/\s+/).length <= 40
+      && !detailedRequest && candidate.split(/\s+/).length > 140) {
+    violations.push("EXCESSIVE_DIRECT_HELP");
+  }
+  if (listItemCount > 2 && !listWasRequested(input.messageText)) {
+    violations.push("UNNECESSARY_LIST_STRUCTURE");
   }
   if (decision.supportMode === "LISTEN" && LISTEN_ADVICE.test(candidate)) {
     violations.push("LISTEN_ADVICE");
@@ -103,19 +187,12 @@ export function responseStyleViolations(
   }
   if (CANNED_GREETING.test(candidate)) violations.push("CANNED_GREETING");
   if (input.history.length > 0 && GREETING_OPENING.test(candidate)) violations.push("REPEATED_GREETING");
-
-  const assignedEmotion = candidate.match(CONFIDENT_EMOTION_ASSIGNMENT)?.[1];
-  if (assignedEmotion) {
-    const rejectedByCorrection = input.continuityState?.userCorrections.some(
-      (correction) => correction.rejectedTerm.toLowerCase() === assignedEmotion.toLowerCase()
-    ) ?? false;
-    const explicitlyNegated = new RegExp(`\\b(?:not|never)\\s+(?:really\\s+|very\\s+)?${assignedEmotion}\\b`, "i")
-      .test(input.messageText);
-    const presentInUserLanguage = new RegExp(`\\b${assignedEmotion}\\b`, "i")
-      .test(userLanguageContext(input));
-    if (rejectedByCorrection || explicitlyNegated || !presentInUserLanguage) {
-      violations.push("UNSUPPORTED_EMOTION_INFERENCE");
-    }
+  const languageStyle = detectConversationLanguageStyle(input.messageText);
+  if ((languageStyle === "MIXED_EN_ROMANIZED" || languageStyle === "NEPALI_ROMANIZED") && DEVANAGARI.test(candidate)) {
+    violations.push("SCRIPT_STYLE_MISMATCH");
   }
+  if (repeatsFactMirroring(candidate, input)) violations.push("REPEATED_FACT_MIRRORING");
+
+  violations.push(...groundingViolations(candidate, input));
   return [...new Set(violations)];
 }

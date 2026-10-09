@@ -1,6 +1,20 @@
+export type AIProvider = "gemini" | "openai";
+
+export interface ModelConfig {
+  provider: AIProvider;
+  model: string;
+}
+
+export const AI_MODEL_CONFIGS = {
+  MOMO_RESPONSE: {
+    provider: "openai",
+    model: "gpt-5.1",
+  },
+} as const satisfies Record<"MOMO_RESPONSE", ModelConfig>;
+
 export const AI_MODELS = {
   MOMO_PLANNER: "gemini-3.8-flash",
-  MOMO_RESPONSE: "gemini-3.8-flash",
+  MOMO_RESPONSE: AI_MODEL_CONFIGS.MOMO_RESPONSE.model,
   SAFETY_CLASSIFIER: "gemini-3.8-flash",
   SAFETY_SUPERVISOR: "gemini-3.8-flash",
   MOOD_EXTRACTION: "gemini-3.8-flash",

@@ -12,6 +12,7 @@ import type {
   UserCorrection,
 } from "./schemas.ts";
 import { conversationContinuityStateSchema } from "./schemas.ts";
+import { detectExplicitSupportPreference } from "./supportPreferences.ts";
 
 const MAX_INTERVENTIONS = 8;
 const MAX_CORRECTIONS = 6;
@@ -24,9 +25,9 @@ const APPROACH_PATTERNS: Record<InterventionApproach, RegExp[]> = {
   PMR: [/\bpmr\b/i, /\bprogressive muscle relaxation\b/i, /\b(?:tense|relax|release) (?:your )?(?:muscles|shoulders|jaw|hands)\b/i],
   GUIDED_IMAGERY: [/\bguided imagery\b/i, /\bvisuali[sz](?:e|ation|ing)\b/i, /\bcalm(?:ing)? (?:place|scene)\b/i],
   MINDFUL_PAUSE: [/\bmindful(?:ness)?\b/i, /\bpresent[- ]moment\b/i, /\bnotice (?:the|your) (?:moment|thoughts?|feelings?)\b/i],
-  CBT_RESTRUCTURING: [/\bcbt\b/i, /\bthought record\b/i, /\b(?:challenge|examine|reframe) (?:this|that|the|your|my) thought\b/i],
+  CBT_RESTRUCTURING: [/\bcbt\b/i, /\bthought (?:record|exercise)\b/i, /\b(?:challenge|examine|reframe) (?:this|that|the|your|my) thought\b/i],
   PROBLEM_SOLVING: [/\bproblem[- ]solving\b/i, /\bnext practical step\b/i, /\baction plan\b/i],
-  TASK_LISTING: [/\bbrain dump\b/i, /\btask list\b/i, /\blist(?:ing)? (?:all|everything|every task)\b/i, /\brank (?:all|the|your) tasks?\b/i],
+  TASK_LISTING: [/\bbrain dump\b/i, /\btask list\b/i, /\b(?:making|make|writing|write) a list\b/i, /\blist(?:ing)? (?:all|everything|every task)\b/i, /\brank (?:all|the|your) tasks?\b/i],
   OTHER_REGULATION: [],
 };
 
@@ -36,6 +37,8 @@ const QUESTION_FATIGUE = [
   /\bi (?:do not|don['’]t) want (?:any )?questions?\b/i,
   /\bi (?:do not|don['’]t) want to answer\b/i,
   /\bi['’]?m tired of (?:answering )?questions?\b/i,
+  /\bwhy do you keep asking (?:me )?questions?\b/i,
+  /\bprasna nasodha\b|प्रश्न\s*नसोध/i,
 ];
 const QUESTION_INVITATION = [
   /\byou can ask (?:me )?(?:a |some )?questions?\b/i,
@@ -51,6 +54,11 @@ const OPTION_OVERLOAD = [
   /\bi (?:do not|don['’]t) want to continue\b/i,
   /\b(?:fewer|less) options\b/i,
   /\bjust (?:pick|choose|give me) one\b/i,
+  /\b(?:everything|all(?:\s+of\s+it)?|all\s+this|every\s+task)\s+(?:feels?|seems?|is)\s+(?:urgent|important|equally\s+important)\b/i,
+  /\b(?:where|how)\s+do\s+i\s+(?:even\s+)?start\b/i,
+  /\b(?:too\s+much|so\s+much|so\s+many\s+things)\s+(?:at\s+once|right\s+now)\b/i,
+  /\b(?:can(?:not|'t)|unable\s+to)\s+prioriti[sz]e\b/i,
+  /\bsabai\s+kura\b.{0,40}\b(?:ekai\s+choti|pile\s+up|urgent|important)\b/i,
 ];
 const OPTION_READINESS = [
   /\b(?:show|give) me (?:the |some |more )?(?:options|choices)\b/i,
@@ -111,17 +119,29 @@ export function detectInterventionApproaches(text: string): InterventionApproach
     .map(([approach]) => approach);
 }
 
+export function detectOfferedInterventionApproaches(text: string): InterventionApproach[] {
+  // A mention is not an offer. Keep cessation/rejection acknowledgements out
+  // of both repetition enforcement and the record of exercises delivered.
+  // Evaluate clauses separately so "stop X, but try X again" is still caught.
+  const clauses = text.split(/[.!?;।,\n]+|\b(?:but|and|instead|then)\b/i);
+  return unique(clauses.flatMap((clause) => {
+    const stopping = /\b(?:stop|skip|avoid|leave|drop|no more|do not|don['’]t|will not|won['’]t|need not|needn['’]t)\b|\bpause (?:the|this|that|your)\b/i.test(clause);
+    const reportedBadEffect = /\b(?:made|makes)\b.{0,30}\b(?:dizzy|worse|uncomfortable|anxious|panicky)\b/i.test(clause);
+    return stopping || reportedBadEffect ? [] : detectInterventionApproaches(clause);
+  }));
+}
+
 function detectOutcome(text: string): InterventionOutcome | null {
-  if (/\b(?:made|makes|making) (?:me (?:feel )?|it |things )?(?:worse|dizzy|more anxious|uncomfortable|panicky)\b|\bfeel(?:s|ing)? (?:worse|bad)\b|\bmore uncomfortable\b/i.test(text)) {
+  if (/\b(?:made|makes|making) (?:me (?:feel )?|it |things )?(?:worse|dizzy|more anxious|uncomfortable|panicky)\b|\bstresses me out more\b|\bfeel(?:s|ing)? (?:worse|bad)\b|\bmore uncomfortable\b/i.test(text)) {
     return "WORSE";
   }
-  if (/\b(?:nothing|not much) changed\b|\b(?:did not|didn['’]t|does not|doesn['’]t|is not|isn['’]t) help(?:ing|ed)?\b|\b(?:feel|felt) (?:exactly )?the same\b/i.test(text)) {
+  if (/\b(?:nothing|not much) changed\b|\b(?:did not|didn['’]t|does not|doesn['’]t|is not|isn['’]t) (?:help(?:ing|ed)?|doing anything)\b|\b(?:feel|felt) (?:exactly )?the same\b/i.test(text)) {
     return "NO_CHANGE";
   }
   if (/\b(?:stop|stopped|quit|done with) (?:it|this|the exercise)\b|\bi (?:had to|want to) stop\b/i.test(text)) {
     return "STOPPED";
   }
-  if (/\b(?:do not|don['’]t) want to (?:do|try|use|continue)\b|\bi hate (?:it|this|that)\b|\b(?:it|this|that) (?:is|was) stupid\b/i.test(text)) {
+  if (/\b(?:do not|don['’]t) want to (?:do|try|use|continue)\b|\b(?:do not|don['’]t) want (?:breathing|grounding|cbt|thought exercises?)\b|\bi hate (?:it|this|that)\b|\b(?:it|this|that) (?:is|was) stupid\b/i.test(text)) {
     return "REJECTED";
   }
   if (/\b(?:that|it|this) help(?:ed|s)?\b|\b(?:feel|felt|feeling) (?:a little |much )?(?:better|calmer|less tense|more settled)\b|\b(?:worked|useful)\b/i.test(text)) {
@@ -143,7 +163,7 @@ function detectGoal(text: string): ContinuityGoal | null {
 
 function detectCorrection(text: string, now: string): UserCorrection | null {
   const patterns = [
-    /\bi['’]?m not\s+([^,.!?—-]{1,80})\s*[,—-]+\s*i['’]?m\s+([^,.!?]{1,80})/i,
+    /\bi(?:['’]m| am) not\s+([^,.!?—-]{1,80})\s*[,!.—-]+\s*i(?:['’]m| am)\s+(?:mostly\s+)?([^,.!?]{1,80})/i,
     /\bnot\s+([^,.!?—-]{1,80})\s*[,—-]+\s*(?:more like\s+)?([^,.!?]{1,80})/i,
     /\bi mean\s+([^,.!?]{1,80})\s*,?\s+not\s+([^,.!?]{1,80})/i,
   ];
@@ -154,6 +174,14 @@ function detectCorrection(text: string, now: string): UserCorrection | null {
     const preferredTerm = (index === 2 ? match[1] : match[2]).trim();
     if (!safeCorrectionTerm(rejectedTerm) || !safeCorrectionTerm(preferredTerm)) return null;
     return { rejectedTerm, preferredTerm, recordedAt: now };
+  }
+  const mixed = text.match(/\b([a-z -]{1,40})\s+haina\s*[,!.—-]+\s*([a-z -]{1,40})\s+ho\b/i);
+  if (mixed && safeCorrectionTerm(mixed[1].trim()) && safeCorrectionTerm(mixed[2].trim())) {
+    return { rejectedTerm: mixed[1].trim(), preferredTerm: mixed[2].trim(), recordedAt: now };
+  }
+  const denial = text.match(/\bi(?:['’]m| am) not\s+([\p{L} -]{1,60})[.!?]*$/iu)?.[1]?.trim();
+  if (denial && safeCorrectionTerm(denial) && denial.split(/\s+/).length <= 3) {
+    return { rejectedTerm: denial, preferredTerm: `not ${denial}`, recordedAt: now };
   }
   return null;
 }
@@ -166,7 +194,7 @@ function safeCorrectionTerm(term: string): boolean {
 export function isContextDependentShortReply(text: string): boolean {
   const words = text.trim().split(/\s+/).filter(Boolean);
   if (words.length > 7 || text.length > 64) return false;
-  return /^(?:i\s+)?(?:don['’]t know|do not know|idk|no|nope|same|maybe|not really|nothing changed|still the same|go on|continue|i hate (?:it|this)|it['’]?s not helping)[.!?]*$/i.test(text.trim());
+  return /^(?:(?:i\s+(?:am|['’]m)\s+)?still\b.{0,40}|(?:i\s+)?(?:don['’]t know|do not know|idk|no|nope|same|maybe|not really|nothing changed|still the same|go on|continue|i hate (?:it|this)|it['’]?s not helping))[.!?]*$/i.test(text.trim());
 }
 
 function latestApproach(state: ConversationContinuityState): InterventionApproach | undefined {
@@ -188,7 +216,7 @@ export function prepareContinuityState(
   if (/\bno advice\b|\b(?:do not|don['’]t) (?:want advice|(?:give|offer) me advice)\b/i.test(text)) {
     state.explicitPreferences = addPreference(state.explicitPreferences, "NO_ADVICE");
   }
-  if (/\b(?:give|offer) me (?:some |your )?advice\b|\bi (?:want|am ready for) advice\b|\bwhat should i do\b/i.test(text)) {
+  if (/\b(?:give|offer) me (?:(?:some|your|one|a) )?(?:(?:practical|concrete) )?(?:advice|(?:next )?steps?|answer)\b|\bi (?:want|am ready for) advice\b|\bwhat should i do\b/i.test(text)) {
     state.explicitPreferences = removePreference(state.explicitPreferences, "NO_ADVICE");
     state.explicitPreferences = removePreference(state.explicitPreferences, "RANT_FIRST");
   }
@@ -200,6 +228,18 @@ export function prepareContinuityState(
   }
   if (/\bpractical (?:help|advice|step)\b|\bwhat should i do\b/i.test(text)) {
     state.explicitPreferences = addPreference(state.explicitPreferences, "PRACTICAL_HELP");
+  }
+  // Use the same explicit-intent detector as planning so current intent also
+  // survives the next turn and eviction of the recent transcript.
+  const preference = detectExplicitSupportPreference(text);
+  if (preference) {
+    state.currentSupportMode = preference.supportMode;
+    if (preference.supportMode === "LISTEN") {
+      state.explicitPreferences = addPreference(state.explicitPreferences, "NO_ADVICE");
+    } else {
+      state.explicitPreferences = removePreference(state.explicitPreferences, "NO_ADVICE");
+      state.explicitPreferences = removePreference(state.explicitPreferences, "RANT_FIRST");
+    }
   }
 
   if (matchesAny(text, QUESTION_FATIGUE)) {
@@ -219,6 +259,11 @@ export function prepareContinuityState(
     state.explicitPreferences = removePreference(state.explicitPreferences, "MINIMAL_OPTIONS");
   }
 
+  // The user's current self-description outranks a previous correction.
+  state.userCorrections = state.userCorrections.filter((item) => {
+    const escaped = item.rejectedTerm.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return !new RegExp(`\\bi(?:['’]m| am| feel)\\s+(?:now\\s+|really\\s+)?${escaped}\\b`, "i").test(text);
+  });
   const correction = detectCorrection(text, recordedAt);
   if (correction) {
     state.userCorrections = appendBounded(state.userCorrections, correction, MAX_CORRECTIONS);
@@ -226,6 +271,11 @@ export function prepareContinuityState(
 
   const outcome = detectOutcome(text);
   const mentionedApproaches = detectInterventionApproaches(text);
+  const reopened = mentionedApproaches.filter((approach) => explicitlyRequestsApproach(text, approach));
+  if (reopened.length && !outcome) {
+    state.rejectedApproaches = state.rejectedApproaches.filter((approach) => !reopened.includes(approach));
+    state.needsReassessment = false;
+  }
   const approach = mentionedApproaches.at(-1) ?? latestApproach(state);
   if (outcome && approach) {
     state.recentInterventions = appendBounded(state.recentInterventions, {
@@ -256,7 +306,7 @@ function goalForDecision(decision: MomoDecision): ContinuityGoal {
 export function classifyResponseShapes(text: string, decision?: MomoDecision): ResponseShape[] {
   const shapes: ResponseShape[] = [];
   if (/\?/.test(text)) shapes.push("QUESTION");
-  if (detectInterventionApproaches(text).length > 0 || /\b(?:try|start by|notice|focus on)\b/i.test(text)) shapes.push("EXERCISE");
+  if (detectOfferedInterventionApproaches(text).length > 0 || /\b(?:try|start by|notice|focus on)\b/i.test(text)) shapes.push("EXERCISE");
   if (decision?.supportMode === "DIRECT_HELP" || /(?:^|\n)\s*(?:[-*]|\d+[.)])\s+/.test(text) || /\byou (?:can|could|might)\b/i.test(text)) shapes.push("ADVICE");
   if (/\b(?:it sounds like|it seems like|you['’]re saying|you said|that left you)\b/i.test(text)) shapes.push("REFLECTION");
   if (/\b(?:that makes sense|understandable|fair enough|of course)\b/i.test(text)) shapes.push("VALIDATION");
@@ -305,7 +355,7 @@ export function finalizeContinuityState(
     );
   }
 
-  let interventionApproaches = detectInterventionApproaches(responseText);
+  let interventionApproaches = detectOfferedInterventionApproaches(responseText);
   if (interventionApproaches.length === 0 && decision.intervention === "RELAXATION" && responseShapes.includes("EXERCISE")) {
     interventionApproaches = ["OTHER_REGULATION"];
   }
@@ -358,7 +408,7 @@ export function continuityInstruction(state?: ConversationContinuityState): stri
     lines.push("- The latest intervention did not help, was rejected, was stopped, or felt worse. Reassess the current need now; do not extend the exercise or immediately cycle into another exercise.");
   }
   if (current.optionOverload) {
-    lines.push("- Option overload is active. Do not offer a menu or ask the user to choose a technique. Use known constraints to select one low-burden next step, explain it briefly, and preserve opt-out.");
+    lines.push("- Option overload is active. Select one low-burden next step and keep the response short. Do not offer a menu, use a numbered list, present three to five actions, or ask the user to choose a technique. Preserve opt-out and continue from that single step on the next turn.");
   }
   if (current.questionFatigue) {
     lines.push("- Question fatigue is active. Do not ask another ordinary-support question until the user invites questions again. Safety questions are handled by the separate safety path.");
@@ -404,7 +454,11 @@ function usesStockOpening(text: string): boolean {
 function explicitlyRequestsApproach(message: string, approach: InterventionApproach): boolean {
   const patterns = APPROACH_PATTERNS[approach];
   if (!patterns.length || !matchesAny(message, patterns)) return false;
-  return /\b(?:want|willing|ready|please|could we|can we|let['’]s|try|use|do|again)\b/i.test(message);
+  return message.split(/[.!?;।,\n]+|\bbut\b/i).some((clause) =>
+    matchesAny(clause, patterns)
+    && !/\b(?:not|never|no|don['’]t|won['’]t|stop|avoid)\b/i.test(clause)
+    && /\b(?:want|willing|ready|please|could we|can we|let['’]s|try|use|do|again)\b/i.test(clause)
+  );
 }
 
 export type ContinuityViolation =
@@ -423,15 +477,19 @@ export function continuityResponseViolations(
   state = input.continuityState ?? emptyConversationContinuityState()
 ): ContinuityViolation[] {
   const violations: ContinuityViolation[] = [];
-  const approaches = detectInterventionApproaches(candidate);
+  const approaches = detectOfferedInterventionApproaches(candidate);
   if (approaches.some((approach) => state.rejectedApproaches.includes(approach) && !explicitlyRequestsApproach(input.messageText, approach))) {
     violations.push("REJECTED_APPROACH");
   }
   if (state.needsReassessment && (approaches.length > 0 || /\b(?:try|start|continue) (?:this|another|the) exercise\b/i.test(candidate))) {
     violations.push("REASSESSMENT_REQUIRED");
   }
-  const menuItems = candidate.match(/(?:^|\n)\s*(?:[-*]|\d+[.)])\s+/g)?.length ?? 0;
-  if (state.optionOverload && (menuItems > 1 || approaches.length > 1 || /\b(?:choose|pick) (?:one|between|from)\b/i.test(candidate))) {
+  const menuItems = (candidate.match(/(?:^|\s)(?:\d+[.)]|[-*])\s+/g)?.length ?? 0)
+    + (candidate.match(/\s-\s/g)?.length ?? 0);
+  const actionDirectives = (candidate.match(/\b(?:aim|book|choose|circle|clear|create|decide|drink|fill|focus|handle|make|open|pick|put|send|set|start|take|use|work|write)\b/gi)?.length ?? 0)
+    + (candidate.match(/\b(?:gara|gar|hera|khol|lekha|piu|rakha)\b/gi)?.length ?? 0);
+  const overlyLongForOverload = candidate.trim().split(/\s+/).length > 45;
+  if (state.optionOverload && (menuItems > 1 || approaches.length > 1 || actionDirectives > 2 || overlyLongForOverload || /\b(?:choose|pick) (?:one|between|from)\b/i.test(candidate))) {
     violations.push("OPTION_OVERLOAD");
   }
   if (state.questionFatigue && candidate.includes("?")) violations.push("QUESTION_FATIGUE");
@@ -443,16 +501,18 @@ export function continuityResponseViolations(
     violations.push("REPEATED_QUESTION");
   }
   const candidateOpening = contentTokens(candidate).slice(0, 4).join(" ");
+  const requestedRecap = /\b(?:recap|summari[sz]e|short(?:er| version)|repeat|say (?:it|that) again)\b/i.test(input.messageText);
   if (
     (usesStockOpening(candidate) && recentMomo.some(usesStockOpening))
-    || (candidateOpening.split(" ").length >= 3 && recentMomo.some((reply) => contentTokens(reply).slice(0, 4).join(" ") === candidateOpening))
+    || (!requestedRecap && candidateOpening.split(" ").length >= 3 && recentMomo.some((reply) => contentTokens(reply).slice(0, 4).join(" ") === candidateOpening))
   ) {
     violations.push("REPEATED_OPENING");
   }
-  if (recentMomo.some((reply) => similarity(candidate, reply) >= 0.78)) violations.push("RECYCLED_RESPONSE");
+  if (!requestedRecap && recentMomo.some((reply) => similarity(candidate, reply) >= 0.78)) violations.push("RECYCLED_RESPONSE");
   const candidateShape = classifyResponseShapes(candidate)[0];
   const recentShapes = state.recentResponseShapes.slice(-3);
-  if (recentShapes.length === 3 && recentShapes.every((shape) => shape === candidateShape)) {
+  if (candidateShape !== "ACKNOWLEDGEMENT" && candidateShape !== "ADVICE" &&
+      recentShapes.length === 3 && recentShapes.every((shape) => shape === candidateShape)) {
     violations.push("REPEATED_SHAPE");
   }
   return unique(violations);
