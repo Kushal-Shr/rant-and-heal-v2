@@ -148,3 +148,9 @@ test("truthfulness filtering preserves valid paragraph and line structure", () =
   const response = "First paragraph.\n\nSecond paragraph with  two intentional spaces.\nLine two.";
   assert.equal(enforceBackendActionTruthfulness(response), response);
 });
+
+test("truthfulness filtering preserves harmless streaming whitespace byte-for-byte", () => {
+  for (const fragment of ["Hey. ", "Hey, what's up?\n", "How's it going  "]) {
+    assert.equal(enforceBackendActionTruthfulness(fragment), fragment);
+  }
+});

@@ -15,8 +15,13 @@ export default function MomoCallPage() {
   const [error, setError] = useState(false);
 
   useEffect(() => {
-    if (!momoVoiceEnabled || !user?.uid) return;
+    if (!momoVoiceEnabled || !user?.uid || sessionId) return;
     let active = true;
+    const requestedSessionId = new URLSearchParams(window.location.search).get("sessionId")?.trim();
+    if (requestedSessionId && requestedSessionId.length <= 128) {
+      queueMicrotask(() => { if (active) setSessionId(requestedSessionId); });
+      return () => { active = false; };
+    }
     addDoc(collection(db, "users", user.uid, "sessions"), {
       title: "Voice conversation",
       createdAt: serverTimestamp(),
@@ -26,7 +31,7 @@ export default function MomoCallPage() {
       () => { if (active) setError(true); }
     );
     return () => { active = false; };
-  }, [user?.uid]);
+  }, [sessionId, user?.uid]);
 
   if (!momoVoiceEnabled) {
     return <p className="rounded-[1.5rem] bg-[#fff1e8] p-5 text-sm text-[#414845]">Momo voice is not included in the current trial. Text chat remains available.</p>;

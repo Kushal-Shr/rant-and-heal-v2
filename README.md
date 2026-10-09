@@ -1,6 +1,6 @@
 # Rant and Heal V2
 
-Privacy-first mental health support platform built with Next.js, Firebase, Firestore, and Gemini.
+Privacy-first mental health support platform built with Next.js, Firebase, Firestore, OpenAI, and Gemini.
 
 ## Getting Started
 
@@ -32,7 +32,11 @@ GEMINI_API_KEY=
 GEMINI_MODEL=gemini-3.8-flash
 GEMINI_SAFETY_MODEL=gemini-3.8-flash
 MOMO_SAFETY_CLASSIFIER_TIMEOUT_MS=10000
-GEMINI_LIVE_MODEL=gemini-3.8-live
+
+# Momo voice (server only)
+OPENAI_API_KEY=
+MOMO_SAFETY_IDENTIFIER_SECRET=
+MOMO_VOICE_NAME=marin
 
 # Trial feature flags. Voice stays off until live audio can be interrupted by
 # the safety layer before a model response is delivered.
@@ -122,13 +126,15 @@ The two encryption models are deliberately separate: journals are encrypted and 
 
 The shared conversation contract and [52-case example library](src/lib/momo/examples/README.md) guide ordinary Momo replies. A deterministic selector injects only 2–4 relevant case principles; sample dialogue and fictional facts never enter production prompts. Current user facts and preferences outrank routing and examples. Regression checks cover unsupported emotion/wrongdoing claims, corrections, rejection, fatigue, and safety bypass; they are not comprehensive semantic or clinical validation.
 
-Momo text chat is server-owned: the client calls `/api/momo/chat`, the route verifies the Firebase ID token and session, enforces bounded quotas, and preserves idempotent persistence. The domain orchestrator then evaluates safety, creates a structured `MomoDecision`, and invokes the server-only responder. `MOMO_TEXT_PROVIDER=openai` sends only that responder call to OpenAI Responses using `gpt-5.6-luna`, stateless storage, and medium reasoning; `MOMO_TEXT_PROVIDER=gemini` retains the previous Gemini responder as an explicit rollback. The planner, safety classifier, voice, reports, notes, extraction, transcription, and embeddings remain on their existing Gemini models. There is no per-request cross-provider fallback. Each session stores a bounded `continuityState` for the active support goal/mode, explicit interaction preferences, brief user corrections, option/question fatigue, recent response functions, and user-reported intervention outcomes. It does not copy the transcript or use journal or therapist-chat content, and it does not store diagnosis or model reasoning. Current-session continuity informs planning and a deterministic response check; safety still bypasses ordinary generation. Cross-session personalization is deferred.
+Momo text chat is server-owned: the client calls `/api/momo/chat`, the route verifies the Firebase ID token and session, enforces bounded quotas, and preserves idempotent persistence. The domain orchestrator then evaluates safety, creates a structured `MomoDecision`, and invokes the server-only responder. `MOMO_TEXT_PROVIDER=openai` sends only that responder call to OpenAI Responses using `gpt-5.6-luna`, stateless storage, and medium reasoning; `MOMO_TEXT_PROVIDER=gemini` retains the previous Gemini responder as an explicit rollback. Momo voice is separately pinned to OpenAI Live `gpt-live-1`. The planner, safety classifier, reports, notes, extraction, transcription, and embeddings remain on their existing Gemini models. There is no per-request cross-provider fallback. Each session stores a bounded `continuityState` for the active support goal/mode, explicit interaction preferences, brief user corrections, option/question fatigue, recent response functions, and user-reported intervention outcomes. It does not copy the transcript or use journal or therapist-chat content, and it does not store diagnosis or model reasoning. Current-session continuity informs planning and a deterministic response check; safety still bypasses ordinary generation. Cross-session personalization is deferred.
 
 For greeting-only turns, the route may provide the responder with a sanitized first name from the authenticated user profile. Incognito accounts and placeholder names are treated as anonymous. The hint is optional, is not stored in continuity state, and must not produce repeated name use or a fixed greeting template.
 
-The underlying Momo voice implementation uses `/api/momo/live-token` to mint a short-lived Gemini Live token. Browser code captures microphone PCM audio and streams it directly to Gemini Live with the ephemeral token. It is disabled for the trial by `ENABLE_MOMO_VOICE=false` and hidden from trial actions because completed-transcript screening is not real-time interruption.
+Momo voice uses browser WebRTC through the authenticated `/api/momo/live-session` route. The server negotiates an OpenAI Live `gpt-live-1` session, passes only a one-way HMAC safety identifier to the provider, and attaches a trusted sideband before returning the SDP answer. The sideband receives incremental transcripts, runs the existing safety → planner → Luna responder pipeline, and steers the same voice session; the browser never receives the OpenAI API key. Luna output passes the existing validators before being returned for speech, and incremental spoken transcripts are checked again with the existing backend-action truthfulness guard so an unconfirmed claim triggers interruption and corrective copy. Raw audio is not stored and provider session storage is disabled. A voice-only overlay changes delivery, interruption, and delegation behavior but does not replace the canonical text therapeutic policy. The old `/api/momo/live-token` path returns `410`.
 
-Authenticated patient and anonymous Firebase sessions use the same application quotas: 20 text turns per minute, 5 live-token grants per 10 minutes, and 60 transcript writes per minute. Infrastructure-level budgets and alerts should still be configured in Google Cloud.
+This sideband is an in-process long-lived WebSocket and therefore requires a Node deployment that preserves the route process for the call duration. It must not be enabled on a request-scoped/serverless runtime that may suspend after returning the SDP. `ENABLE_MOMO_VOICE=false` remains the release default until the [real-audio acceptance gate](./docs/MOMO_GPT_LIVE_ACCEPTANCE.md) passes.
+
+Authenticated patient and anonymous Firebase sessions use the same application quotas: 20 text turns per minute and 5 Live-session creations per 10 minutes. The legacy transcript route retains its existing 60-writes-per-minute quota but is not used by the new trusted sideband path. Infrastructure-level budgets and alerts should still be configured with each provider.
 
 The text route persists server-owned `safetyEvaluation` alongside the session so unresolved risk survives history truncation. Deploy the updated Firestore rules with the server change; clients cannot set or erase this field. Existing sessions bootstrap from their available recent history on their next turn. This does not recover disclosures already evicted before a checkpoint existed. Failed ordinary generation retains the user’s bounded corrections and interaction preferences.
 
@@ -138,7 +144,7 @@ The reusable 120-conversation audit, frozen rubric, baseline/final outputs, and 
 
 Before ordinary planning, `/api/momo/chat` applies contextual deterministic safety assessment and a schema-validated Gemini second opinion when the deterministic path is normal. The existing six-state taxonomy drives centralized behavior. Every non-`NORMAL` state bypasses the ordinary Day 2 responder; assessment is sequential, unresolved answers remain unresolved, and medical emergencies take priority. Immediate states still take the user to `/crisis`.
 
-Voice transcription is screened when a completed user transcript is saved. On a match, the browser ends the Momo Live session and opens `/crisis`. Because Gemini Live receives audio directly, this post-transcription safeguard is not a replacement for real-time voice moderation.
+For voice, the server sideband evaluates incremental Live transcripts with the existing safety classifier and blocks ordinary delegated support for every non-normal safety state. It sends an immediate same-session stop/safety instruction and increments a trusted interrupt signal that makes the browser stop remote playback. A missing transcript, stale heartbeat, disconnected sideband, or trusted processing failure ends the call. This is an implemented safety-interruption path, not a clinically validated latency claim; real-browser measurement is still release-blocking.
 
 This is not a clinically validated risk assessment or an emergency-response service. The implemented policy and exact copy are marked `RESEARCH_DRAFT`; clinician/legal approval gaps are tracked in [docs/SAFETY_CLINICIAN_REVIEW.md](./docs/SAFETY_CLINICIAN_REVIEW.md). The earlier interceptor boundary is documented in [docs/SAFETY_INTERCEPTOR_V0.md](./docs/SAFETY_INTERCEPTOR_V0.md).
 
@@ -146,7 +152,7 @@ This is not a clinically validated risk assessment or an emergency-response serv
 
 For a policy state with `IMMEDIATE` review urgency, Momo records a structured safety event and can send a minimal email alert to the configured support address. The setting is disabled by default. Transport status is recorded separately from classification and user-facing copy. The alert has only an event ID, risk category, source, state, and timestamp—never a message, name, phone number, or user ID.
 
-There are no emergency-contact calls, text-message fallbacks, delayed dispatches, IP-location workflows, or police integrations. The feature is not live monitoring or an emergency-response service. Voice alerts, if enabled, occur only after a completed transcript has reached the server and are not real-time moderation.
+There are no emergency-contact calls, text-message fallbacks, delayed dispatches, IP-location workflows, or police integrations. The feature is not live monitoring or an emergency-response service. Voice alerts, if enabled, are triggered from the trusted sideband only after the existing notification policy permits them; notification delivery never replaces the user-facing safety response.
 
 Configure Firestore TTL for `safety_events.expireAt` before relying on the 30-day retention target. TTL deletion is asynchronous. Do not enable email alerts without a named operating owner, clinician/legal review, a verified Resend sender, and a tested response protocol.
 

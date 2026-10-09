@@ -1,4 +1,4 @@
-import { composeMomoSystemInstruction } from "@/src/lib/momo/responder";
+import { buildMomoBehaviorPolicy } from "@/src/lib/momo/responder";
 import { continuityResponseViolations } from "@/src/lib/momo/continuity";
 import { responseStyleViolations } from "@/src/lib/momo/responseStyle";
 import { groundingViolationDetails } from "@/src/lib/momo/grounding";
@@ -195,7 +195,7 @@ export async function generateMomoResponseWithGenerator(
   decision: MomoDecision,
   generator: MomoResponseGenerator
 ): Promise<string> {
-  const baseSystemInstruction = composeMomoSystemInstruction(MOMO_SYSTEM_INSTRUCTION, decision, {
+  const baseSystemInstruction = buildMomoBehaviorPolicy(MOMO_SYSTEM_INSTRUCTION, decision, {
     conversationModality: "TEXT",
     continuityState: input.continuityState,
     participant: input.participant,

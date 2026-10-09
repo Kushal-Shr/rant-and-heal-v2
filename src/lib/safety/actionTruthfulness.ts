@@ -48,11 +48,15 @@ export function enforceBackendActionTruthfulness(
     });
   }
 
+  // Streaming transcripts commonly end in spaces or partial punctuation.
+  // Preserve safe text exactly so normalization alone is never mistaken for
+  // removal of an unverified external-action claim.
+  if (!removedClaim) return response;
+
   cleaned = cleaned
     .replace(/[ \t]+$/gm, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
-  if (!removedClaim) return cleaned;
   const disclosure = "I can’t confirm that any external service or person has been contacted.";
   return cleaned ? `${cleaned}\n\n${disclosure}` : disclosure;
 }

@@ -34,13 +34,17 @@ test("V4 model registry and thinking levels match the centralized architecture",
     WEEKLY_REFLECTION: "gemini-3.8-flash",
     WEEKLY_THERAPY_SUMMARY: "gemini-3.8-flash",
     BACKGROUND_LIGHT: "gemini-3.5-flash-lite",
-    VOICE: "gemini-3.8-live",
+    VOICE: "gpt-live-1",
     TRANSCRIPTION: "gemini-3.5-transcribe",
     EMBEDDING: "gemini-embedding-2",
   });
   assert.deepEqual(AI_MODEL_CONFIGS.MOMO_RESPONSE, {
     provider: "openai",
     model: "gpt-5.6-luna",
+  });
+  assert.deepEqual(AI_MODEL_CONFIGS.MOMO_VOICE, {
+    provider: "openai",
+    model: "gpt-live-1",
   });
   assert.deepEqual(THINKING_LEVELS, {
     MOMO_PLANNER: "low",

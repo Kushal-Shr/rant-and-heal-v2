@@ -6,13 +6,18 @@ export interface ModelConfig {
 }
 
 export const EXPECTED_MOMO_RESPONSE_MODEL = "gpt-5.6-luna";
+export const EXPECTED_MOMO_VOICE_MODEL = "gpt-live-1";
 
 export const AI_MODEL_CONFIGS = {
   MOMO_RESPONSE: {
     provider: "openai",
     model: EXPECTED_MOMO_RESPONSE_MODEL,
   },
-} as const satisfies Record<"MOMO_RESPONSE", ModelConfig>;
+  MOMO_VOICE: {
+    provider: "openai",
+    model: EXPECTED_MOMO_VOICE_MODEL,
+  },
+} as const satisfies Record<"MOMO_RESPONSE" | "MOMO_VOICE", ModelConfig>;
 
 export const AI_MODELS = {
   MOMO_PLANNER: "gemini-3.8-flash",
@@ -25,7 +30,7 @@ export const AI_MODELS = {
   WEEKLY_REFLECTION: "gemini-3.8-flash",
   WEEKLY_THERAPY_SUMMARY: "gemini-3.8-flash",
   BACKGROUND_LIGHT: "gemini-3.5-flash-lite",
-  VOICE: "gemini-3.8-live",
+  VOICE: AI_MODEL_CONFIGS.MOMO_VOICE.model,
   TRANSCRIPTION: "gemini-3.5-transcribe",
   EMBEDDING: "gemini-embedding-2",
 } as const;

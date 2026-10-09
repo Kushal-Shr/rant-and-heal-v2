@@ -20,7 +20,6 @@ import { Card } from "@/src/components/ui/Card";
 import { Spinner } from "@/src/components/ui/Spinner";
 import { db } from "@/src/config/firebase";
 import { useAuth } from "@/src/context/AuthContext";
-import { MomoVoiceCallPanel } from "@/src/components/momo/MomoVoiceCallPanel";
 
 const momoVoiceEnabled = process.env.NEXT_PUBLIC_MOMO_VOICE_ENABLED === "true";
 
@@ -275,7 +274,19 @@ export default function MomoPage() {
               <div aria-hidden="true" className="flex size-11 items-center justify-center rounded-full bg-[#c6ebda] text-[#325347] shadow-[inset_0_2px_4px_rgba(255,255,255,0.75)]"><span className="material-symbols-outlined">cloud</span></div>
               <div><p className="text-lg font-medium text-[#325347]">Momo</p><p className="text-xs text-[#717974]">Your AI companion</p></div>
             </div>
-            <button className="rounded-full bg-[#fff1e8] px-4 py-2 text-sm font-medium text-[#795841] transition hover:bg-[#ffe3cd] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#795841] xl:hidden" onClick={createNewSession} type="button"><span aria-hidden="true" className="material-symbols-outlined mr-1 align-[-3px] text-base">add</span>New</button>
+            <div className="flex items-center gap-2">
+              {momoVoiceEnabled && sessionId ? (
+                <Link
+                  aria-label="Start a voice call with Momo"
+                  className="inline-flex size-11 items-center justify-center rounded-full bg-[#c6ebda] text-[#325347] shadow-[0_8px_16px_-6px_rgba(50,83,71,0.2),inset_0_1px_3px_rgba(255,255,255,0.8)] transition hover:bg-[#abcebf] active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#325347] focus-visible:ring-offset-2"
+                  href={`/momo/call?sessionId=${encodeURIComponent(sessionId)}`}
+                  title="Call Momo"
+                >
+                  <span aria-hidden="true" className="material-symbols-outlined">call</span>
+                </Link>
+              ) : null}
+              <button className="rounded-full bg-[#fff1e8] px-4 py-2 text-sm font-medium text-[#795841] transition hover:bg-[#ffe3cd] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#795841] xl:hidden" onClick={createNewSession} type="button"><span aria-hidden="true" className="material-symbols-outlined mr-1 align-[-3px] text-base">add</span>New</button>
+            </div>
           </header>
 
           <label className="flex shrink-0 items-center gap-3 border-b border-[#ffeada] px-5 py-3 text-xs text-[#596c60] xl:hidden">
@@ -285,8 +296,6 @@ export default function MomoPage() {
               {sessions.map((session) => <option key={session.id} value={session.id}>{session.title}</option>)}
             </select>
           </label>
-
-          {momoVoiceEnabled ? <MomoVoiceCallPanel embedded sessionId={sessionId} /> : null}
 
           <div ref={messagesRef} className="min-h-0 flex-1 overflow-y-auto px-5 py-6 sm:px-7">
             <div className="mx-auto flex max-w-3xl flex-col gap-5 pb-8">

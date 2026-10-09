@@ -19,15 +19,17 @@ const request = {
   messageText: "Current user message",
 };
 
-test("only the Momo response model changes provider and model", () => {
+test("Momo text and voice roles use their explicit OpenAI models", () => {
   assert.deepEqual(AI_MODEL_CONFIGS, {
     MOMO_RESPONSE: { provider: "openai", model: "gpt-5.6-luna" },
+    MOMO_VOICE: { provider: "openai", model: "gpt-live-1" },
   });
   assert.equal(AI_MODELS.MOMO_RESPONSE, "gpt-5.6-luna");
+  assert.equal(AI_MODELS.VOICE, "gpt-live-1");
   for (const role of [
     "MOMO_PLANNER", "SAFETY_CLASSIFIER", "SAFETY_SUPERVISOR", "MOOD_EXTRACTION",
     "SESSION_SUMMARY", "THERAPY_NOTE", "WEEKLY_REFLECTION", "WEEKLY_THERAPY_SUMMARY",
-    "VOICE", "TRANSCRIPTION", "EMBEDDING",
+    "TRANSCRIPTION", "EMBEDDING",
   ]) assert.match(AI_MODELS[role], /^gemini-/i, role);
   assert.equal(THINKING_LEVELS.MOMO_RESPONSE, "medium");
 });
