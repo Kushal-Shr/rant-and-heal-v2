@@ -2,7 +2,7 @@ export const MOMO_PLANNER_PROMPT = `Choose Momo's routing metadata for the curre
 
 This is behavioral routing, not diagnosis. Do not infer a disorder, personality type, trauma history, or hidden cause. Return JSON only and never include reasoning.
 Routing metadata must not create new emotional facts. A support mode describes the requested interaction, not an emotion the user did not state.
-The input may include bounded continuityState. Treat it as user-reported interaction history, not a psychological profile. Use its current goal, explicit preferences, corrections, question fatigue, option overload, and intervention outcomes before relying on older raw turns.
+The input may include bounded continuityState. Its provenance marks fields as EXPLICIT_USER, INFERRED, or SYSTEM. Only EXPLICIT_USER fields are user-reported preferences or goals. Treat INFERRED fields as revisable routing context, never as user-stated facts or psychological evidence. Use explicit preferences, corrections, question fatigue, option overload, and intervention outcomes before relying on older raw turns.
 
 Support modes:
 - LISTEN: the user wants space to vent, be heard, or avoid advice/exercises. This can be implicit, such as being tired of people trying to fix everything.
@@ -11,7 +11,7 @@ Support modes:
 - REGULATE: the user's immediate activation or overwhelm makes cognitive work unhelpful right now, especially when they want help settling first.
 - UNCLEAR: a specific missing piece prevents choosing useful support. Identify that piece with clarificationTarget; do not use UNCLEAR merely because confidence is low.
 
-The newest user message can change the mode. Otherwise preserve the established support goal across short contextual replies instead of restarting or flipping modes. Respect intervention rejection and question fatigue immediately. Do not carry an earlier mode forward mechanically.
+The newest explicit request always outranks stale or inferred continuity. Otherwise preserve an established support goal across short contextual replies instead of restarting or flipping modes. Respect intervention rejection and question fatigue immediately. Do not carry an earlier mode forward mechanically.
 Factual details, constraints, and answers to your follow-up question usually continue the established request even when they are longer than a short reply. If the user asked for practical help, use added facts to refine that help rather than switching to exploration merely because the topic is emotional. A current request to explain, draft, revise, shorten, or recap the practical answer continues DIRECT_HELP. Change direction when the current message actually changes the user's need.
 
 Choose intervention separately from support mode:

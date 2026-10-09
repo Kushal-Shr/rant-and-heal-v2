@@ -2,6 +2,7 @@ import type { Content } from "@google/genai";
 import type { ResponseCreateParamsNonStreaming } from "openai/resources/responses/responses";
 import {
   AI_MODEL_CONFIGS,
+  EXPECTED_MOMO_RESPONSE_MODEL,
   THINKING_LEVELS,
   type AIProvider,
   type ModelConfig,
@@ -20,6 +21,20 @@ export interface MomoTextRequest {
 export type MomoTextGenerator = (request: MomoTextRequest, model: string) => Promise<string>;
 export type MomoTextGenerators = Record<AIProvider, MomoTextGenerator>;
 
+export function assertMomoResponseModel(config: ModelConfig): void {
+  if (config.provider === "openai" && config.model !== EXPECTED_MOMO_RESPONSE_MODEL) {
+    throw new Error(
+      `Momo OpenAI responder must use ${EXPECTED_MOMO_RESPONSE_MODEL}; received ${config.model}.`
+    );
+  }
+}
+
+// Fail as soon as the server module loads in development/test if the registry
+// drifts. Production also asserts the resolved config before every generation.
+if (process.env.NODE_ENV !== "production") {
+  assertMomoResponseModel(AI_MODEL_CONFIGS.MOMO_RESPONSE);
+}
+
 export function resolveMomoTextConfig(
   environment: NodeJS.ProcessEnv = process.env
 ): ModelConfig {
@@ -27,12 +42,14 @@ export function resolveMomoTextConfig(
   if (provider !== "openai" && provider !== "gemini") {
     throw new Error("MOMO_TEXT_PROVIDER must be either openai or gemini.");
   }
-  return {
+  const config: ModelConfig = {
     provider,
     model: provider === "openai"
       ? AI_MODEL_CONFIGS.MOMO_RESPONSE.model
       : environment.GEMINI_MODEL ?? GEMINI_MOMO_TEXT_MODEL,
   };
+  assertMomoResponseModel(config);
+  return config;
 }
 
 export function buildOpenAIResponseRequest(
@@ -101,6 +118,7 @@ export async function generateMomoTextWithProvider(
   config: ModelConfig,
   generators: MomoTextGenerators
 ): Promise<string> {
+  assertMomoResponseModel(config);
   const output = await generators[config.provider](request, config.model);
   if (!output) throw new Error(`${config.provider} returned an empty Momo response.`);
   return output;

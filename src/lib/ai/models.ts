@@ -5,10 +5,12 @@ export interface ModelConfig {
   model: string;
 }
 
+export const EXPECTED_MOMO_RESPONSE_MODEL = "gpt-5.6-luna";
+
 export const AI_MODEL_CONFIGS = {
   MOMO_RESPONSE: {
     provider: "openai",
-    model: "gpt-5.1",
+    model: EXPECTED_MOMO_RESPONSE_MODEL,
   },
 } as const satisfies Record<"MOMO_RESPONSE", ModelConfig>;
 

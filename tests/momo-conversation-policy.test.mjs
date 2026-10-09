@@ -35,16 +35,19 @@ test('curated cases have explicit grounding, distinct dialogue, all modes and re
 
 test('selection is deterministic, bounded, relevant, and never sends safety cases to ordinary support', () => {
   const selection = { mode: 'LISTEN', primaryNeed: 'VENT', safetyState: 'NORMAL', domain: 'work' };
-  for (const limit of [-1, 0, 2, 3, 4, 50, NaN]) {
+  assert.deepEqual(selectExamples(selection), []);
+  for (const limit of [-1, 0, NaN]) assert.deepEqual(selectExamples({ ...selection, limit }), []);
+  for (const limit of [1, 2, 3, 4, 50]) {
     const cases = selectExamples({ ...selection, limit });
-    assert.ok(cases.length >= 2 && cases.length <= 4);
+    assert.equal(cases.length, 1);
     assert.deepEqual(cases, selectExamples({ ...selection, limit }));
     assert.ok(cases.every(e => !e.tags.includes('safety')));
-    assert.ok(cases.some(e => e.id === 'work-credit-facts'));
+    assert.equal(cases[0].id, 'work-credit-facts');
   }
-  for (const [flag, tag] of [['correctionPresent', 'correction'], ['questionFatigue', 'question-fatigue'], ['optionOverload', 'option-overload'], ['rejectedIntervention', 'rejection']]) {
-    assert.ok(selectExamples({ ...selection, [flag]: true }).some(e => e.tags.includes(tag)), tag);
-  }
+  assert.equal(selectExamples({ ...selection, tags: ['explicit-emotion'], limit: 1 })[0].id, 'work-credit-anger');
+  assert.equal(selectExamples({ mode: 'LISTEN', primaryNeed: 'VENT', safetyState: 'NORMAL', tags: ['no-advice'], limit: 1 })[0].id, 'rant-permission');
+  assert.ok(!selectExamples({ ...selection, limit: 1 }).some(e => e.tags.includes('explicit-emotion')));
+  assert.ok(!selectExamples({ mode: 'WORK_THROUGH', primaryNeed: 'UNDERSTAND', safetyState: 'NORMAL', tags: ['relationships'], limit: 1 }).some(e => e.tags.includes('guilt') || e.tags.includes('jealousy')));
   for (const safetyState of ['CLARIFY', 'SELF_HARM', 'SUICIDAL', 'IMMINENT', 'MEDICAL_EMERGENCY']) {
     assert.deepEqual(selectExamples({ ...selection, safetyState }), []);
     assert.equal(selectedExamplePrinciples({ ...selection, safetyState }), '');
@@ -56,7 +59,7 @@ test('live prompt projects selected principles and cannot import library dialogu
   const decision = planMomoResponse(conversation, 'NORMAL', inference('LISTEN', 'PCT_LISTENING'));
   const selected = selectExamples(exampleSelectionFor(conversation, decision));
   const prompt = composeMomoSystemInstruction('Base persona', decision, { userMessageText: conversation.messageText });
-  assert.ok(prompt.startsWith('MOMO CONVERSATION CONTRACT'));
+  assert.ok(prompt.startsWith('GROUNDING CONTRACT — AUTHORITATIVE'));
   for (const e of selected) for (const principle of e.principles) assert.ok(prompt.includes(principle));
   for (const e of MOMO_EXAMPLES) {
     for (const turn of e.turns) assert.ok(!prompt.includes(turn.momo), e.id);

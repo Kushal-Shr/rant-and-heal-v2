@@ -3,6 +3,7 @@ import test from "node:test";
 import { emptyConversationContinuityState, prepareContinuityState, continuityResponseViolations } from "../src/lib/momo/continuity.ts";
 import { planMomoResponse } from "../src/lib/momo/planner.ts";
 import { momoDecisionInstruction } from "../src/lib/momo/responder.ts";
+import { groundingViolationDetails } from "../src/lib/momo/grounding.ts";
 import {
   detectConversationLanguageStyle,
   languageStyleInstruction,
@@ -153,6 +154,46 @@ test("defect 6: unrequested advice lists are repairable style violations", () =>
   ).includes("UNNECESSARY_LIST_STRUCTURE"));
 });
 
+test("LISTEN advice is repairable unless it violates an explicit no-advice preference", () => {
+  const advice = "You could clarify your role with your manager.";
+  const inferred = responseStyleViolations(advice, input("My coworker got credit."), baseDecision);
+  assert.ok(inferred.includes("LISTEN_ADVICE"));
+  assert.ok(partitionResponseViolations(inferred).style.includes("LISTEN_ADVICE"));
+  const explicitState = prepareContinuityState(input("Please just listen. No advice."));
+  const explicit = responseStyleViolations(advice, input("Go on.", explicitState), baseDecision);
+  assert.ok(explicit.includes("EXPLICIT_NO_ADVICE"));
+  assert.ok(partitionResponseViolations(explicit).hard.includes("EXPLICIT_NO_ADVICE"));
+  assert.ok(responseStyleViolations(
+    "You can keep going, or we can focus on what you want to do next.",
+    input("My coworker got credit."),
+    baseDecision
+  ).includes("LISTEN_ADVICE"));
+  for (const response of [
+    "If you want to address it, I can help you document your contributions.",
+    "What do you want to say or do about it?",
+    "I can listen, or help you think through how to address it.",
+    "You can tell me what happened next, or what you want to do about it.",
+  ]) assert.ok(responseStyleViolations(
+    response,
+    input("My coworker got credit."),
+    baseDecision
+  ).includes("LISTEN_ADVICE"), response);
+});
+
+test("quoted drafts are not mistaken for direct-help interrogation", () => {
+  const direct = { ...baseDecision, supportMode: "DIRECT_HELP", primaryNeed: "PRACTICAL_HELP", intervention: "PROBLEM_SOLVING" };
+  assert.ok(!responseStyleViolations(
+    "Text your ride: “I need 10 minutes—can you wait?”",
+    input("Give me one step."),
+    direct
+  ).includes("DIRECT_HELP_INTERROGATION"));
+  assert.ok(responseStyleViolations(
+    "What else can you tell me?",
+    input("Give me one step."),
+    direct
+  ).includes("DIRECT_HELP_INTERROGATION"));
+});
+
 test("defect 7: repeated fact mirroring is detected structurally", () => {
   const history = [
     { role: "USER", text: "The train was cancelled and I missed the interview." },
@@ -164,6 +205,55 @@ test("defect 7: repeated fact mirroring is detected structurally", () => {
     baseDecision
   );
   assert.ok(violations.includes("REPEATED_FACT_MIRRORING"));
+});
+
+test("root-cause grounding checks unsupported implications, diagnoses, and first-turn mirroring", () => {
+  const current = input("My coworker got credit for most of my work.");
+  assert.ok(groundingViolationDetails("That can leave you feeling unseen.", current)
+    .some((detail) => detail.code === "UNSUPPORTED_PSYCHOLOGICAL_IMPLICATION" && /unseen/i.test(detail.claim)));
+  assert.ok(groundingViolationDetails("This is a trauma response.", current)
+    .some((detail) => detail.code === "UNSUPPORTED_DIAGNOSIS"));
+  for (const response of [
+    "That is a significant mismatch.",
+    "That is difficult to deal with.",
+    "Your contribution wasn't recognized.",
+    "That is a frustrating mismatch.",
+    "This is worth addressing.",
+  ]) {
+    assert.ok(groundingViolationDetails(response, current)
+      .some((detail) => detail.code === "UNSUPPORTED_PSYCHOLOGICAL_IMPLICATION"), response);
+  }
+  assert.deepEqual(groundingViolationDetails("I hear you.", current), []);
+  assert.deepEqual(
+    groundingViolationDetails("That felt unfair.", input("That felt unfair to me.")),
+    []
+  );
+  assert.deepEqual(groundingViolationDetails("I’m here if you want to talk it through.", current), []);
+  assert.ok(responseStyleViolations(
+    "Your coworker got credit for most of the work you did.",
+    current,
+    baseDecision
+  ).includes("UNNECESSARY_FACT_MIRRORING"));
+});
+
+test("style repair cites the offending claim and never forces a generic fallback", async () => {
+  const requests = [];
+  let calls = 0;
+  const secondReply = "That can leave you feeling unseen, even when the facts are still unclear.";
+  const reply = await generateMomoResponseWithGenerator(
+    input("My coworker got credit for most of my work."),
+    baseDecision,
+    async (request) => {
+      requests.push(request);
+      calls += 1;
+      return calls === 1 ? "That can leave you feeling unseen." : secondReply;
+    }
+  );
+  assert.equal(calls, 2);
+  assert.equal(reply, secondReply);
+  assert.match(requests[1].instructions, /"That can leave you feeling unseen\."/);
+  assert.doesNotMatch(requests[1].instructions, /UNSUPPORTED_[A-Z_]+/);
+  assert.doesNotMatch(reply, /Go ahead—I’ll listen/);
 });
 
 test("held-out 1: LISTEN to DIRECT_HELP in English", () => {

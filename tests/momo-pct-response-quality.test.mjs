@@ -46,30 +46,30 @@ const decisionFor = (supportMode) => planMomoResponse(
   inferenceFor(supportMode)
 );
 
-test("global PCT contract distinguishes stated, suggested, and unknown content", () => {
+test("authoritative grounding contract limits PCT to explicitly established content", () => {
   const prompt = composeMomoSystemInstruction(baseInstruction, decisionFor("LISTEN"));
-  assert.match(prompt, /USER-STATED facts, emotions, concerns, and preferences may be reflected confidently/i);
-  assert.match(prompt, /STRONGLY SUGGESTED meaning is not established fact/i);
-  assert.match(prompt, /UNKNOWN emotions, motives, diagnoses, meanings, and hidden causes must not be invented/i);
-  assert.match(prompt, /Reflect concrete content before interpretation/i);
-  assert.match(prompt, /one purposeful clarification when they matter/i);
+  assert.ok(prompt.startsWith("GROUNDING CONTRACT — AUTHORITATIVE"));
+  assert.match(prompt, /Use only facts, emotions, meanings, preferences, motives, and causal connections the user explicitly established/i);
+  assert.match(prompt, /Person-centered reflection never authorizes inference beyond the user's words/i);
+  assert.match(prompt, /This contract outranks ordinary PCT reflection guidance/i);
+  assert.match(prompt, /A reflection is optional/i);
+  assert.match(prompt, /may not add an evaluation or interpretation/i);
+  assert.match(prompt, /ask one neutral question if the answer is needed/i);
   assert.match(prompt, /one main job/i);
   assert.match(prompt, /no unnecessary preamble/i);
 });
 
-test("grounded reflection adds significance without parroting or unsupported interpretation", () => {
+test("reflection avoids parroting without requiring invented significance", () => {
   const prompt = composeMomoSystemInstruction(baseInstruction, decisionFor("LISTEN"));
-  assert.match(prompt, /Distinguish CONTENT .* GROUNDED SIGNIFICANCE .* and INTERPRETATION/is);
-  assert.match(prompt, /why confirmed details matter based only on connections the user supplied/i);
-  assert.match(prompt, /combine content with grounded significance/i);
-  assert.match(prompt, /must not present interpretation as fact/i);
-  assert.match(prompt, /Grounded significance can notice an established mismatch, effort, consequence, priority, repeated event, or stated comparison/i);
-  assert.match(prompt, /cannot manufacture the user's internal state/i);
+  assert.doesNotMatch(prompt, /combine content with grounded significance/i);
+  assert.doesNotMatch(prompt, /why confirmed details matter/i);
+  assert.match(prompt, /Do not fill missing meaning with “grounded significance.”/i);
+  assert.match(prompt, /A short response is valid/i);
   assert.match(prompt, /Do not merely restate the message/i);
   assert.match(prompt, /lightly paraphrase it/i);
   assert.match(prompt, /swap words for synonyms/i);
   assert.match(prompt, /transcript confirmation/i);
-  assert.match(prompt, /brief acknowledgement or useful clarification is better than invented depth/i);
+  assert.match(prompt, /brief acknowledgement, conversational space, or one neutral useful question is enough/i);
 });
 
 test("assumption regression corpus never requires an unstated emotion or hidden cause", () => {
@@ -96,7 +96,7 @@ test("assumption regression corpus never requires an unstated emotion or hidden 
     ["I cried after the phone call.", ["sad", "devastated", "heartbroken"]],
   ];
   const modeInstruction = momoDecisionInstruction(decisionFor("LISTEN"));
-  assert.match(modeInstruction, /only emotions or meanings the user actually stated/i);
+  assert.match(modeInstruction, /emotions, and meanings the user explicitly stated/i);
   for (const [message, forbidden] of cases) {
     assert.equal(evaluateDeterministicSafety(message).state, "NORMAL", message);
     for (const label of forbidden) {
@@ -116,8 +116,8 @@ test("minimal pairs permit stated emotion without assigning it to the unstated s
     assert.doesNotMatch(unstated, emotion);
     assert.match(stated, emotion);
   }
-  assert.match(MOMO_PCT_PROMPT, /may be reflected confidently when the user directly stated them/i);
-  assert.match(MOMO_PCT_PROMPT, /not established fact/i);
+  assert.match(MOMO_PCT_PROMPT, /never expands the set of facts or meanings available/i);
+  assert.match(MOMO_PCT_PROMPT, /unless the user already supplied that meaning/i);
 });
 
 test("mode policies enforce brevity and one purposeful question", () => {

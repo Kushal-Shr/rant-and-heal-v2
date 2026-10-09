@@ -226,9 +226,9 @@ describe("responder modes and PCT boundaries", () => {
       })),
     };
 
-    assert.match(instructions.LISTEN, /Reflect the specific situation/);
+    assert.match(instructions.LISTEN, /Use only the situation, emotions, and meanings the user explicitly stated/);
     assert.match(instructions.LISTEN, /Do not give advice, challenge thoughts, or introduce an exercise/);
-    assert.match(instructions.WORK_THROUGH, /exploring it collaboratively/);
+    assert.match(instructions.WORK_THROUGH, /explore collaboratively without supplying missing psychological meaning/);
     assert.match(instructions.WORK_THROUGH, /one useful question or one useful perspective/);
     assert.match(instructions.DIRECT_HELP, /practical, organized help before asking/);
     assert.match(instructions.DIRECT_HELP, /without taking over a major life decision/);
@@ -250,8 +250,8 @@ describe("responder modes and PCT boundaries", () => {
       assert.match(prompt, /respect the user's agency/);
       assert.match(prompt, /do not claim human feelings, memories, or lived experience/);
       assert.match(prompt, /do not diagnose/);
-      assert.match(prompt, /instead of assuming/);
-      assert.match(prompt, /before understanding the situation and acknowledging the emotion/);
+      assert.match(prompt, /Person-centered reflection never authorizes inference beyond the user's words/);
+      assert.match(prompt, /acknowledging the emotion only when the user actually stated it/);
     }
   });
 

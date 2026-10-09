@@ -190,6 +190,29 @@ test("current support goal follows explicit LISTEN to DIRECT_HELP to REGULATE ch
   assert.equal(state.currentGoal, "REGULATE");
 });
 
+test("continuity provenance keeps explicit user direction separate from inferred routing", () => {
+  let state = prepareContinuityState(input("Please just listen—no advice."), undefined, NOW);
+  assert.equal(state.supportPreference, "LISTEN");
+  assert.equal(state.currentPrimaryNeed, "VENT");
+  assert.deepEqual(state.provenance, {
+    currentGoal: "EXPLICIT_USER",
+    currentSupportMode: "EXPLICIT_USER",
+    primaryNeed: "EXPLICIT_USER",
+    supportPreference: "EXPLICIT_USER",
+  });
+  const inferred = finalizeContinuityState(
+    emptyConversationContinuityState(),
+    decision({ supportMode: "WORK_THROUGH", primaryNeed: "UNDERSTAND", intervention: "PCT_EXPLORATION", userPreferenceOverride: false }),
+    "What part matters most?",
+    NOW
+  ).state;
+  assert.equal(inferred.provenance.currentSupportMode, "INFERRED");
+  assert.equal(inferred.provenance.primaryNeed, "INFERRED");
+  assert.equal(inferred.provenance.currentGoal, "INFERRED");
+  assert.match(continuityInstruction(inferred), /Inferred working mode: WORK_THROUGH/);
+  assert.match(continuityInstruction(inferred), /never a user-stated fact/);
+});
+
 test("short contextual replies retain the active mode instead of restarting", () => {
   const state = {
     ...emptyConversationContinuityState(),
@@ -359,9 +382,10 @@ test("composed responder policy uses continuity without regressing PCT or greeti
     intervention: "PCT_LISTENING",
   });
   const prompt = composeMomoSystemInstruction(MOMO_PCT_PROMPT, route, { continuityState: state });
-  assert.match(prompt, /Continue that goal unless the newest user turn changes it/i);
+  assert.match(prompt, /Inference is routing context, never a user-stated fact/i);
+  assert.match(prompt, /Only fields marked explicit user may be described as user-stated/i);
   assert.match(prompt, /Do not restart, re-greet/i);
-  assert.match(prompt, /USER-STATED facts, emotions, concerns, and preferences/i);
+  assert.match(prompt, /Use only facts, emotions, meanings, preferences, motives, and causal connections the user explicitly established/i);
   assert.match(prompt, /If conversation history exists, continue it.*Do not greet the user again/is);
 });
 
@@ -408,10 +432,12 @@ test("continuity storage is bounded and excludes transcripts, journals, diagnose
   assert.ok(parsed.recentResponseShapes.length <= 8);
   assert.deepEqual(Object.keys(parsed).sort(), [
     "currentGoal",
+    "currentPrimaryNeed",
     "currentSupportMode",
     "explicitPreferences",
     "needsReassessment",
     "optionOverload",
+    "provenance",
     "questionFatigue",
     "recentInterventions",
     "recentQuestionTargets",

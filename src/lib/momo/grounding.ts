@@ -45,22 +45,40 @@ function emotionEvidence(text: string, variants: readonly string[]): boolean | u
   return evidence;
 }
 
-export type GroundingViolation = "UNSUPPORTED_EMOTION_INFERENCE" | "UNSUPPORTED_EVENT_INFERENCE";
+function inputEstablishesEmotion(
+  input: NormalizedConversationInput,
+  variants: readonly string[]
+): boolean {
+  let established = false;
+  for (const text of input.history.filter((turn) => turn.role === "USER").map((turn) => turn.text)) {
+    established = emotionEvidence(text, variants) ?? established;
+  }
+  for (const correction of input.continuityState?.userCorrections ?? []) {
+    if (variants.some((word) => correction.rejectedTerm.toLowerCase() === word)) established = false;
+    if (variants.some((word) => correction.preferredTerm.toLowerCase() === word)) established = true;
+  }
+  return emotionEvidence(input.messageText, variants) ?? established;
+}
 
-export function groundingViolations(candidate: string, input: NormalizedConversationInput): GroundingViolation[] {
+export type GroundingViolation =
+  | "UNSUPPORTED_EMOTION_INFERENCE"
+  | "UNSUPPORTED_EVENT_INFERENCE"
+  | "UNSUPPORTED_PSYCHOLOGICAL_IMPLICATION"
+  | "UNSUPPORTED_DIAGNOSIS";
+
+export interface GroundingViolationDetail {
+  code: GroundingViolation;
+  claim: string;
+}
+
+function boundedGroundingViolations(candidate: string, input: NormalizedConversationInput): GroundingViolation[] {
   const violations = new Set<GroundingViolation>();
   const userTurns = input.history.filter((turn) => turn.role === "USER").map((turn) => turn.text);
   for (const match of candidate.matchAll(assignment)) {
     const assigned = match[1] ?? match[2];
     for (const variants of Object.values(EMOTIONS)) {
       if (!new RegExp(`\\b(?:${variants.join("|")})\\b`, "i").test(assigned)) continue;
-      let established = false;
-      for (const text of userTurns) established = emotionEvidence(text, variants) ?? established;
-      for (const correction of input.continuityState?.userCorrections ?? []) {
-        if (variants.some((word) => correction.rejectedTerm.toLowerCase() === word)) established = false;
-        if (variants.some((word) => correction.preferredTerm.toLowerCase() === word)) established = true;
-      }
-      established = emotionEvidence(input.messageText, variants) ?? established;
+      const established = inputEstablishesEmotion(input, variants);
       if (!established) violations.add("UNSUPPORTED_EMOTION_INFERENCE");
     }
   }
@@ -88,4 +106,102 @@ export function groundingViolations(candidate: string, input: NormalizedConversa
     if (!established) violations.add("UNSUPPORTED_EVENT_INFERENCE");
   }
   return [...violations];
+}
+
+const PSYCHOLOGICAL_CONCEPTS: Record<string, readonly string[]> = {
+  invisible: ["invisible", "unseen", "overlooked"],
+  invalidated: ["invalidated", "dismissed"],
+  disrespected: ["disrespected", "not respected"],
+  unvalued: ["unvalued", "undervalued", "not valued", "unappreciated", "not appreciated"],
+  erased: ["erased", "written off"],
+  unfair: ["unfair", "unjust"],
+  unsafe: ["unsafe", "threatened"],
+  powerless: ["powerless", "helpless"],
+  internalConflict: ["your body is reacting", "your mind is", "your nervous system", "part of you"],
+  significance: ["significant", "serious", "important", "meaningful", "worth addressing", "worth dealing with"],
+  difficulty: ["difficult", "rough", "hard to deal with", "hard to handle", "tough to deal with"],
+  recognition: ["recognition", "unrecognized", "not recognized", "lack of recognition", "wasn't recognized", "wasn’t recognized", "was not recognized"],
+};
+
+const DIAGNOSIS = /\b(?:depression|depressive disorder|anxiety disorder|ptsd|post-traumatic stress|ocd|bipolar|adhd|autis(?:m|tic)|personality disorder|trauma response|panic disorder)\b/i;
+const DIAGNOSIS_ASSERTION = /\b(?:you (?:have|are|seem|sound)|you['’]re (?:experiencing|showing|suffering)|this is|that is|it is)\b/i;
+const PSYCHOLOGICAL_ATTRIBUTION = /\b(?:you|your|this|that|it|the situation|the experience)\b/i;
+const IMPLIED_EMOTION_ATTRIBUTION = /\b(?:(?:can|could|may|might|must)\s+(?:make|leave)\s+you(?:\s+feeling|\s+feel)?|you\s+(?:may|might|must|could)\s+(?:feel|be feeling)|(?:it|that|this)(?:['’]s|\s+is)\s+(?:understandable|natural|reasonable)\s+(?:if|to)\s+(?:you\s+)?feel)\b/i;
+
+function clauses(text: string): string[] {
+  return text.split(/(?<=[.!?।])\s+|[;\n]+/).map((clause) => clause.trim()).filter(Boolean);
+}
+
+function containsVariant(text: string, variant: string): boolean {
+  const escaped = variant.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(?:^|\\b)${escaped}(?:\\b|$)`, "i").test(text);
+}
+
+function userEstablishedConcept(input: NormalizedConversationInput, variants: readonly string[]): boolean {
+  const value = variants.map((variant) => variant.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+  const explicit = new RegExp(
+    `\\b(?:i(?:['’]m| am| was| feel| felt| get)|makes? me(?: feel)?|made me(?: feel)?|i feel like)\\s+(?:really\\s+|very\\s+|so\\s+)?(?:${value})\\b|\\b(?:it|that|this)\\s+(?:is|was|feels|felt)\\s+(?:${value})\\b`,
+    "i"
+  );
+  return [...input.history.filter((turn) => turn.role === "USER").map((turn) => turn.text), input.messageText]
+    .some((text) => clauses(unquoted(text)).some((clause) => explicit.test(clause)));
+}
+
+function userEstablishedDiagnosis(input: NormalizedConversationInput): boolean {
+  const explicit = /\bi\s+(?:have|was diagnosed with|am diagnosed with)\s+(?:depression|depressive disorder|anxiety disorder|ptsd|post-traumatic stress|ocd|bipolar|adhd|autism|panic disorder)\b/i;
+  return [...input.history.filter((turn) => turn.role === "USER").map((turn) => turn.text), input.messageText]
+    .some((text) => explicit.test(unquoted(text)));
+}
+
+export function groundingViolationDetails(
+  candidate: string,
+  input: NormalizedConversationInput
+): GroundingViolationDetail[] {
+  const details: GroundingViolationDetail[] = [];
+  const candidateClauses = clauses(unquoted(candidate));
+  for (const code of boundedGroundingViolations(candidate, input)) {
+    const claim = candidateClauses.find((clause) =>
+      code === "UNSUPPORTED_EMOTION_INFERENCE"
+        ? new RegExp(`\\b(?:${words})\\b`, "i").test(clause)
+        : /\b(?:stole|deliberately|intentionally|knowingly)\b/i.test(clause)
+    ) ?? candidate.trim();
+    details.push({ code, claim });
+  }
+
+  for (const clause of candidateClauses) {
+    if (DIAGNOSIS.test(clause) && DIAGNOSIS_ASSERTION.test(clause) && !userEstablishedDiagnosis(input)) {
+      details.push({ code: "UNSUPPORTED_DIAGNOSIS", claim: clause });
+    }
+    if (!PSYCHOLOGICAL_ATTRIBUTION.test(clause)) continue;
+    if (IMPLIED_EMOTION_ATTRIBUTION.test(clause)) {
+      for (const variants of Object.values(EMOTIONS)) {
+        if (variants.some((variant) => new RegExp(`\\b${variant}\\b`, "i").test(clause))
+            && !inputEstablishesEmotion(input, variants)) {
+          details.push({ code: "UNSUPPORTED_PSYCHOLOGICAL_IMPLICATION", claim: clause });
+          break;
+        }
+      }
+    }
+    for (const variants of Object.values(EMOTIONS)) {
+      if (variants.some((variant) => new RegExp(`\\b${variant}\\b`, "i").test(clause))
+          && !inputEstablishesEmotion(input, variants)) {
+        details.push({ code: "UNSUPPORTED_PSYCHOLOGICAL_IMPLICATION", claim: clause });
+        break;
+      }
+    }
+    for (const variants of Object.values(PSYCHOLOGICAL_CONCEPTS)) {
+      const mentionsConcept = variants.some((variant) => containsVariant(clause, variant));
+      if (mentionsConcept && !userEstablishedConcept(input, variants)) {
+        details.push({ code: "UNSUPPORTED_PSYCHOLOGICAL_IMPLICATION", claim: clause });
+        break;
+      }
+    }
+  }
+  return details.filter((detail, index, all) =>
+    all.findIndex((item) => item.code === detail.code && item.claim === detail.claim) === index
+  );
+}
+
+export function groundingViolations(candidate: string, input: NormalizedConversationInput): GroundingViolation[] {
+  return [...new Set(groundingViolationDetails(candidate, input).map((detail) => detail.code))];
 }

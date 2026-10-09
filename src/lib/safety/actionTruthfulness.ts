@@ -48,7 +48,10 @@ export function enforceBackendActionTruthfulness(
     });
   }
 
-  cleaned = cleaned.replace(/\s{2,}/g, " ").trim();
+  cleaned = cleaned
+    .replace(/[ \t]+$/gm, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
   if (!removedClaim) return cleaned;
   const disclosure = "I can’t confirm that any external service or person has been contacted.";
   return cleaned ? `${cleaned}\n\n${disclosure}` : disclosure;
