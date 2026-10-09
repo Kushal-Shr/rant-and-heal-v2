@@ -6,7 +6,7 @@ import {
 
 interface MomoLiveClientOptions {
   idToken: string;
-  sessionId: string;
+  conversationId: string;
   onReady: () => void;
   onTranscriptDelta?: (sender: "USER" | "MOMO", delta: string) => void;
   onListening?: () => void;
@@ -18,7 +18,7 @@ interface MomoLiveClientOptions {
 }
 
 interface LiveSessionResponse {
-  session?: { id?: string };
+  liveConnection?: { id?: string };
   transport?: { type?: string; sdp?: string };
   model?: string;
   error?: string;
@@ -90,10 +90,10 @@ export class MomoLiveClient {
         Authorization: `Bearer ${this.options.idToken}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ sessionId: this.options.sessionId, sdp }),
+      body: JSON.stringify({ conversationId: this.options.conversationId, sdp }),
     });
     const payload = (await response.json().catch(() => null)) as LiveSessionResponse | null;
-    if (!response.ok || payload?.model !== "gpt-live-1" || !payload.transport?.sdp) {
+    if (!response.ok || payload?.model !== "gpt-live-1" || !payload.liveConnection?.id || !payload.transport?.sdp) {
       throw new Error(payload?.error ?? "Could not create a monitored GPT-Live session.");
     }
     await peer.setRemoteDescription({ type: "answer", sdp: payload.transport.sdp });

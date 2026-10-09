@@ -4,7 +4,7 @@ import { z } from "zod";
 import { verifyFirebaseBearerToken } from "@/src/server/auth";
 import { getErrorMessage } from "@/src/server/errors";
 import { getAdminDb } from "@/src/server/firebaseAdmin";
-import { MomoAccessError, consumeQuota, requireOwnedSession } from "@/src/server/momo/access";
+import { MomoAccessError, consumeQuota, requireOwnedConversation } from "@/src/server/momo/access";
 import { isGeminiBillingError } from "@/src/server/momo/gemini";
 import { recordMomoSafetyEvent } from "@/src/server/momo/safety";
 import { assessMomoTurnSafety } from "@/src/server/momo/turnSafety";
@@ -29,7 +29,7 @@ export const maxDuration = 30;
 const HISTORY_LIMIT = 12;
 const schema = z.object({
   userId: z.string().trim().min(1).max(128),
-  sessionId: z.string().trim().min(1).max(128),
+  conversationId: z.string().trim().min(1).max(128),
   requestId: z.string().uuid(),
   messageText: z.string().trim().min(1).max(4000),
 }).strict();
@@ -66,11 +66,12 @@ export async function POST(request: NextRequest) {
     if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     const parsed = schema.safeParse(await request.json().catch(() => null));
     if (!parsed.success) return NextResponse.json({ error: "Invalid message request" }, { status: 400 });
-    const { userId, sessionId, requestId, messageText } = parsed.data;
+    const { userId, conversationId, requestId, messageText } = parsed.data;
+    const sessionId = conversationId;
     if (token.uid !== userId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const db = getAdminDb();
-    const sessionRef = await requireOwnedSession(db, userId, sessionId);
+    const sessionRef = await requireOwnedConversation(db, userId, conversationId);
     await consumeQuota({ db, userId, key: "momo_chat_minute", limit: 20, windowMs: 60_000 });
     const messagesRef = sessionRef.collection("messages");
     const requestRef = sessionRef.collection("requests").doc(requestId);
@@ -232,12 +233,13 @@ export async function POST(request: NextRequest) {
         throw new MomoAccessError("This response was superseded by a newer request.", 409);
       }
       transaction.set(messagesRef.doc(`${requestId}-user`), {
-        text: messageText, sender: "USER", source: "TEXT", provenance: "SERVER", order: 0, timestamp: FieldValue.serverTimestamp(),
+        text: messageText, sender: "USER", source: "TEXT", modality: "TEXT", provenance: "SERVER", order: 0, timestamp: FieldValue.serverTimestamp(),
       });
       transaction.set(messagesRef.doc(`${requestId}-momo`), {
         text: reply,
         sender: "MOMO",
         source: "TEXT",
+        modality: "TEXT",
         provenance: "SERVER",
         order: 1,
         continuityMetadata: finalizedContinuity.metadata,

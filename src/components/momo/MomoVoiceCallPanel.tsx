@@ -23,12 +23,19 @@ interface MonitorStatus {
 
 interface MomoVoiceCallPanelProps {
   embedded?: boolean;
-  sessionId?: string | null;
+  conversationId?: string | null;
+  onCallActiveChange?: (active: boolean) => void;
+  onTranscriptDelta?: (sender: "USER" | "MOMO", delta: string) => void;
 }
 
 const MAX_CAPTION_CHARS = 260;
 
-export function MomoVoiceCallPanel({ embedded = false, sessionId }: MomoVoiceCallPanelProps) {
+export function MomoVoiceCallPanel({
+  embedded = false,
+  conversationId,
+  onCallActiveChange,
+  onTranscriptDelta,
+}: MomoVoiceCallPanelProps) {
   const { user, loading } = useAuth();
   const router = useRouter();
   const [callState, setCallState] = useState<CallState>("IDLE");
@@ -67,6 +74,7 @@ export function MomoVoiceCallPanel({ embedded = false, sessionId }: MomoVoiceCal
     liveClientRef.current = null;
     updateLiveStatus("idle");
     setMuted(false);
+    onCallActiveChange?.(false);
   }
 
   async function endCall() {
@@ -80,6 +88,10 @@ export function MomoVoiceCallPanel({ embedded = false, sessionId }: MomoVoiceCal
     setCallState("DISCONNECTED");
     setErrorMessage(null);
     setCallNotice(null);
+    onCallActiveChange?.(false);
+    if (!embedded && conversationId) {
+      router.push(`/momo?conversationId=${encodeURIComponent(conversationId)}`);
+    }
   }
 
   useEffect(() => {
@@ -103,15 +115,16 @@ export function MomoVoiceCallPanel({ embedded = false, sessionId }: MomoVoiceCal
     setCallState("ERROR");
     updateLiveStatus("idle");
     setErrorMessage(message);
+    onCallActiveChange?.(false);
   }
 
   function beginMonitorPolling(generation: number) {
     monitorTimerRef.current = window.setInterval(async () => {
-      if (!user || !sessionId || generationRef.current !== generation) return;
+      if (!user || !conversationId || generationRef.current !== generation) return;
       try {
         const idToken = await user.getIdToken();
         const response = await fetch(
-          `/api/momo/live-session/status?sessionId=${encodeURIComponent(sessionId)}`,
+          `/api/momo/live-session/status?conversationId=${encodeURIComponent(conversationId)}`,
           { headers: { Authorization: `Bearer ${idToken}` } }
         );
         const status = (await response.json().catch(() => null)) as MonitorStatus | null;
@@ -137,7 +150,7 @@ export function MomoVoiceCallPanel({ embedded = false, sessionId }: MomoVoiceCal
   }
 
   async function startCall() {
-    if (!user || !sessionId) {
+    if (!user || !conversationId) {
       setErrorMessage("Create or select a conversation before calling.");
       return;
     }
@@ -152,12 +165,13 @@ export function MomoVoiceCallPanel({ embedded = false, sessionId }: MomoVoiceCal
     setSafetyState("NORMAL");
     setUserCaption("");
     setMomoCaption("");
+    onCallActiveChange?.(true);
 
     try {
       const idToken = await user.getIdToken();
       const client = new MomoLiveClient({
         idToken,
-        sessionId,
+        conversationId,
         onReady: () => {
           if (generationRef.current !== generation) return;
           if (setupTimeoutRef.current !== null) window.clearTimeout(setupTimeoutRef.current);
@@ -171,6 +185,7 @@ export function MomoVoiceCallPanel({ embedded = false, sessionId }: MomoVoiceCal
           const update = (current: string) => `${current}${delta}`.slice(-MAX_CAPTION_CHARS);
           if (sender === "USER") setUserCaption(update);
           else setMomoCaption(update);
+          onTranscriptDelta?.(sender, delta);
         },
         onListening: () => {
           if (generationRef.current !== generation) return;
@@ -237,9 +252,9 @@ export function MomoVoiceCallPanel({ embedded = false, sessionId }: MomoVoiceCal
   }
   if (!user) return null;
 
-  const isCallable = Boolean(sessionId);
+  const isCallable = Boolean(conversationId);
   const statusText = callState === "IDLE"
-    ? sessionId ? "Ready for an AI voice conversation." : "Create or select a chat before calling."
+    ? conversationId ? "Ready to continue this conversation by voice." : "Create or select a chat before calling."
     : callState === "CONNECTING" ? "Connecting securely..."
       : callState === "CONNECTED" && muted ? "Microphone muted."
         : callState === "CONNECTED" && liveStatus === "speaking" ? "Momo is speaking"
@@ -253,7 +268,7 @@ export function MomoVoiceCallPanel({ embedded = false, sessionId }: MomoVoiceCal
     <div className={embedded
       ? "border-b border-[#ffeada] bg-[#fff8f5]/80 px-4 py-3 sm:px-6"
       : "flex min-h-[75dvh] flex-col items-center justify-center gap-6 py-6 text-[#2c1601]"}>
-      {!embedded && <Link className="self-start rounded-full bg-white/70 px-4 py-2 text-sm text-[#325347]" href="/momo">← Back to conversation</Link>}
+      {!embedded && <Link className="self-start rounded-full bg-white/70 px-4 py-2 text-sm text-[#325347]" href={conversationId ? `/momo?conversationId=${encodeURIComponent(conversationId)}` : "/momo"}>← Back to conversation</Link>}
       <div className={embedded
         ? "mx-auto flex max-w-3xl flex-col gap-4 rounded-[1.5rem] border border-white/80 bg-white/80 p-4 shadow-[0_12px_28px_-18px_rgba(121,88,65,0.25),inset_0_2px_4px_rgba(255,255,255,0.8)] sm:flex-row sm:items-center sm:justify-between"
         : "flex w-full max-w-md flex-col items-center rounded-[2.5rem] border border-white/80 bg-white/80 p-8 shadow-[0_20px_40px_-20px_rgba(121,88,65,0.24),inset_0_2px_4px_rgba(255,255,255,0.8)]"}>
@@ -266,6 +281,7 @@ export function MomoVoiceCallPanel({ embedded = false, sessionId }: MomoVoiceCal
             <p className="font-['Plus_Jakarta_Sans'] text-xs font-medium uppercase tracking-[0.12em] text-[#4a6b5e]/70">Momo AI Voice</p>
             <h2 className={embedded ? "mt-1 font-['Plus_Jakarta_Sans'] text-lg font-medium text-[#325347]" : "mb-3 mt-2 text-center text-3xl font-medium tracking-[-0.03em] text-[#325347]"}>Talk to Momo</h2>
             <p aria-live="polite" className={`font-['Plus_Jakarta_Sans'] text-sm ${callState === "ERROR" ? "text-[#ba1a1a]" : "text-[#414845]"}`}>{statusText}</p>
+            {embedded && active ? <p className="mt-1 text-xs text-[#596c60]">Live captions appear in the conversation below.</p> : null}
             {callNotice && callState === "CONNECTED" && <p role="status" className="mt-2 rounded-xl bg-[#fff8e8] px-3 py-2 text-xs text-[#654f18]">{callNotice}</p>}
             {permissionState === "denied" && <p className="mt-2 text-xs text-[#93000a]">Microphone permission was denied. Enable it in browser settings to try again.</p>}
             {safetyState !== "NORMAL" && <p className="mt-2 rounded-xl bg-[#fff1e8] px-3 py-2 text-xs text-[#6f3b16]">Momo is focused on immediate safety. <Link className="underline" href="/crisis?source=momo-voice">Open crisis support</Link></p>}

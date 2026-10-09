@@ -7,7 +7,7 @@ import type { ConversationTurn } from "@/src/lib/momo/schemas";
 import { verifyFirebaseBearerToken } from "@/src/server/auth";
 import { getErrorMessage } from "@/src/server/errors";
 import { getAdminDb } from "@/src/server/firebaseAdmin";
-import { MomoAccessError, consumeQuota, requireOwnedSession } from "@/src/server/momo/access";
+import { MomoAccessError, consumeQuota, requireOwnedConversation } from "@/src/server/momo/access";
 import { getRequiredEnv } from "@/src/server/momo/gemini";
 import {
   createMomoLiveSession,
@@ -22,7 +22,7 @@ export const maxDuration = 30;
 
 const HISTORY_LIMIT = 12;
 const schema = z.object({
-  sessionId: z.string().trim().min(1).max(128),
+  conversationId: z.string().trim().min(1).max(128),
   sdp: momoLiveOfferSchema,
 }).strict();
 
@@ -68,7 +68,7 @@ export async function POST(request: NextRequest) {
     }
 
     const db = getAdminDb();
-    const sessionRef = await requireOwnedSession(db, token.uid, parsed.data.sessionId);
+    const conversationRef = await requireOwnedConversation(db, token.uid, parsed.data.conversationId);
     await consumeQuota({
       db,
       userId: token.uid,
@@ -77,21 +77,15 @@ export async function POST(request: NextRequest) {
       windowMs: 10 * 60_000,
     });
     const [sessionSnapshot, userSnapshot, messagesSnapshot] = await Promise.all([
-      sessionRef.get(),
+      conversationRef.get(),
       db.collection("users").doc(token.uid).get(),
-      sessionRef.collection("messages").orderBy("timestamp", "asc").limitToLast(HISTORY_LIMIT).get(),
+      conversationRef.collection("messages").orderBy("timestamp", "asc").limitToLast(HISTORY_LIMIT).get(),
     ]);
     const session = sessionSnapshot.data();
     const profile = userSnapshot.data();
-    const priorVoice = session?.liveVoice;
-    const priorHeartbeat = priorVoice?.monitorHeartbeatAt?.toMillis?.();
-    if (priorVoice?.monitorStatus === "ACTIVE" &&
-        typeof priorHeartbeat === "number" && Date.now() - priorHeartbeat < 15_000) {
-      throw new MomoAccessError("A monitored Momo voice call is already active.", 409);
-    }
     const bootstrap = parseLiveBootstrapState({
       userId: token.uid,
-      sessionId: parsed.data.sessionId,
+      conversationId: parsed.data.conversationId,
       history: history(messagesSnapshot.docs.map((doc) => doc.data() as StoredMessage)),
       continuityState: session?.continuityState,
       safetyEvaluation: session?.safetyEvaluation,
@@ -123,7 +117,7 @@ export async function POST(request: NextRequest) {
     });
 
     return NextResponse.json({
-      session: { id: live.session.id },
+      liveConnection: { id: live.session.id },
       transport: live.transport,
       model: "gpt-live-1",
     }, { status: 201 });

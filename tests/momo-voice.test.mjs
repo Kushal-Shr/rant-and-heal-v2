@@ -12,6 +12,7 @@ const { MOMO_SYSTEM_INSTRUCTION } = await import("../src/server/momo/persona.ts"
 const {
   OPENAI_LIVE_SESSION_ENDPOINT,
   assertMomoVoiceModel,
+  buildMomoLiveOpeningInstruction,
   buildMomoLiveSessionRequest,
   momoLiveOfferSchema,
   stableSafetyIdentifier,
@@ -36,7 +37,7 @@ const continuityState = {
 };
 const bootstrap = {
   userId: "firebase-user-123",
-  sessionId: "conversation-123",
+  conversationId: "conversation-123",
   history: [{ role: "USER", text: "Don't give me advice, just listen." }],
   continuityState,
   participant: { isAnonymous: true },
@@ -77,6 +78,7 @@ test("text and voice use the exact same canonical behavioral policy source", () 
 
 test("voice-only overlay is limited to delivery, interruption, and delegation", () => {
   assert.match(MOMO_VOICE_DELIVERY_OVERLAY, /short spoken sentences/i);
+  assert.match(MOMO_VOICE_DELIVERY_OVERLAY, /warm, calm, grounded delivery/i);
   assert.match(MOMO_VOICE_DELIVERY_OVERLAY, /Stop speaking immediately/i);
   assert.match(MOMO_VOICE_DELIVERY_OVERLAY, /Do not read Markdown syntax aloud/i);
   assert.match(MOMO_VOICE_DELIVERY_OVERLAY, /Delegate every substantive support response/i);
@@ -90,12 +92,51 @@ test("Live request uses the current server-negotiated WebRTC path with bounded s
   assert.equal(request.body.transport.type, "webrtc");
   assert.equal(request.body.transport.sdp, "v=0\r\nmock-offer");
   assert.deepEqual(request.body.session.delegation, { type: "client" });
+  assert.equal(request.body.session.audio.output.voice, process.env.MOMO_VOICE_NAME ?? "willow");
   assert.equal(request.body.session.store, false);
-  assert.equal(request.body.session.input.length, 1);
+  assert.equal(request.body.session.input.length, 2);
+  assert.equal(request.body.session.input[0].role, "developer");
+  assert.match(request.body.session.input[0].content[0].text, /silent context/i);
+  assert.equal(request.body.session.input[1].role, "user");
   const serialized = JSON.stringify(request.body).toLowerCase();
   for (const forbidden of ["journal", "embedding", "therapist-private", "chain-of-thought", "firebase-user-123"]) {
     assert.equal(serialized.includes(forbidden), false, forbidden);
   }
+});
+
+test("Momo initiates a new voice chat with a brief greeting", () => {
+  const instruction = buildMomoLiveOpeningInstruction({ ...bootstrap, history: [] });
+  assert.match(instruction, /begin speaking immediately/i);
+  assert.match(instruction, /new conversation/i);
+  assert.match(instruction, /greet the caller warmly as Momo/i);
+  assert.match(instruction, /pause and listen/i);
+  assert.doesNotMatch(instruction, /completed conversation history/i);
+});
+
+test("Momo initiates a resumed voice chat from its existing context without replaying it", () => {
+  const instruction = buildMomoLiveOpeningInstruction(bootstrap);
+  assert.match(instruction, /continue the existing conversation/i);
+  assert.match(instruction, /latest unresolved topic or question/i);
+  assert.match(instruction, /do not summarize, replay, quote, or reveal/i);
+  assert.match(instruction, /pause and listen/i);
+  assert.equal(instruction.includes(bootstrap.history[0].text), false);
+});
+
+test("Momo resumes an active safety flow instead of using a casual call greeting", () => {
+  const instruction = buildMomoLiveOpeningInstruction({
+    ...bootstrap,
+    safetyEvaluation: {
+      state: "SUICIDAL",
+      safetyTarget: "SELF",
+      assessmentStep: "CHECK_CURRENT_IMMEDIACY",
+      resolution: "ASSESSING",
+      deterministic: { language: "EN" },
+    },
+  });
+  assert.match(instruction, /active safety flow/i);
+  assert.match(instruction, /Do you think you might act on these thoughts now or today\?/);
+  assert.match(instruction, /say exactly this/i);
+  assert.doesNotMatch(instruction, /greet the caller warmly/i);
 });
 
 test("SDP offer validation preserves the browser offer byte-for-byte", () => {
@@ -138,6 +179,13 @@ test("trusted sideband owns safety interruption and voice fails closed", async (
   assert.match(sideband, /recordMomoSafetyEvent/);
   assert.match(sideband, /enforceBackendActionTruthfulness/);
   assert.match(sideband, /truthfulness_interrupt/);
+  assert.match(sideband, /event\.type === "session\.started"/);
+  assert.match(sideband, /buildMomoLiveOpeningInstruction/);
+  assert.match(sideband, /openingSent/);
+  assert.match(sideband, /delegation_id: null/);
+  assert.match(sideband, /THINKING_UPDATE_DELAY_MS/);
+  assert.match(sideband, /momo_thinking_update/);
+  assert.match(sideband, /session\.commentary\.append/);
   assert.match(sideband, /monitorStatus:\s*"FAILED"/);
   assert.match(sideband, /session\.close/);
   assert.match(client, /interruptPlayback/);
@@ -150,4 +198,5 @@ test("trusted sideband owns safety interruption and voice fails closed", async (
 test("voice remains release-disabled by default", async () => {
   const example = await readFile(new URL("../.env.example", import.meta.url), "utf8");
   assert.match(example, /^ENABLE_MOMO_VOICE=false$/m);
+  assert.match(example, /^MOMO_VOICE_NAME=willow$/m);
 });

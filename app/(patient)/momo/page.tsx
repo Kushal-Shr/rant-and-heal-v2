@@ -18,6 +18,7 @@ import { Button } from "@/src/components/ui/Button";
 import { Textarea } from "@/src/components/forms/Textarea";
 import { Card } from "@/src/components/ui/Card";
 import { Spinner } from "@/src/components/ui/Spinner";
+import { MomoVoiceCallPanel } from "@/src/components/momo/MomoVoiceCallPanel";
 import { db } from "@/src/config/firebase";
 import { useAuth } from "@/src/context/AuthContext";
 
@@ -49,16 +50,94 @@ interface FirestoreSession {
   title?: string;
 }
 
+interface LiveTranscriptTurn {
+  id: string;
+  sender: MessageSender;
+  text: string;
+}
+
+const LIVE_TRANSCRIPT_GAP_MS = 1_200;
+const MAX_LIVE_TRANSCRIPT_TURNS = 20;
+const MAX_LIVE_TRANSCRIPT_CHARS = 2_000;
+
 export default function MomoPage() {
   const router = useRouter();
   const { user, loading } = useAuth();
   const [sessions, setSessions] = useState<ChatSession[]>([]);
-  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [conversationId, setConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<MomoMessage[]>([]);
   const [inputValue, setInputValue] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
+  const [voicePanelOpen, setVoicePanelOpen] = useState(false);
+  const [voiceCallActive, setVoiceCallActive] = useState(false);
+  const [liveTranscriptTurns, setLiveTranscriptTurns] = useState<LiveTranscriptTurn[]>([]);
   const messagesRef = useRef<HTMLDivElement | null>(null);
+  const liveTranscriptIdsRef = useRef<Record<MessageSender, string | null>>({
+    USER: null,
+    MOMO: null,
+  });
+  const liveTranscriptTimersRef = useRef<Record<MessageSender, number | null>>({
+    USER: null,
+    MOMO: null,
+  });
+
+  function clearLiveTranscriptTimers() {
+    for (const sender of ["USER", "MOMO"] as const) {
+      const timer = liveTranscriptTimersRef.current[sender];
+      if (timer !== null) window.clearTimeout(timer);
+      liveTranscriptTimersRef.current[sender] = null;
+      liveTranscriptIdsRef.current[sender] = null;
+    }
+  }
+
+  function resetLiveTranscript() {
+    clearLiveTranscriptTimers();
+    setLiveTranscriptTurns([]);
+  }
+
+  function handleVoiceCallActiveChange(active: boolean) {
+    setVoiceCallActive(active);
+    resetLiveTranscript();
+  }
+
+  function handleLiveTranscriptDelta(sender: MessageSender, delta: string) {
+    if (!delta) return;
+    let transcriptId = liveTranscriptIdsRef.current[sender];
+    if (!transcriptId) {
+      transcriptId = `live-${sender.toLowerCase()}-${crypto.randomUUID()}`;
+      liveTranscriptIdsRef.current[sender] = transcriptId;
+    }
+    const currentId = transcriptId;
+    setLiveTranscriptTurns((current) => {
+      const existing = current.findIndex((turn) => turn.id === currentId);
+      if (existing >= 0) {
+        return current.map((turn, index) => index === existing
+          ? { ...turn, text: `${turn.text}${delta}`.slice(-MAX_LIVE_TRANSCRIPT_CHARS) }
+          : turn);
+      }
+      return [...current.slice(-(MAX_LIVE_TRANSCRIPT_TURNS - 1)), {
+        id: currentId,
+        sender,
+        text: delta,
+      }];
+    });
+    const previousTimer = liveTranscriptTimersRef.current[sender];
+    if (previousTimer !== null) window.clearTimeout(previousTimer);
+    liveTranscriptTimersRef.current[sender] = window.setTimeout(() => {
+      if (liveTranscriptIdsRef.current[sender] === currentId) {
+        liveTranscriptIdsRef.current[sender] = null;
+      }
+      liveTranscriptTimersRef.current[sender] = null;
+    }, LIVE_TRANSCRIPT_GAP_MS);
+  }
+
+  function chooseConversation(nextConversationId: string) {
+    setVoicePanelOpen(false);
+    setVoiceCallActive(false);
+    resetLiveTranscript();
+    setConversationId(nextConversationId);
+  }
 
   useEffect(() => {
     if (loading) {
@@ -98,14 +177,24 @@ export default function MomoPage() {
               title: "New Conversation",
               createdAt: serverTimestamp(),
             });
-            setSessionId(newSessionRef.id);
+            setConversationId(newSessionRef.id);
           } catch (error) {
             console.error("FIRESTORE SESSION INIT ERROR:", error);
           }
           return;
         }
 
-        setSessionId((currentSessionId) => currentSessionId ?? nextSessions[0].id);
+        const requestedConversationId = new URLSearchParams(window.location.search)
+          .get("conversationId")?.trim();
+        setConversationId((currentConversationId) => {
+          if (currentConversationId && nextSessions.some((item) => item.id === currentConversationId)) {
+            return currentConversationId;
+          }
+          if (requestedConversationId && nextSessions.some((item) => item.id === requestedConversationId)) {
+            return requestedConversationId;
+          }
+          return nextSessions[0].id;
+        });
       },
       (error) => {
         console.error("FIRESTORE SESSION INIT ERROR:", error);
@@ -116,11 +205,11 @@ export default function MomoPage() {
   }, [user?.uid]);
 
   useEffect(() => {
-    if (!user?.uid || !sessionId) {
+    if (!user?.uid || !conversationId) {
       return;
     }
 
-    const messagesRef = collection(db, "users", user.uid, "sessions", sessionId, "messages");
+    const messagesRef = collection(db, "users", user.uid, "sessions", conversationId, "messages");
     const messagesQuery = query(messagesRef, orderBy("timestamp", "desc"), limit(100));
 
     const unsubscribe = onSnapshot(messagesQuery, (snapshot) => {
@@ -146,12 +235,14 @@ export default function MomoPage() {
     });
 
     return () => unsubscribe();
-  }, [sessionId, user?.uid]);
+  }, [conversationId, user?.uid]);
 
   useEffect(() => {
     const container = messagesRef.current;
     if (container) container.scrollTo({ top: container.scrollHeight, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
-  }, [messages]);
+  }, [liveTranscriptTurns, messages]);
+
+  useEffect(() => () => clearLiveTranscriptTimers(), []);
 
   async function sendMessage(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -160,7 +251,7 @@ export default function MomoPage() {
       return;
     }
 
-    if (!sessionId) {
+    if (!conversationId) {
       console.error("FIRESTORE WRITE ERROR:", "missing-session", "No active chat session available.");
       return;
     }
@@ -186,7 +277,7 @@ export default function MomoPage() {
         },
         body: JSON.stringify({
           userId: user.uid,
-          sessionId,
+          conversationId,
           requestId: crypto.randomUUID(),
           messageText: userMessageText,
         }),
@@ -228,7 +319,7 @@ export default function MomoPage() {
         title: "New Conversation",
         createdAt: serverTimestamp(),
       });
-      setSessionId(newSessionRef.id);
+      chooseConversation(newSessionRef.id);
     } catch (error) {
       const firestoreError = error as FirestoreError;
       console.error("FIRESTORE SESSION INIT ERROR:", firestoreError.code, firestoreError.message);
@@ -262,8 +353,8 @@ export default function MomoPage() {
           <div className="mt-2 flex-1 space-y-2 overflow-y-auto px-2 pb-3">
             <p className="px-3 pb-2 pt-3 text-xs font-medium uppercase tracking-[0.12em] text-[#4a6b5e]/65">Your conversations</p>
             {sessions.map((session) => {
-              const isActive = session.id === sessionId;
-              return <button className={`w-full rounded-[1.25rem] px-4 py-3 text-left transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#325347] ${isActive ? "bg-[#c6ebda]/65 text-[#002117] shadow-[inset_0_2px_5px_rgba(44,22,1,0.05)]" : "text-[#414845] hover:bg-[#fff1e8]"}`} key={session.id} onClick={() => setSessionId(session.id)} type="button"><p className="text-xs font-medium uppercase tracking-[0.1em] opacity-60">Conversation</p><p className="mt-1 truncate text-sm font-medium">{session.title}</p></button>;
+              const isActive = session.id === conversationId;
+              return <button className={`w-full rounded-[1.25rem] px-4 py-3 text-left transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#325347] ${isActive ? "bg-[#c6ebda]/65 text-[#002117] shadow-[inset_0_2px_5px_rgba(44,22,1,0.05)]" : "text-[#414845] hover:bg-[#fff1e8]"}`} key={session.id} onClick={() => chooseConversation(session.id)} type="button"><p className="text-xs font-medium uppercase tracking-[0.1em] opacity-60">Conversation</p><p className="mt-1 truncate text-sm font-medium">{session.title}</p></button>;
             })}
           </div>
         </Card>
@@ -275,23 +366,39 @@ export default function MomoPage() {
               <div><p className="text-lg font-medium text-[#325347]">Momo</p><p className="text-xs text-[#717974]">Your AI companion</p></div>
             </div>
             <div className="flex items-center gap-2">
-              {momoVoiceEnabled && sessionId ? (
-                <Link
-                  aria-label="Start a voice call with Momo"
-                  className="inline-flex size-11 items-center justify-center rounded-full bg-[#c6ebda] text-[#325347] shadow-[0_8px_16px_-6px_rgba(50,83,71,0.2),inset_0_1px_3px_rgba(255,255,255,0.8)] transition hover:bg-[#abcebf] active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#325347] focus-visible:ring-offset-2"
-                  href={`/momo/call?sessionId=${encodeURIComponent(sessionId)}`}
-                  title="Call Momo"
+              {momoVoiceEnabled && conversationId ? (
+                <button
+                  aria-expanded={voicePanelOpen}
+                  aria-label={voicePanelOpen ? "Voice call controls are open" : "Open voice call controls"}
+                  className={`inline-flex size-11 items-center justify-center rounded-full text-[#325347] shadow-[0_8px_16px_-6px_rgba(50,83,71,0.2),inset_0_1px_3px_rgba(255,255,255,0.8)] transition active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#325347] focus-visible:ring-offset-2 ${voicePanelOpen ? "bg-[#abcebf]" : "bg-[#c6ebda] hover:bg-[#abcebf]"}`}
+                  disabled={voiceCallActive}
+                  onClick={() => {
+                    if (voicePanelOpen) resetLiveTranscript();
+                    setVoicePanelOpen((open) => !open);
+                  }}
+                  title={voicePanelOpen ? "Voice call controls open" : "Call Momo"}
+                  type="button"
                 >
-                  <span aria-hidden="true" className="material-symbols-outlined">call</span>
-                </Link>
+                  <span aria-hidden="true" className="material-symbols-outlined">{voiceCallActive ? "graphic_eq" : "call"}</span>
+                </button>
               ) : null}
               <button className="rounded-full bg-[#fff1e8] px-4 py-2 text-sm font-medium text-[#795841] transition hover:bg-[#ffe3cd] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#795841] xl:hidden" onClick={createNewSession} type="button"><span aria-hidden="true" className="material-symbols-outlined mr-1 align-[-3px] text-base">add</span>New</button>
             </div>
           </header>
 
+          {voicePanelOpen && conversationId ? (
+            <MomoVoiceCallPanel
+              embedded
+              key={conversationId}
+              conversationId={conversationId}
+              onCallActiveChange={handleVoiceCallActiveChange}
+              onTranscriptDelta={handleLiveTranscriptDelta}
+            />
+          ) : null}
+
           <label className="flex shrink-0 items-center gap-3 border-b border-[#ffeada] px-5 py-3 text-xs text-[#596c60] xl:hidden">
             Conversation
-            <select aria-label="Choose a conversation" value={sessionId ?? ""} onChange={(event) => setSessionId(event.target.value)} className="min-w-0 flex-1 rounded-full bg-[#fff1e8] px-3 py-2 text-sm text-[#325347]">
+            <select aria-label="Choose a conversation" value={conversationId ?? ""} onChange={(event) => chooseConversation(event.target.value)} className="min-w-0 flex-1 rounded-full bg-[#fff1e8] px-3 py-2 text-sm text-[#325347]">
               {!sessions.length && <option value="">Preparing your conversation…</option>}
               {sessions.map((session) => <option key={session.id} value={session.id}>{session.title}</option>)}
             </select>
@@ -299,12 +406,22 @@ export default function MomoPage() {
 
           <div ref={messagesRef} className="min-h-0 flex-1 overflow-y-auto px-5 py-6 sm:px-7">
             <div className="mx-auto flex max-w-3xl flex-col gap-5 pb-8">
-              {messages.length === 0 ? <div className="mx-auto flex max-w-md flex-col items-center rounded-[2rem] bg-[#fff1e8] px-7 py-9 text-center"><div aria-hidden="true" className="flex size-12 items-center justify-center rounded-full bg-[#c6ebda] text-[#325347]"><span className="material-symbols-outlined">waving_hand</span></div><h1 className="mt-4 text-xl font-medium text-[#325347]">I&apos;m here whenever you&apos;re ready.</h1><p className="mt-2 text-sm leading-6 text-[#414845]/75">You can write freely, ask for a moment to pause, or tell Momo what kind of support would help.</p></div> : null}
+              {messages.length === 0 && liveTranscriptTurns.length === 0 ? <div className="mx-auto flex max-w-md flex-col items-center rounded-[2rem] bg-[#fff1e8] px-7 py-9 text-center"><div aria-hidden="true" className="flex size-12 items-center justify-center rounded-full bg-[#c6ebda] text-[#325347]"><span className="material-symbols-outlined">waving_hand</span></div><h1 className="mt-4 text-xl font-medium text-[#325347]">I&apos;m here whenever you&apos;re ready.</h1><p className="mt-2 text-sm leading-6 text-[#414845]/75">You can write freely, ask for a moment to pause, or tell Momo what kind of support would help.</p></div> : null}
               {messages.map((message) => {
                 const isUserMessage = message.sender === "USER";
                 return <div className={`flex gap-3 ${isUserMessage ? "justify-end" : "justify-start"}`} key={message.id}>
                   {!isUserMessage ? <div aria-hidden="true" className="mt-1 flex size-8 shrink-0 items-center justify-center rounded-full bg-[#c6ebda] text-[#325347]"><span className="material-symbols-outlined text-sm">cloud</span></div> : null}
                   <article className={`max-w-[85%] px-4 py-3 text-[15px] font-light leading-7 shadow-sm ${isUserMessage ? "rounded-2xl rounded-br-none bg-[#ffdcc6]/65 text-[#2d1605]" : "rounded-2xl rounded-tl-none bg-[#c6ebda]/45 text-[#2d4d41]"}`}><p className="whitespace-pre-wrap">{message.text}</p></article>
+                </div>;
+              })}
+              {liveTranscriptTurns.map((turn) => {
+                const isUserMessage = turn.sender === "USER";
+                return <div className={`flex gap-3 ${isUserMessage ? "justify-end" : "justify-start"}`} key={turn.id}>
+                  {!isUserMessage ? <div aria-hidden="true" className="mt-1 flex size-8 shrink-0 items-center justify-center rounded-full bg-[#c6ebda] text-[#325347]"><span className="material-symbols-outlined text-sm">graphic_eq</span></div> : null}
+                  <article className={`max-w-[85%] border px-4 py-3 text-[15px] font-light leading-7 shadow-sm ${isUserMessage ? "rounded-2xl rounded-br-none border-[#e9bfa4] bg-[#ffdcc6]/45 text-[#2d1605]" : "rounded-2xl rounded-tl-none border-[#9fc8b7] bg-[#c6ebda]/30 text-[#2d4d41]"}`}>
+                    <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] opacity-55">Live call transcript</p>
+                    <p className="whitespace-pre-wrap">{turn.text}</p>
+                  </article>
                 </div>;
               })}
               {isSending ? <div className="flex items-center gap-3"><div aria-hidden="true" className="flex size-8 items-center justify-center rounded-full bg-[#c6ebda] text-[#325347]"><span className="material-symbols-outlined text-sm">cloud</span></div><div className="flex gap-1 rounded-2xl rounded-tl-none bg-[#c6ebda]/30 px-4 py-3"><span className="size-2 animate-bounce rounded-full bg-[#325347]/40" /><span className="size-2 animate-bounce rounded-full bg-[#325347]/40 [animation-delay:150ms]" /><span className="size-2 animate-bounce rounded-full bg-[#325347]/40 [animation-delay:300ms]" /></div></div> : null}
@@ -316,7 +433,7 @@ export default function MomoPage() {
             {sendError ? <p className="mx-auto mb-3 max-w-3xl rounded-[1rem] bg-[#ffdad6] px-4 py-3 text-sm text-[#93000a]" role="alert">{sendError}</p> : null}
             <form className="mx-auto flex max-w-3xl items-end gap-2 rounded-[1.5rem] border border-[#ffe3cd] bg-[#fff1e8] p-2 shadow-[inset_0_3px_8px_rgba(44,22,1,0.05)]" onSubmit={sendMessage}>
               <Textarea aria-label="Message Momo" className="min-h-12 flex-1 rounded-[1rem] bg-transparent px-3 py-2 text-sm shadow-none" onChange={(event) => setInputValue(event.target.value)} placeholder="Type what&apos;s on your mind..." rows={1} value={inputValue} />
-              <Button aria-label="Send message" className="size-11 shrink-0 rounded-2xl p-0" disabled={!sessionId || isSending || !inputValue.trim()} isLoading={isSending} type="submit"><span aria-hidden="true" className="material-symbols-outlined">send</span></Button>
+              <Button aria-label="Send message" className="size-11 shrink-0 rounded-2xl p-0" disabled={!conversationId || isSending || !inputValue.trim()} isLoading={isSending} type="submit"><span aria-hidden="true" className="material-symbols-outlined">send</span></Button>
             </form>
           </div>
         </section>
