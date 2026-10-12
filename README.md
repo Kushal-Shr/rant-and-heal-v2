@@ -11,6 +11,19 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
+### Docker
+
+Docker Compose reads `.env.local` for both the public values embedded by the
+Next.js build and the server-only runtime credentials:
+
+```bash
+docker compose --env-file .env.local up --build -d
+```
+
+Use Compose instead of passing `.env.local` directly to `docker run`; Docker's
+raw `--env-file` handling can preserve surrounding quotes and invalidate
+Firebase Admin or provider credentials.
+
 ## Environment
 
 Create `.env.local` with:

@@ -1,6 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Emit the minimal self-contained server used by the production container.
+  output: "standalone",
   // Resend is used only by Node.js route handlers.
   serverExternalPackages: ["resend", "ws"],
   // This value is non-sensitive and lets the client hide trial-disabled voice UI.
