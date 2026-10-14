@@ -7,6 +7,7 @@ import { Badge } from "@/src/components/ui/Badge";
 import { Button } from "@/src/components/ui/Button";
 import { Spinner } from "@/src/components/ui/Spinner";
 import { useSafetyReviewerAccess } from "@/src/hooks/useSafetyReviewerAccess";
+import { createUuid } from "@/src/lib/ids/uuid";
 import type {
   ExternalPartyType,
   SafetyAction,
@@ -86,7 +87,7 @@ export default function SafetyCaseDetailPage() {
   async function perform(actionKey: string, body: Record<string, unknown>) {
     if (!user) return false;
     const fingerprint = `${actionKey}:${JSON.stringify(body)}`;
-    const requestId = retryIds.current.get(fingerprint) ?? crypto.randomUUID();
+    const requestId = retryIds.current.get(fingerprint) ?? createUuid();
     retryIds.current.set(fingerprint, requestId);
     setBusy(actionKey);
     setError(null);

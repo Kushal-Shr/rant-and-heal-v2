@@ -21,6 +21,7 @@ import { Spinner } from "@/src/components/ui/Spinner";
 import { MomoVoiceCallPanel } from "@/src/components/momo/MomoVoiceCallPanel";
 import { db } from "@/src/config/firebase";
 import { useAuth } from "@/src/context/AuthContext";
+import { createUuid } from "@/src/lib/ids/uuid";
 
 const momoVoiceEnabled = process.env.NEXT_PUBLIC_MOMO_VOICE_ENABLED === "true";
 
@@ -105,7 +106,7 @@ export default function MomoPage() {
     if (!delta) return;
     let transcriptId = liveTranscriptIdsRef.current[sender];
     if (!transcriptId) {
-      transcriptId = `live-${sender.toLowerCase()}-${crypto.randomUUID()}`;
+      transcriptId = `live-${sender.toLowerCase()}-${createUuid()}`;
       liveTranscriptIdsRef.current[sender] = transcriptId;
     }
     const currentId = transcriptId;
@@ -278,7 +279,7 @@ export default function MomoPage() {
         body: JSON.stringify({
           userId: user.uid,
           conversationId,
-          requestId: crypto.randomUUID(),
+          requestId: createUuid(),
           messageText: userMessageText,
         }),
       });
