@@ -63,15 +63,15 @@ export default function PatientDashboardPage() {
   return (
     <div className="min-w-0">
       <div className="mx-auto max-w-6xl space-y-6 pb-10">
-        <section className="relative overflow-hidden rounded-[2.5rem] border border-white/70 bg-[#fed1b4]/90 px-6 py-8 shadow-[0_20px_40px_-18px_rgba(121,88,65,0.2),inset_0_2px_4px_rgba(255,255,255,0.6)] sm:px-10 sm:py-10">
+        <section className="relative overflow-hidden rounded-[2rem] border border-white/80 bg-gradient-to-br from-[#f5dfcd] via-[#f8e9dc] to-[#edf1e5] px-6 py-7 shadow-[0_12px_35px_-24px_#79584155,inset_0_1px_2px_white] sm:px-8 sm:py-8">
           <div aria-hidden="true" className="absolute -bottom-20 -right-10 size-56 rounded-full bg-[#ffdcc6]/80 blur-2xl" />
-          <div className="relative max-w-3xl sm:pr-32"><p className="text-sm font-medium uppercase tracking-[0.12em] text-[#795841]/70">A gentle beginning</p><h1 className="mt-3 text-3xl font-medium tracking-[-0.03em] text-[#785741] sm:text-5xl">Hey {firstName(user.displayName)}, you showed up today.</h1><p className="mt-4 max-w-2xl text-base font-light leading-7 text-[#795841]/80 sm:text-lg">Take a quick check-in, or look back at the patterns you chose to record.</p></div>
-          <MomoPortrait className="absolute right-8 top-1/2 hidden size-28 -translate-y-1/2 sm:block" />
+          <div className="relative sm:pr-40 md:pr-0 min-[1100px]:pr-40"><p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#795841]">Your daily pause</p><h1 className="mt-3 text-3xl font-medium tracking-[-0.04em] text-[#3f5545] sm:text-4xl">A little space for you, {firstName(user.displayName)}.</h1><p className="mt-3 max-w-xl text-sm leading-6 text-[#626d5e] sm:text-base">Check in with yourself. Find a little perspective. Go at your own pace.</p></div>
+          <MomoPortrait className="absolute right-8 top-1/2 hidden size-24 -translate-y-1/2 sm:block md:hidden min-[1100px]:block" />
         </section>
 
         {loadMessage ? <p className="rounded-2xl bg-[#ffdad6] px-4 py-3 text-sm text-[#93000a]" role="status">{loadMessage}</p> : null}
 
-        <Card className="scroll-mt-6 p-6 sm:p-8" id="check-in" padding="none"><MoodCheckInForm onSaved={refreshDashboard} uid={user.uid} /></Card>
+        <Card className="scroll-mt-6 !rounded-[2rem] !bg-white/85 p-4 sm:p-8" id="check-in" padding="none"><MoodCheckInForm onSaved={refreshDashboard} uid={user.uid} /></Card>
 
         <MoodAnalyticsDashboard entries={moodEntries} isLoading={isFetching} />
 
@@ -80,7 +80,7 @@ export default function PatientDashboardPage() {
             {quickActions.map((action) => <Link className="group flex min-h-32 flex-col items-center justify-center rounded-[2rem] border border-white/70 bg-white/45 p-5 text-center shadow-[0_15px_30px_-18px_rgba(121,88,65,0.2),inset_0_2px_4px_rgba(255,255,255,0.65)] transition-all hover:-translate-y-1 hover:bg-white/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#325347] active:scale-[0.97]" href={action.href} key={action.label}><span className={`mb-3 flex size-12 items-center justify-center rounded-full ${action.className}`}><span aria-hidden="true" className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>{action.icon}</span></span><span className="text-sm font-medium text-[#2c1601]">{action.label}</span></Link>)}
           </div>
 
-          <Card className="p-6 sm:p-8" padding="none" variant="peach">
+          <Card className="!rounded-[2rem] !border-[#eee2d4] !bg-[#f6eade] p-5 sm:p-7" padding="none" variant="peach">
             <div className="flex items-center justify-between gap-3"><div><p className="text-xs font-medium uppercase tracking-[0.12em] text-[#795841]/70">Private writing</p><h2 className="mt-2 text-2xl font-medium text-[#795841]">Recent journal activity</h2></div><Link className="min-h-11 rounded-full bg-white/65 px-4 py-3 text-sm font-medium text-[#795841] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#795841]" href="/vault">Open Vault</Link></div>
             <div className="mt-6 space-y-3">{journalMetrics.length > 0 ? journalMetrics.map((entry) => <article className="rounded-[1.5rem] bg-white/70 p-4" key={entry.id}><div className="flex items-start justify-between gap-3"><h3 className="font-medium text-[#2c1601]">Encrypted journal entry</h3><span className="rounded-full bg-[#ffdcc6] px-2.5 py-1 text-xs text-[#795841]">{entry.behavior.lengthBucket.toLowerCase()}</span></div><p className="mt-2 text-sm leading-6 text-[#414845]">{entry.behavior.timeOfDay.toLowerCase().replace("_", " ")} · {entry.userReported?.emotions?.length ?? 0} optional emotion labels</p></article>) : <p className="rounded-[1.5rem] bg-white/70 p-5 text-sm leading-6 text-[#795841]">Nothing written yet. Your encrypted journal is here whenever words arrive.</p>}</div>
             <p className="mt-4 text-xs leading-5 text-[#795841]/75">This card uses activity metadata only. Mood notes remain separate from your encrypted journal.</p>

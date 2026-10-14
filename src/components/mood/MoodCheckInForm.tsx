@@ -54,24 +54,27 @@ function ScorePicker({ label, low, high, value, onChange }: {
   onChange: (value: number | undefined) => void;
 }) {
   return (
-    <fieldset className="relative rounded-[1.35rem] bg-[#fff1e8] p-4">
-      <legend className="pr-14 text-sm font-medium text-[#414845]">{label} <span className="font-normal text-[#596c60]">(optional)</span></legend>
-      {value !== undefined ? <button className="absolute right-2 top-1 min-h-11 rounded-full px-3 text-xs font-medium text-[#596c60] underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#325347]" onClick={() => onChange(undefined)} type="button">Clear</button> : null}
-      <div aria-label={`${label}, from ${low} to ${high}`} className="mt-2 grid grid-cols-5 gap-2">
+    <fieldset className="min-w-0 rounded-2xl border border-[#e9e6de] bg-[#faf9f5] px-4 pb-4 pt-2">
+      <legend className="px-1 text-sm font-medium text-[#414845]">{label} <span className="ml-1 text-xs font-normal text-[#596c60]">optional</span></legend>
+      <div className="flex min-h-8 items-center justify-between text-xs text-[#596c60]">
+        <span>{value === undefined ? "Choose if you’d like" : `${value}/10 selected`}</span>
+        <button aria-label={`Clear ${label.toLowerCase()}`} className={`min-h-11 rounded-full px-2 underline underline-offset-4 ${value === undefined ? "invisible" : ""}`} onClick={() => onChange(undefined)} tabIndex={value === undefined ? -1 : 0} type="button">Clear</button>
+      </div>
+      <div aria-label={`${label}, from ${low} to ${high}`} className="grid grid-cols-5 gap-2">
         {scoreChoices.map((score, index) => (
           <button
-            aria-label={`${label}: ${index + 1} of 5, ${index === 0 ? low : index === 4 ? high : "in between"}`}
+            aria-label={`${label}: ${score} out of 10, ${index === 0 ? low : index === 4 ? high : "in between"}`}
             aria-pressed={value === score}
-            className={`min-h-11 rounded-full border text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#325347] ${value === score ? "border-[#325347] bg-[#c6ebda] text-[#002117]" : "border-white bg-white/75 text-[#596c60] hover:bg-white"}`}
+            className={`min-h-11 rounded-xl border text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#325347] ${value === score ? "border-[#325347] bg-[#325347] text-white shadow-sm" : "border-[#e5e8df] bg-white text-[#596c60] hover:border-[#92af9f] hover:bg-[#f0f5ef]"}`}
             key={score}
             onClick={() => onChange(score)}
             type="button"
           >
-            {index + 1}
+            {score}
           </button>
         ))}
       </div>
-      <div aria-hidden="true" className="mt-1 flex justify-between text-[10px] text-[#596c60]"><span>{low}</span><span>{high}</span></div>
+      <div aria-hidden="true" className="mt-2 flex justify-between gap-2 text-xs text-[#596c60]"><span>{low}</span><span>{high}</span></div>
     </fieldset>
   );
 }
@@ -126,42 +129,44 @@ export function MoodCheckInForm({ uid, onSaved }: { uid: string; onSaved: () => 
 
   return (
     <form onSubmit={handleSubmit}>
-      <div className="text-center">
-        <p className="text-xs font-medium uppercase tracking-[0.12em] text-[#4a6b5e]/70">Daily check-in</p>
-        <h2 className="mt-2 text-2xl font-medium tracking-[-0.02em] text-[#325347] sm:text-3xl">How are you feeling right now?</h2>
-        <p className="mt-2 text-sm text-[#596c60]">Mood is the only required answer. Add as much or as little context as feels useful.</p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div><p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#596c60]">A moment for you</p>
+        <h2 className="mt-2 text-2xl font-medium tracking-[-0.035em] text-[#325347] sm:text-3xl">How are you feeling?</h2>
+        <p className="mt-2 text-sm leading-6 text-[#596c60]">No right answer. Just where you are right now.</p></div>
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-[#f1f4ed] px-3 py-2 text-xs text-[#526753]"><span aria-hidden="true" className="material-symbols-outlined !text-base">schedule</span>20-second check-in</span>
       </div>
 
       <fieldset className="mt-7">
         <legend className="sr-only">Choose your current mood</legend>
-        <div className="mx-auto flex max-w-xl items-end justify-center gap-2 sm:gap-5">
+        <div className="grid grid-cols-5 gap-1.5 sm:gap-3">
           {moodChoices.map((choice) => {
             const isSelected = moodScore === choice.score;
             return (
               <button
                 aria-label={`${choice.label}, ${choice.score} out of 10`}
                 aria-pressed={isSelected}
-                className={`group flex size-12 items-center justify-center rounded-full border border-white/80 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#325347] focus-visible:ring-offset-4 sm:size-16 ${choice.className} ${isSelected ? "-translate-y-2 scale-110 shadow-[0_12px_20px_-6px_rgba(44,22,1,0.25)]" : "shadow-[0_8px_15px_-6px_rgba(44,22,1,0.18)] hover:-translate-y-1"}`}
+                className={`group flex min-w-0 flex-col items-center gap-3 rounded-2xl border px-1 py-4 transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#325347] focus-visible:ring-offset-4 sm:rounded-3xl sm:py-5 ${isSelected ? "border-[#799c88] bg-[#edf4eb] shadow-[0_6px_16px_-10px_#32534780]" : "border-transparent bg-[#faf8f4] hover:border-[#dbded4] hover:bg-[#f4f4ed]"}`}
                 key={choice.score}
                 onClick={() => setMoodScore(choice.score)}
                 type="button"
               >
-                <span aria-hidden="true" className="material-symbols-outlined text-2xl sm:text-3xl" style={{ fontVariationSettings: "'FILL' 1" }}>{choice.icon}</span>
+                <span className={`flex size-10 items-center justify-center rounded-full shadow-[inset_0_2px_3px_#ffffffaa,0_5px_9px_-5px_#78574155] transition-transform group-hover:-translate-y-1 sm:size-14 ${choice.className}`}><span aria-hidden="true" className="material-symbols-outlined !text-[28px] sm:!text-[34px]" style={{ fontVariationSettings: "'FILL' 0, 'wght' 300" }}>{choice.icon}</span></span>
+                <span className={`text-center text-[11px] font-medium sm:text-sm ${isSelected ? "text-[#325347]" : "text-[#657267]"}`}>{choice.score === 2 ? "Very low" : choice.label}</span>
               </button>
             );
           })}
         </div>
-        <p aria-live="polite" className="mt-5 text-center text-sm text-[#414845]/70">{moodChoices.find((choice) => choice.score === moodScore)?.label ?? "Choose what feels closest"}</p>
+        <p aria-live="polite" className="mt-3 text-center text-xs text-[#596c60]">{moodScore ? `${moodChoices.find((choice) => choice.score === moodScore)?.label} · ${moodScore}/10` : "Choose the mood that feels closest to you"}</p>
       </fieldset>
 
-      <div className="mt-7 grid gap-3 border-t border-[#ffeada] pt-6 sm:grid-cols-2">
+      <div className="mt-6 grid gap-4 sm:grid-cols-2 md:grid-cols-1 min-[1100px]:grid-cols-2">
         <ScorePicker high="High energy" label="Energy" low="Low energy" onChange={(value) => setScores((current) => ({ ...current, energyScore: value }))} value={scores.energyScore} />
         <ScorePicker high="Very stressed" label="Stress" low="At ease" onChange={(value) => setScores((current) => ({ ...current, stressScore: value }))} value={scores.stressScore} />
       </div>
 
-      <details className="mt-4 rounded-[1.5rem] border border-[#ffeada] bg-white/45 p-4 open:bg-white/70 sm:p-5">
-        <summary className="min-h-11 cursor-pointer rounded-full py-2 font-medium text-[#325347] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#325347]">Add more context <span className="font-normal text-[#596c60]">(optional)</span></summary>
-        <div className="mt-5 grid gap-3 sm:grid-cols-2">
+      <details className="group/context mt-5 rounded-2xl border border-[#e9e6de] bg-white/45 px-4 open:pb-5 sm:px-5">
+        <summary className="flex min-h-16 cursor-pointer list-none items-center justify-between gap-3 rounded-xl py-3 text-sm font-medium text-[#325347] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#325347] [&::-webkit-details-marker]:hidden"><span className="flex items-center gap-3"><span aria-hidden="true" className="material-symbols-outlined !text-xl text-[#7a8c76]">tune</span>Add more context <span className="text-xs font-normal text-[#596c60]">optional</span></span><span aria-hidden="true" className="material-symbols-outlined !text-xl transition-transform group-open/context:rotate-180">expand_more</span></summary>
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 md:grid-cols-1 min-[1100px]:grid-cols-2">
           {extraDimensions.map((dimension) => <ScorePicker {...dimension} key={dimension.key} onChange={(value) => setScores((current) => ({ ...current, [dimension.key]: value }))} value={scores[dimension.key]} />)}
         </div>
 
@@ -187,9 +192,9 @@ export function MoodCheckInForm({ uid, onSaved }: { uid: string; onSaved: () => 
         </label>
       </details>
 
-      <div className="mt-5 flex flex-wrap items-center justify-between gap-4">
-        {feedback ? <p className={`rounded-2xl px-4 py-2 text-sm ${feedback.type === "success" ? "bg-[#c6ebda] text-[#002117]" : "bg-[#ffdad6] text-[#93000a]"}`} role="status">{feedback.message}</p> : <span />}
-        <Button isLoading={isSaving} type="submit">Save check-in</Button>
+      <div className="mt-6 flex flex-col-reverse items-stretch justify-between gap-4 border-t border-[#ecebe3] pt-5 sm:flex-row sm:items-center">
+        {feedback ? <p className={`rounded-2xl px-4 py-2 text-sm ${feedback.type === "success" ? "bg-[#c6ebda] text-[#002117]" : "bg-[#ffdad6] text-[#93000a]"}`} role="status">{feedback.message}</p> : <p className="text-center text-xs text-[#657267] sm:text-left">Just your mood is enough. Everything else is optional.</p>}
+        <Button className="min-h-12 shrink-0 sm:min-w-44" isLoading={isSaving} type="submit">Save check-in<span aria-hidden="true" className="material-symbols-outlined !text-lg">arrow_forward</span></Button>
       </div>
     </form>
   );

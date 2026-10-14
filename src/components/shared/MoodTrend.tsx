@@ -49,7 +49,7 @@ export function MoodTrend({ entries, rangeDays = 7, comparisonMetric }: {
   const comparison = comparisonMetric ? chartPoints(entries, comparisonMetric, rangeDays) : [];
   const pairedCount = comparisonMetric ? entriesWithinDays(entries, rangeDays).filter((entry) => typeof entry.moodScore === "number" && typeof entry[comparisonMetric] === "number").length : 0;
   const showComparison = Boolean(comparisonMetric && pairedCount >= MOOD_ANALYTICS_MINIMUMS.trendComparison);
-  if (!mood.length) return <div className="mt-6 flex min-h-52 flex-col items-center justify-center rounded-[1.75rem] bg-[#fff1e8] p-6 text-center"><span aria-hidden="true" className="clay-icon material-symbols-outlined">show_chart</span><p className="mt-4 max-w-xs text-sm leading-6 text-[#414845]">A few check-ins will help patterns start to appear.</p></div>;
+  if (!mood.length) return <div className="mt-5 flex min-h-64 flex-col items-center justify-center rounded-2xl border border-dashed border-[#dbe3d3] bg-gradient-to-b from-[#f5f7ef] to-white/40 p-6 text-center"><span aria-hidden="true" className="flex size-14 items-center justify-center rounded-full bg-[#e5ecdc] text-[#637c53]"><span className="material-symbols-outlined">show_chart</span></span><p className="mt-4 font-medium text-[#325347]">Your story starts with a moment.</p><p className="mt-2 max-w-xs text-sm leading-6 text-[#657267]">A few check-ins will help patterns start to appear.</p></div>;
   const start = now.getTime() - rangeDays * 86_400_000;
   const x = (date: Date) => 42 + Math.max(0, Math.min(1, (date.getTime() - start) / (rangeDays * 86_400_000))) * 536;
   const y = (score: number) => 190 - (score - 1) / 9 * 164;
@@ -59,7 +59,7 @@ export function MoodTrend({ entries, rangeDays = 7, comparisonMetric }: {
   return (
     <figure className="mt-5">
       <div className="mb-2 flex flex-wrap gap-4 text-xs text-[#596c60]"><span className="flex items-center gap-2"><span className="size-2.5 rounded-full bg-[#446558]" />Mood</span>{showComparison && comparisonMetric ? <span className="flex items-center gap-2"><span className="size-2.5 rounded-full bg-[#c66b4e]" />{metricLabels[comparisonMetric]}</span> : null}</div>
-      <svg aria-labelledby={`${chartId}-title ${chartId}-description`} className="w-full" role="img" viewBox="0 0 600 224">
+      <svg aria-labelledby={`${chartId}-title ${chartId}-description`} className="w-full overflow-visible rounded-2xl bg-gradient-to-b from-[#f6f8f1] to-transparent" role="img" viewBox="0 0 600 224">
         <title id={`${chartId}-title`}>Mood trend over {rangeDays} days{showComparison && comparisonMetric ? ` compared with ${metricLabels[comparisonMetric].toLowerCase()}` : ""}</title>
         <desc id={`${chartId}-description`}>Scores from 1 to 10 plotted at their actual dates. Lines stop where there are gaps in check-ins. Exact observed values are available below.</desc>
         {[1, 5, 10].map((score) => <g key={score}><line stroke="#c1c8c3" strokeDasharray="3 7" strokeOpacity=".5" x1="42" x2="578" y1={y(score)} y2={y(score)} /><text fill="#596c60" fontSize="12" x="10" y={y(score) + 4}>{score}</text></g>)}
@@ -69,7 +69,7 @@ export function MoodTrend({ entries, rangeDays = 7, comparisonMetric }: {
         {showComparison && comparisonMetric ? comparison.map((point) => <circle cx={x(point.date)} cy={y(point.score)} fill="#fff8f5" key={point.id} r="4" stroke="#c66b4e" strokeWidth="2"><title>{fullDate(point.date)}: {metricLabels[comparisonMetric]} {point.score}/10</title></circle>) : null}
         <text fill="#596c60" fontSize="12" x="42" y="219">{shortDate(new Date(start))}</text><text fill="#596c60" fontSize="12" textAnchor="end" x="578" y="219">Today</text>
       </svg>
-      <figcaption className="mt-3 text-xs leading-5 text-[#596c60]">Dots are observed check-ins{rangeDays > 7 ? " (daily averages when there is more than one)" : ""}. Blank space stays blank, and lines stop across longer gaps.{comparisonMetric && !showComparison ? " Four paired check-ins are needed before a comparison appears." : ""}</figcaption>
+      <figcaption className="mt-4 text-xs leading-5 text-[#596c60]">{rangeDays > 7 ? "Each dot is a daily average." : "Each dot is a check-in."} Gaps are days without check-ins.{comparisonMetric && !showComparison ? " Four paired check-ins are needed before a comparison appears." : ""}</figcaption>
       <details className="mt-3 text-xs text-[#596c60]"><summary className="min-h-11 w-fit cursor-pointer rounded-full py-3 font-medium underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#325347]">View observed mood values</summary><div className="mt-2 max-h-64 overflow-auto rounded-2xl bg-[#fff1e8] p-3"><table className="w-full text-left"><caption className="sr-only">Mood check-ins in the selected range</caption><thead><tr><th className="p-2 font-medium" scope="col">When</th><th className="p-2 font-medium" scope="col">Mood</th></tr></thead><tbody>{mood.map((point) => <tr key={`row-${point.id}`}><td className="p-2">{fullDate(point.date)}</td><td className="p-2">{point.score}/10</td></tr>)}</tbody></table></div></details>
     </figure>
   );
