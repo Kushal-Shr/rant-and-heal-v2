@@ -133,8 +133,19 @@ export interface TherapyCallSignal {
 export interface MoodEntry {
   id?: string;
   moodScore: number;
-  anxietyScore: number;
-  energyScore: number;
+  anxietyScore?: number;
+  energyScore?: number;
+  stressScore?: number;
+  sleepQualityScore?: number;
+  focusScore?: number;
+  socialConnectionScore?: number;
+  physicalWellbeingScore?: number;
+  contexts?: string[];
+  helpfulFactors?: string[];
   note?: string;
+  userId?: string;
+  timezone?: string;
+  localDate?: string;
+  schemaVersion?: 1 | 2;
   createdAt: ServerTime;
 }
