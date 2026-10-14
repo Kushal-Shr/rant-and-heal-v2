@@ -53,14 +53,58 @@ service cloud.firestore {
 
       match /health_metrics/{entryId} {
         allow read: if owner(userId);
-        allow create: if owner(userId) &&
-          request.resource.data.keys().hasOnly(['moodScore', 'anxietyScore', 'energyScore', 'note', 'createdAt']) &&
-          request.resource.data.keys().hasAll(['moodScore', 'anxietyScore', 'energyScore', 'note', 'createdAt']) &&
-          request.resource.data.moodScore is number && request.resource.data.moodScore >= 1 && request.resource.data.moodScore <= 10 &&
-          request.resource.data.anxietyScore is number && request.resource.data.anxietyScore >= 1 && request.resource.data.anxietyScore <= 10 &&
-          request.resource.data.energyScore is number && request.resource.data.energyScore >= 1 && request.resource.data.energyScore <= 10 &&
-          request.resource.data.note is string && request.resource.data.note.size() <= 1000 &&
-          request.resource.data.createdAt == request.time;
+        function scoreIsValid(field) {
+          return !request.resource.data.keys().hasAny([field]) ||
+            (request.resource.data[field] is number && request.resource.data[field] >= 1 && request.resource.data[field] <= 10);
+        }
+        function validLegacyMood() {
+          return request.resource.data.keys().hasOnly(['moodScore', 'anxietyScore', 'energyScore', 'note', 'createdAt']) &&
+            request.resource.data.keys().hasAll(['moodScore', 'anxietyScore', 'energyScore', 'note', 'createdAt']) &&
+            scoreIsValid('moodScore') && scoreIsValid('anxietyScore') && scoreIsValid('energyScore') &&
+            request.resource.data.note is string && request.resource.data.note.size() <= 1000 &&
+            request.resource.data.createdAt == request.time;
+        }
+        function validMoodContexts() {
+          return !request.resource.data.keys().hasAny(['contexts']) ||
+            (request.resource.data.contexts is list && request.resource.data.contexts.size() <= 12 &&
+             request.resource.data.contexts.hasOnly([
+               'work', 'academics', 'relationships', 'family', 'finances', 'health', 'sleep',
+               'social-life', 'loneliness', 'future-uncertainty', 'self-esteem', 'workload',
+               'major-event', 'good-conversation', 'exercise', 'achievement', 'rest', 'hobbies',
+               'time-outside', 'friends', 'therapy', 'momo-conversation', 'relaxation', 'good-sleep', 'other'
+             ]));
+        }
+        function validHelpfulFactors() {
+          return !request.resource.data.keys().hasAny(['helpfulFactors']) ||
+            (request.resource.data.helpfulFactors is list && request.resource.data.helpfulFactors.size() <= 10 &&
+             request.resource.data.helpfulFactors.hasOnly([
+               'talking-to-someone', 'rest', 'music', 'exercise', 'grounding', 'breathing',
+               'journaling', 'going-outside', 'taking-a-break', 'planning-tasks', 'therapy',
+               'momo', 'nothing-yet', 'other'
+             ]));
+        }
+        function validV2Mood() {
+          return request.resource.data.keys().hasOnly([
+              'userId', 'moodScore', 'anxietyScore', 'energyScore', 'stressScore',
+              'sleepQualityScore', 'focusScore', 'socialConnectionScore', 'physicalWellbeingScore',
+              'contexts', 'helpfulFactors', 'note', 'timezone', 'localDate', 'schemaVersion', 'createdAt'
+            ]) &&
+            request.resource.data.keys().hasAll([
+              'userId', 'moodScore', 'timezone', 'localDate', 'schemaVersion', 'createdAt'
+            ]) &&
+            request.resource.data.userId == userId && request.resource.data.schemaVersion == 2 &&
+            scoreIsValid('moodScore') && scoreIsValid('anxietyScore') && scoreIsValid('energyScore') &&
+            scoreIsValid('stressScore') && scoreIsValid('sleepQualityScore') && scoreIsValid('focusScore') &&
+            scoreIsValid('socialConnectionScore') && scoreIsValid('physicalWellbeingScore') &&
+            validMoodContexts() && validHelpfulFactors() &&
+            (!request.resource.data.keys().hasAny(['note']) ||
+              (request.resource.data.note is string && request.resource.data.note.size() <= 1000)) &&
+            request.resource.data.timezone is string && request.resource.data.timezone.size() > 0 &&
+            request.resource.data.timezone.size() <= 64 &&
+            request.resource.data.localDate is string && request.resource.data.localDate.size() == 10 &&
+            request.resource.data.createdAt == request.time;
+        }
+        allow create: if owner(userId) && (validLegacyMood() || validV2Mood());
         allow update, delete: if false;
       }
 

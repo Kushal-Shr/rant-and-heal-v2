@@ -205,6 +205,35 @@ test("patient can read raw metrics but therapist cannot", async () => {
   await assertFails(getDoc(doc(therapistDb, "users/patient-1/journal_metrics/entry-1")));
 });
 
+test("mood V2 writes are owner-only, optional, and schema validated", async () => {
+  const patientDb = environment.authenticatedContext("patient-1").firestore();
+  const otherDb = environment.authenticatedContext("patient-2").firestore();
+  const path = "users/patient-1/health_metrics/v2-entry";
+  await assertSucceeds(setDoc(doc(patientDb, path), {
+    userId: "patient-1", moodScore: 8, stressScore: 4, sleepQualityScore: 7,
+    contexts: ["work", "good-conversation"], helpfulFactors: ["music"],
+    timezone: "America/Chicago", localDate: "2026-10-13", schemaVersion: 2,
+    createdAt: serverTimestamp(),
+  }));
+  await assertSucceeds(getDoc(doc(patientDb, path)));
+  await assertFails(getDoc(doc(otherDb, path)));
+  await assertFails(setDoc(doc(otherDb, "users/patient-1/health_metrics/forged"), {
+    userId: "patient-1", moodScore: 8, timezone: "UTC", localDate: "2026-10-13",
+    schemaVersion: 2, createdAt: serverTimestamp(),
+  }));
+  await assertFails(setDoc(doc(patientDb, "users/patient-1/health_metrics/invalid"), {
+    userId: "patient-1", moodScore: 8, stressScore: 11, contexts: ["unapproved-tag"],
+    timezone: "UTC", localDate: "2026-10-13", schemaVersion: 2, createdAt: serverTimestamp(),
+  }));
+});
+
+test("legacy mood writes remain accepted for backwards-compatible clients", async () => {
+  const patientDb = environment.authenticatedContext("patient-1").firestore();
+  await assertSucceeds(setDoc(doc(patientDb, "users/patient-1/health_metrics/legacy-entry"), {
+    moodScore: 6, anxietyScore: 4, energyScore: 5, note: "legacy shape", createdAt: serverTimestamp(),
+  }));
+});
+
 test("shared report requires active relationship and revoked therapist loses access", async () => {
   const therapistDb = environment.authenticatedContext("therapist-1").firestore();
   await assertSucceeds(getDoc(doc(therapistDb, "weekly_reports/report-1")));

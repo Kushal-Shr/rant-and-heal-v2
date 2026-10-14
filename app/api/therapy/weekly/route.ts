@@ -11,6 +11,15 @@ import { isReviewedTherapyNote } from "@/src/lib/reports/therapyWeekly";
 import { weeklyReflectionSchema, weeklyTherapySchema } from "@/src/lib/reports/schemas";
 import { generateWeeklyReport } from "@/src/server/reports/generateWeeklyReport";
 import { FEATURE_FLAGS } from "@/src/config/features";
+import {
+  calculateContextPatterns,
+  calculateHelpfulFactorPatterns,
+  calculateMetricAssociation,
+  calculateMetricAverage,
+  calculateTimeOfDayPatterns,
+  calculateVariability,
+} from "@/src/lib/mood/analytics";
+import type { MoodEntry } from "@/src/types/database";
 
 export const runtime = "nodejs";
 const bodySchema = z.object({ relationshipId: z.string().min(1).max(128), weekStart: z.string().datetime() }).strict();
@@ -59,8 +68,20 @@ export async function POST(request: NextRequest) {
         .where("createdAt", ">=", Timestamp.fromDate(start)).where("createdAt", "<", Timestamp.fromDate(end)).get(),
       aggregateWeeklyJournalMetrics(rel.ref.firestore, rel.patientUid, start, end),
     ]);
+    const moodEntries = moodSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() } as MoodEntry));
     const sources = {
-      moodTrackerData: moodSnap.docs.map((doc) => ({ moodScore: doc.data().moodScore, anxietyScore: doc.data().anxietyScore, energyScore: doc.data().energyScore })),
+      moodTrackerData: {
+        checkInCount: moodEntries.length,
+        averageMood: calculateMetricAverage(moodEntries, "moodScore"),
+        averageStress: calculateMetricAverage(moodEntries, "stressScore"),
+        averageEnergy: calculateMetricAverage(moodEntries, "energyScore"),
+        averageSleepQuality: calculateMetricAverage(moodEntries, "sleepQualityScore"),
+        moodVariability: calculateVariability(moodEntries),
+        commonContexts: calculateContextPatterns(moodEntries).slice(0, 3),
+        frequentlyHelpfulFactors: calculateHelpfulFactorPatterns(moodEntries).slice(0, 3),
+        timeOfDayPatterns: calculateTimeOfDayPatterns(moodEntries),
+        sleepMoodAssociation: calculateMetricAssociation(moodEntries, "sleepQualityScore"),
+      },
       momoSessionSummaries: momoSnap.docs.flatMap((doc) => typeof doc.data().summary === "string" ? [doc.data().summary] : []),
       therapistReviewedNotes: notes,
       objectiveAppActivity: { momoSessionCount: momoSnap.size, reviewedTherapySessionCount: notes.length },
