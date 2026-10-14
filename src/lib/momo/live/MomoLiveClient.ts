@@ -3,6 +3,7 @@ import {
   LIVE_MODERATION_NOTICE,
   type LiveErrorDetails,
 } from "./errors";
+import { createUuid } from "@/src/lib/ids/uuid";
 
 interface MomoLiveClientOptions {
   idToken: string;
@@ -103,7 +104,7 @@ export class MomoLiveClient {
     for (const track of this.microphone?.getAudioTracks() ?? []) track.enabled = !muted;
     this.send({
       type: muted ? "session.input_audio.mute" : "session.input_audio.unmute",
-      event_id: `momo_mute_${crypto.randomUUID()}`,
+      event_id: `momo_mute_${createUuid()}`,
     });
   }
 
@@ -125,7 +126,7 @@ export class MomoLiveClient {
     if (this.closing) return;
     this.closing = true;
     if (this.ready && this.events?.readyState === "open") {
-      this.send({ type: "session.close", event_id: `momo_close_${crypto.randomUUID()}` });
+      this.send({ type: "session.close", event_id: `momo_close_${createUuid()}` });
       await new Promise<void>((resolve) => {
         this.closeTimer = window.setTimeout(resolve, 3_000);
         const finish = () => resolve();
@@ -138,7 +139,7 @@ export class MomoLiveClient {
   forceClose(): void {
     this.closing = true;
     if (this.ready && this.events?.readyState === "open") {
-      this.send({ type: "session.close", event_id: `momo_close_${crypto.randomUUID()}` });
+      this.send({ type: "session.close", event_id: `momo_close_${createUuid()}` });
     }
     this.cleanup();
   }

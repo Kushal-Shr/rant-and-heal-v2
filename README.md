@@ -24,6 +24,8 @@ Use Compose instead of passing `.env.local` directly to `docker run`; Docker's
 raw `--env-file` handling can preserve surrounding quotes and invalidate
 Firebase Admin or provider credentials.
 
+For an HTTPS AWS ECS/Fargate deployment, follow [infra/README.md](./infra/README.md).
+
 ## Environment
 
 Create `.env.local` with:
