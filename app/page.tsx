@@ -81,7 +81,7 @@ export default function LandingPage() {
         <section aria-label="What Rant and Heal offers" className="grid gap-6 pb-12 md:grid-cols-3 md:pb-20">
           {featureCards.map((feature) => (
             <article className={`min-h-72 rounded-[2.5rem] p-7 shadow-[0_20px_40px_-18px_rgba(121,88,65,0.24),inset_0_3px_7px_rgba(255,255,255,0.6)] transition-transform duration-300 hover:-translate-y-2 sm:p-9 ${feature.className}`} id={feature.id} key={feature.id}>
-              <div className="flex size-15 items-center justify-center rounded-full bg-white/60 shadow-[0_10px_20px_-12px_rgba(44,22,1,0.25),inset_0_2px_5px_rgba(255,255,255,0.85)]"><span aria-hidden="true" className={`material-symbols-outlined text-3xl ${feature.iconClassName}`} style={{ fontVariationSettings: "'FILL' 1" }}>{feature.icon}</span></div>
+              {feature.id === "momo" ? <MomoPortrait className="size-15" /> : <div className="flex size-15 items-center justify-center rounded-full bg-white/60 shadow-[0_10px_20px_-12px_rgba(44,22,1,0.25),inset_0_2px_5px_rgba(255,255,255,0.85)]"><span aria-hidden="true" className={`material-symbols-outlined text-3xl ${feature.iconClassName}`} style={{ fontVariationSettings: "'FILL' 1" }}>{feature.icon}</span></div>}
               <h2 className="mt-7 text-2xl font-medium tracking-[-0.03em] sm:text-3xl">{feature.title}</h2>
               <p className="mt-5 max-w-sm text-base font-light leading-7 opacity-85">{feature.body}</p>
             </article>

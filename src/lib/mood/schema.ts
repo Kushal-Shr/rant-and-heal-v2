@@ -26,6 +26,45 @@ export const MOOD_CONTEXTS = [
   "other",
 ] as const;
 
+export const MOOD_EMOTIONS = [
+  "happy",
+  "sad",
+  "anxious",
+  "angry",
+  "calm",
+  "tired",
+  "lonely",
+  "stressed",
+  "hopeful",
+  "overwhelmed",
+  "excited",
+  "neutral",
+] as const;
+
+export type MoodEmotion = (typeof MOOD_EMOTIONS)[number];
+
+export type MoodEmotionRating = {
+  emotion: MoodEmotion;
+  intensity?: number;
+};
+
+export type MoodSource = "MANUAL_CHECKIN" | "POST_SESSION";
+
+export const MOOD_EMOTION_LABELS: Record<MoodEmotion, string> = {
+  happy: "Happy",
+  sad: "Sad",
+  anxious: "Anxious",
+  angry: "Angry",
+  calm: "Calm",
+  tired: "Tired",
+  lonely: "Lonely",
+  stressed: "Stressed",
+  hopeful: "Hopeful",
+  overwhelmed: "Overwhelmed",
+  excited: "Excited",
+  neutral: "Neutral",
+};
+
 export const HELPFUL_FACTORS = [
   "talking-to-someone",
   "rest",

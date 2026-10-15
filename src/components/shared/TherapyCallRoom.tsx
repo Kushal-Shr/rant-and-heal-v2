@@ -20,6 +20,7 @@ import {
   TherapyCallStatus,
 } from "@/src/types/database";
 import { TherapyNotesPanel } from "./TherapyNotesPanel";
+import { setCallMediaEnabled } from "@/src/lib/therapy/mediaControls";
 
 interface TherapyCallRoomProps {
   relationshipId: string;
@@ -33,6 +34,10 @@ export function TherapyCallRoom({ backHref, relationshipId, sessionId }: Therapy
   const [status, setStatus] = useState<"waiting" | "connecting" | "connected" | "ended" | "failed">("waiting");
   const [error, setError] = useState<string | null>(null);
   const [session, setSession] = useState<TherapyCallSession | null>(null);
+  const [micEnabled, setMicEnabled] = useState(true);
+  const [cameraEnabled, setCameraEnabled] = useState(true);
+  const mediaPreferencesRef = useRef({ audio: true, video: true });
+  const mediaGenerationRef = useRef(0);
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
   const peerRef = useRef<RTCPeerConnection | null>(null);
@@ -46,6 +51,7 @@ export function TherapyCallRoom({ backHref, relationshipId, sessionId }: Therapy
   const isClosedRef = useRef(false);
 
   const cleanup = useCallback(() => {
+    mediaGenerationRef.current += 1;
     isClosedRef.current = true;
     peerRef.current?.close();
     peerRef.current = null;
@@ -58,7 +64,9 @@ export function TherapyCallRoom({ backHref, relationshipId, sessionId }: Therapy
 
   const createPeer = useCallback(async () => {
     isClosedRef.current = false;
+    const generation = mediaGenerationRef.current;
     const iceServers = await getCallIceServers(relationshipId, sessionId);
+    if (isClosedRef.current || generation !== mediaGenerationRef.current) throw new Error("Call closed.");
     const peer = new RTCPeerConnection({ iceServers });
     peerRef.current = peer;
 
@@ -72,28 +80,35 @@ export function TherapyCallRoom({ backHref, relationshipId, sessionId }: Therapy
     };
     peer.ontrack = (event) => {
       if (remoteVideoRef.current) remoteVideoRef.current.srcObject = event.streams[0];
-      setStatus("connected");
     };
     peer.onconnectionstatechange = () => {
       if (peer.connectionState === "connected") setStatus("connected");
-      if (peer.connectionState === "failed" || peer.connectionState === "disconnected") setStatus("failed");
+      if (peer.connectionState === "disconnected") setStatus("connecting");
+      if (peer.connectionState === "failed") {
+        cleanup();
+        setError("The connection was lost. Return to messages to start a new call.");
+        setStatus("failed");
+      }
     };
 
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
-    if (isClosedRef.current || peer.signalingState === "closed") {
+    if (isClosedRef.current || generation !== mediaGenerationRef.current || peer.signalingState === "closed") {
       stream.getTracks().forEach((track) => track.stop());
       return peer;
     }
 
     localStreamRef.current = stream;
     if (localVideoRef.current) localVideoRef.current.srcObject = stream;
-    stream.getTracks().forEach((track) => peer.addTrack(track, stream));
+    stream.getTracks().forEach((track) => {
+      track.enabled = track.kind === "audio" ? mediaPreferencesRef.current.audio : mediaPreferencesRef.current.video;
+      peer.addTrack(track, stream);
+    });
     return peer;
-  }, [relationshipId, sessionId]);
+  }, [cleanup, relationshipId, sessionId]);
 
   const ensurePeer = useCallback(async () => {
-    if (peerRef.current && peerRef.current.signalingState !== "closed") return peerRef.current;
     if (peerInitPromiseRef.current) return peerInitPromiseRef.current;
+    if (peerRef.current && peerRef.current.signalingState !== "closed") return peerRef.current;
     peerInitPromiseRef.current = createPeer();
     return peerInitPromiseRef.current;
   }, [createPeer]);
@@ -206,6 +221,7 @@ export function TherapyCallRoom({ backHref, relationshipId, sessionId }: Therapy
           await sendSignal(relationshipId, sessionId, { type: "offer", payload: offer as unknown as Record<string, unknown> });
         }
       }).catch((mediaError) => {
+        if (cancelled || isClosedRef.current) return;
         console.error("Could not access camera or microphone:", mediaError);
         cleanup();
         setError("Could not access your camera or microphone.");
@@ -247,6 +263,15 @@ export function TherapyCallRoom({ backHref, relationshipId, sessionId }: Therapy
     };
   }, [cleanup, ensurePeer, handleSignal, relationshipId, session, sessionId, user?.uid]);
 
+  function toggleMedia(kind: "audio" | "video") {
+    if (isClosedRef.current || status === "ended" || status === "failed") return;
+    const enabled = !mediaPreferencesRef.current[kind];
+    mediaPreferencesRef.current[kind] = enabled;
+    setCallMediaEnabled(localStreamRef.current, kind, enabled);
+    if (kind === "audio") setMicEnabled(enabled);
+    else setCameraEnabled(enabled);
+  }
+
   async function handleHangup() {
     setStatus("ended");
     cleanup();
@@ -261,9 +286,10 @@ export function TherapyCallRoom({ backHref, relationshipId, sessionId }: Therapy
   }
 
   const waitingForRecipient = session?.status === TherapyCallStatus.RINGING && session.callerId === user?.uid;
+  const callFinished = status === "ended" || status === "failed";
 
   return (
-    <div className="min-h-[calc(100dvh-4rem)] overflow-hidden rounded-[2.5rem] border border-white/70 bg-[#442b10] font-['Plus_Jakarta_Sans'] text-[#ffeee1] shadow-[0_24px_48px_-24px_rgba(74,43,16,0.4)]">
+    <div className="min-h-[calc(100dvh-4rem)] overflow-hidden rounded-[2.5rem] border border-white/70 bg-[#263f36] font-['Plus_Jakarta_Sans'] text-[#ffeee1] shadow-[0_24px_48px_-24px_rgba(74,43,16,0.4)]">
       <header className="flex flex-wrap items-center justify-between gap-4 border-b border-[#795841]/35 bg-[#fff8f5] p-5 text-[#2c1601] sm:p-6">
         <div>
           <Link className="inline-flex items-center gap-1 rounded-full bg-[#fff1e8] px-3 py-1.5 text-sm font-medium text-[#325347]" href={backHref}><span aria-hidden="true" className="material-symbols-outlined text-base">arrow_back</span> Back</Link>
@@ -272,31 +298,41 @@ export function TherapyCallRoom({ backHref, relationshipId, sessionId }: Therapy
             {waitingForRecipient ? "Waiting for the other participant" : status}
           </p>
         </div>
-        <Button disabled={status === "ended" || status === "failed"} onClick={handleHangup} variant="danger">
+          <div aria-label="Call controls" className="flex flex-wrap items-center gap-2">
+            <button aria-label={micEnabled ? "Mute microphone" : "Unmute microphone"} aria-pressed={!micEnabled} disabled={callFinished} onClick={() => toggleMedia("audio")} type="button" className={`flex min-h-11 items-center justify-center gap-2 rounded-full px-4 py-3 text-sm font-medium transition disabled:opacity-40 ${micEnabled ? "bg-[#e7efe4] text-[#325347] hover:bg-[#d4e5ce]" : "bg-[#ffdad6] text-[#93000a]"}`}><span aria-hidden="true" className="material-symbols-outlined">{micEnabled ? "mic" : "mic_off"}</span>{micEnabled ? "Mute" : "Unmute"}</button>
+            <button aria-label={cameraEnabled ? "Turn camera off" : "Turn camera on"} aria-pressed={!cameraEnabled} disabled={callFinished} onClick={() => toggleMedia("video")} type="button" className={`flex min-h-11 items-center justify-center gap-2 rounded-full px-4 py-3 text-sm font-medium transition disabled:opacity-40 ${cameraEnabled ? "bg-[#e7efe4] text-[#325347] hover:bg-[#d4e5ce]" : "bg-[#ffdad6] text-[#93000a]"}`}><span aria-hidden="true" className="material-symbols-outlined">{cameraEnabled ? "videocam" : "videocam_off"}</span>{cameraEnabled ? "Camera off" : "Camera on"}</button>
+        <Button disabled={status === "ended"} onClick={handleHangup} variant="danger">
+          <span aria-hidden="true" className="material-symbols-outlined !text-lg">call_end</span>
           End call
         </Button>
+          </div>
       </header>
 
-      {error ? <p className="m-5 rounded-[1.5rem] bg-[#ffdad6] p-4 text-sm text-[#93000a]">{error}</p> : null}
+      {error ? <p role="alert" className="m-5 rounded-[1.5rem] bg-[#ffdad6] p-4 text-sm text-[#93000a]">{error}</p> : null}
 
       {status === "ended" && user?.uid === session?.therapistId ? <div className="m-5"><TherapyNotesPanel relationshipId={relationshipId} isTherapist callId={sessionId} /></div> : null}
 
-      <div className="grid min-h-[68vh] gap-4 p-5 lg:grid-cols-[1fr_320px]">
-        <section className="relative min-h-[48vh] overflow-hidden rounded-[2rem] border border-white/20 bg-[#2c1601] shadow-[inset_0_2px_8px_rgba(0,0,0,0.3)]">
-          <video ref={remoteVideoRef} autoPlay className="h-full min-h-[48vh] w-full object-cover" playsInline />
+      <div className="grid min-h-[68vh] gap-4 p-5 xl:grid-cols-[minmax(0,1fr)_280px]">
+        <section className="relative min-h-[48vh] overflow-hidden rounded-[2rem] border border-white/20 bg-[#183026] shadow-[inset_0_2px_8px_rgba(0,0,0,0.3)]">
+          <video aria-label="Other participant" ref={remoteVideoRef} autoPlay className="h-full min-h-[48vh] w-full object-contain" playsInline />
           {status !== "connected" ? (
             <div className="absolute inset-0 flex items-center justify-center bg-black/70">
-              <div className="text-center">
-                <Spinner label="Connecting call" />
-                <p className="mt-4 font-medium capitalize">{waitingForRecipient ? "Waiting for the other participant" : status}</p>
+              <div className="px-6 text-center" role="status">
+                {callFinished ? <span aria-hidden="true" className="material-symbols-outlined !text-4xl">{status === "ended" ? "call_end" : "wifi_off"}</span> : <Spinner label="Connecting call" />}
+                <p className="mt-4 font-medium">{status === "ended" ? "Your call has ended" : status === "failed" ? "We couldn’t connect your call" : waitingForRecipient ? "Waiting for the other participant" : "Connecting you…"}</p>
+                {callFinished ? <Link className="mt-5 inline-flex min-h-11 items-center rounded-full bg-[#c6ebda] px-5 text-sm font-medium text-[#325347]" href={backHref}>Return to messages</Link> : null}
               </div>
             </div>
           ) : null}
         </section>
         <aside className="space-y-4">
-          <video ref={localVideoRef} autoPlay className="aspect-video w-full rounded-[1.5rem] border border-white/20 bg-[#2c1601] object-cover" muted playsInline />
+          <div className="relative overflow-hidden rounded-[1.5rem] border border-white/20 bg-[#183026]">
+            <video aria-label="Your camera preview" ref={localVideoRef} autoPlay className={`aspect-video w-full -scale-x-100 object-cover ${!cameraEnabled || callFinished ? "invisible" : ""}`} muted playsInline />
+            {!cameraEnabled || callFinished ? <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-[#354a40]"><span aria-hidden="true" className="material-symbols-outlined !text-3xl">videocam_off</span><span className="text-sm">{callFinished ? "Camera stopped" : "Your camera is off"}</span></div> : null}
+            <span className="absolute bottom-3 left-3 flex items-center gap-1.5 rounded-full bg-black/60 px-3 py-1 text-xs">You{!micEnabled ? <span aria-hidden="true" className="material-symbols-outlined !text-sm">mic_off</span> : null}</span>
+          </div>
           <div className="rounded-[1.5rem] border border-white/15 bg-white/10 p-4 text-sm font-light leading-6 text-[#ffeee1]/80">
-            Calls use Firestore signaling. TURN relay settings are supplied securely when configured; without them, some restrictive networks may not connect.
+            You can turn your camera and microphone off at any time. For a comfortable conversation, choose a quiet space and use headphones if you have them.
           </div>
         </aside>
       </div>

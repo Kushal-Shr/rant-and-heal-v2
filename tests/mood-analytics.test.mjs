@@ -3,12 +3,18 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
   calculateContextPatterns,
+  calculateContextFrequency,
+  calculateDailyMoodHistory,
+  calculateEmotionAverageIntensity,
+  calculateEmotionFrequency,
   calculateHelpfulFactorPatterns,
   calculateMetricAssociation,
   calculateMoodTrend,
   calculateTimeOfDayPatterns,
   calculateVariability,
   calculateWeeklySnapshot,
+  calculateWeeklyMoodSummary,
+  compareBeforeAfterCheckIn,
   entriesWithinDays,
   weeklyComparisonText,
 } from "../src/lib/mood/analytics.ts";
@@ -90,6 +96,72 @@ test("sleep association is gated and returns association data without causal cla
   assert.equal(calculateMetricAssociation(sparse, "sleepQualityScore"), null);
   const enough = [...sparse, entry(3, 5, { sleepQualityScore: 4 }), entry(4, 9, { sleepQualityScore: 9 })];
   assert.deepEqual(calculateMetricAssociation(enough, "sleepQualityScore"), { count: 4, difference: 3.5 });
+});
+
+test("emotion frequency, intensity averages and contexts use actual structured selections", () => {
+  const records = [
+    entry(1, 7, { emotions: [{ emotion: "anxious", intensity: 8 }, { emotion: "tired", intensity: 6 }], contexts: ["academics", "sleep"] }),
+    entry(2, 6, { emotions: [{ emotion: "anxious", intensity: 6 }], contexts: ["academics"] }),
+    entry(3, 8, { emotions: [{ emotion: "hopeful", intensity: 7 }, { emotion: "anxious" }], contexts: ["friends"] }),
+  ];
+  assert.deepEqual(calculateEmotionFrequency(records)[0], { emotion: "anxious", count: 3, checkInCount: 3, percentage: 100 });
+  assert.deepEqual(calculateEmotionAverageIntensity(records).find((item) => item.emotion === "anxious"), { emotion: "anxious", observations: 2, averageIntensity: 7 });
+  assert.deepEqual(calculateContextFrequency(records)[0], { context: "academics", count: 2, checkInCount: 3, percentage: 67 });
+});
+
+test("structured emotion analytics stay gated for sparse histories", () => {
+  const records = [entry(1, 6, { emotions: [{ emotion: "calm", intensity: 5 }] }), entry(2, 7, { emotions: [{ emotion: "calm" }] })];
+  assert.deepEqual(calculateEmotionFrequency(records), []);
+  assert.deepEqual(calculateEmotionAverageIntensity(records), []);
+});
+
+test("daily history preserves multiple check-ins on the same day and old records", () => {
+  const records = [
+    entry(1, 7, { id: "first", localDate: "2026-10-12", emotions: [{ emotion: "calm", intensity: 6 }] }),
+    { ...entry(1, 5, { id: "second", localDate: "2026-10-12" }), createdAt: daysAgo(1, 20) },
+  ];
+  const history = calculateDailyMoodHistory(records);
+  assert.equal(history.length, 2);
+  assert.equal(history[0].id, "second");
+  assert.deepEqual(history[1].emotions, [{ emotion: "calm", intensity: 6 }]);
+  assert.equal(calculateWeeklyMoodSummary(records, now).checkIns, 2);
+});
+
+test("post-Momo before/after comparison requires three comparable emotion ratings", () => {
+  const records = [1, 2, 3].flatMap((number) => [
+    { id: `before-${number}`, createdAt: daysAgo(number), emotions: [{ emotion: "anxious", intensity: 8 }] },
+    { id: `after-${number}`, createdAt: daysAgo(number), source: "POST_SESSION", baselineCheckInId: `before-${number}`, emotions: [{ emotion: "anxious", intensity: 6 }] },
+  ]);
+  assert.deepEqual(compareBeforeAfterCheckIn(records), { comparisons: 3, averageIntensityChange: -2 });
+  assert.equal(compareBeforeAfterCheckIn(records.slice(0, 4)), null);
+});
+
+test("Momo handoff is structured, optional, note-free, and does not alter safety routing", async () => {
+  const [route, page, responder, service] = await Promise.all([
+    readFile(new URL("../app/api/momo/chat/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/(patient)/momo/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../src/lib/momo/responder.ts", import.meta.url), "utf8"),
+    readFile(new URL("../src/services/moodService.ts", import.meta.url), "utf8"),
+  ]);
+  assert.match(route, /moodCheckInId/);
+  assert.match(route, /emotions: data\.emotions/);
+  assert.doesNotMatch(route, /moodCheckInContext[\s\S]{0,300}\bnote:/);
+  assert.match(page, /messages\.filter\(\(message\) => message\.sender === "USER"\)\.length >= 3/);
+  assert.match(responder, /Never treat it as a diagnosis, cause, or safety signal/);
+  assert.doesNotMatch(service, /safety|crisis/i);
+});
+
+test("weekly professional mood data is explicitly consent gated", async () => {
+  const [route, settings] = await Promise.all([
+    readFile(new URL("../app/api/therapy/weekly/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/(patient)/settings/page.tsx", import.meta.url), "utf8"),
+  ]);
+  assert.match(route, /shareMoodSummaryWithTherapist === true/);
+  assert.match(route, /moodSummarySharing\s*\?/);
+  assert.match(route, /moodSummaryIncluded: moodSummarySharing/);
+  assert.match(route, /therapistCanReadStoredSummary/);
+  assert.match(settings, /Mood summary sharing:/);
+  assert.match(settings, /raw Momo conversations, journal text, private check-in notes, or safety records/);
 });
 
 test("dashboard copy is accessible, responsive and avoids diagnostic or causal overclaims", async () => {

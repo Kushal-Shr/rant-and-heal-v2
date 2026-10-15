@@ -87,7 +87,7 @@ export function GlobalSidebar() {
             const active = pathname === item.href || (item.href !== "/" && pathname?.startsWith(`${item.href}/`));
             return <Link key={item.href} href={item.href} onClick={closeMenu} aria-current={active ? "page" : undefined}
               className={`flex min-h-12 items-center gap-3 rounded-full px-4 py-3 text-sm font-medium transition-all active:scale-[.98] ${active ? "bg-[#c6ebda]/65 text-[#002117] shadow-[inset_0_2px_6px_#32534712]" : "text-[#596c60] hover:bg-[#fff1e8] hover:text-[#325347]"}`}>
-              <span aria-hidden="true" className="material-symbols-outlined text-[21px]">{item.icon}</span>{item.label}
+              {item.href === "/momo" ? <MomoPortrait className="size-6" /> : <span aria-hidden="true" className="material-symbols-outlined text-[21px]">{item.icon}</span>}{item.label}
             </Link>;
           })}
         </nav>
@@ -112,11 +112,11 @@ export function GlobalSidebar() {
 
   return (
     <>
-      <aside className="sticky top-6 my-6 ml-6 hidden h-[calc(100dvh-3rem)] w-64 shrink-0 flex-col overflow-y-auto rounded-[2.5rem] border border-white/80 bg-[#fdfcf8]/90 p-5 shadow-[12px_12px_48px_-24px_#4a6b5e40,inset_0_2px_4px_#ffffff] md:flex">
+      <aside className="sticky top-6 my-6 ml-6 hidden h-[calc(100dvh-3rem)] w-64 shrink-0 flex-col overflow-y-auto rounded-[2.5rem] border border-white/80 bg-[#fdfcf8]/90 p-5 shadow-[12px_12px_48px_-24px_#4a6b5e40,inset_0_2px_4px_#ffffff] lg:flex">
         <div className="px-1 pb-9 pt-3">{brand}</div>
         {navigation()}
       </aside>
-      <header className="sticky top-0 z-40 border-b border-white/80 bg-[#fff8f5]/95 px-4 py-3 backdrop-blur-xl md:hidden">
+      <header className="sticky top-0 z-40 border-b border-white/80 bg-[#fff8f5]/95 px-4 py-3 backdrop-blur-xl lg:hidden">
         <div className="pr-16">{brand}</div>
         <details ref={mobileMenu} onKeyDown={(event) => { if (event.key === "Escape") { closeMenu(); mobileMenu.current?.querySelector("summary")?.focus(); } }} className="group">
           <summary aria-label="Navigation menu" className="absolute right-4 top-3 flex size-11 list-none items-center justify-center rounded-full bg-white text-[#325347] shadow-sm [&::-webkit-details-marker]:hidden"><span className="group-open:hidden"><span aria-hidden="true" className="material-symbols-outlined">menu</span></span><span className="hidden group-open:block"><span aria-hidden="true" className="material-symbols-outlined">close</span></span></summary>

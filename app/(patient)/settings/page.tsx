@@ -20,12 +20,17 @@ export default function SettingsPage() {
   const [feedback, setFeedback] = useState<string | null>(null);
   const [preferences, setPreferences] = useState<MomoPrivacyPreferences>(DEFAULT_MOMO_PRIVACY_PREFERENCES);
   const [privacyBusy, setPrivacyBusy] = useState(false);
+  const [shareMoodSummary, setShareMoodSummary] = useState(false);
+  const [sharingBusy, setSharingBusy] = useState(false);
 
   useEffect(() => {
     if (!user) return;
     let active = true;
     void getDoc(doc(db, "users", user.uid)).then((snapshot) => {
-      if (active) setPreferences(parseMomoPrivacyPreferences(snapshot.data()?.momoPrivacyPreferences));
+      if (active) {
+        setPreferences(parseMomoPrivacyPreferences(snapshot.data()?.momoPrivacyPreferences));
+        setShareMoodSummary(snapshot.data()?.shareMoodSummaryWithTherapist === true);
+      }
     }).catch(() => {
       if (active) setFeedback("Could not load Momo privacy preferences.");
     });
@@ -47,6 +52,23 @@ export default function SettingsPage() {
       setFeedback("Could not save Momo privacy preferences.");
     } finally {
       setPrivacyBusy(false);
+    }
+  }
+
+  async function setMoodSummarySharing(enabled: boolean) {
+    if (!user) return;
+    const previous = shareMoodSummary;
+    setShareMoodSummary(enabled);
+    setSharingBusy(true);
+    setFeedback(null);
+    try {
+      await updateDoc(doc(db, "users", user.uid), { shareMoodSummaryWithTherapist: enabled });
+      setFeedback(`Mood summary sharing is ${enabled ? "on" : "off"}.`);
+    } catch {
+      setShareMoodSummary(previous);
+      setFeedback("Could not update mood summary sharing.");
+    } finally {
+      setSharingBusy(false);
     }
   }
 
@@ -104,6 +126,14 @@ export default function SettingsPage() {
           </label>
           <div className="rounded-2xl border border-[#abcebf] bg-[#c6ebda]/35 p-5"><p className="font-medium text-[#325347]">Safety processing</p><p className="mt-1 text-sm leading-6 text-[#596c60]">Always active while using Momo so the service can respond to serious safety concerns.</p></div>
         </div>
+      </section>
+      <section className="clay-card p-7">
+        <h2 className="text-xl font-medium text-[#325347]">Therapist sharing</h2>
+        <p className="mt-2 text-sm leading-6 text-[#414845]">This applies only to an active, authorized therapist connection. It never shares raw Momo conversations, journal text, private check-in notes, or safety records.</p>
+        <label className="mt-6 flex items-start justify-between gap-5 rounded-2xl bg-[#fff1e8] p-5">
+          <span><span className="block font-medium text-[#325347]">Mood summary sharing: {shareMoodSummary ? "ON" : "OFF"}</span><span className="mt-1 block text-sm leading-6 text-[#596c60]">Allow aggregate mood trends, emotion frequency, intensity averages, common self-reported contexts, and check-in counts in your weekly therapist summary.</span></span>
+          <input aria-label="Share mood summary with therapist" checked={shareMoodSummary} disabled={sharingBusy} onChange={(event) => void setMoodSummarySharing(event.target.checked)} type="checkbox" className="mt-1 size-5 accent-[#325347]" />
+        </label>
       </section>
       <section className="clay-card p-7"><h2 className="text-xl font-medium text-[#325347]">Download your data</h2><p className="mt-2 text-sm leading-6 text-[#414845]">Export your profile, coarse journal activity, check-ins, encrypted Momo conversation records, and therapy relationship records as JSON. This server-side export does not decrypt your Momo history or read Vault documents.</p><Button className="mt-5" isLoading={busy === "export"} onClick={exportData}>Download export</Button></section>
       <section className="rounded-[2rem] border border-[#ba1a1a]/20 bg-[#ffdad6]/55 p-7"><h2 className="text-xl font-medium text-[#93000a]">Delete account</h2><p className="mt-2 text-sm leading-6 text-[#64120f]">This permanently deletes your account data. End any active therapist connection first. Type DELETE to continue.</p><input aria-label="Type DELETE to confirm account deletion" className="mt-5 w-full rounded-full border border-[#ba1a1a]/25 bg-white/80 px-5 py-3" onChange={(event) => setConfirmation(event.target.value)} value={confirmation} /><Button className="mt-4" disabled={confirmation !== "DELETE"} isLoading={busy === "delete"} onClick={deleteAccount} variant="danger">Delete my account</Button></section>

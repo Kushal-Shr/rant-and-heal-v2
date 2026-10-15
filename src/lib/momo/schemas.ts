@@ -123,6 +123,16 @@ export const conversationParticipantSchema = z.object({
 }).strict();
 export type ConversationParticipant = z.infer<typeof conversationParticipantSchema>;
 
+export const moodCheckInContextSchema = z.object({
+  emotions: z.array(z.object({
+    emotion: z.enum(["happy", "sad", "anxious", "angry", "calm", "tired", "lonely", "stressed", "hopeful", "overwhelmed", "excited", "neutral"]),
+    intensity: z.number().min(1).max(10).optional(),
+  }).strict()).min(1).max(5),
+  contexts: z.array(z.string().trim().min(1).max(40)).max(12),
+  source: z.enum(["MANUAL_CHECKIN", "POST_SESSION"]),
+}).strict();
+export type MoodCheckInContext = z.infer<typeof moodCheckInContextSchema>;
+
 export const CONTINUITY_GOALS = [
   "VENT",
   "BE_HEARD",
@@ -234,6 +244,7 @@ export const normalizedConversationInputSchema = z.object({
   history: z.array(conversationTurnSchema).max(50),
   continuityState: conversationContinuityStateSchema.optional(),
   participant: conversationParticipantSchema.optional(),
+  moodCheckInContext: moodCheckInContextSchema.optional(),
   // Server-owned checkpoint after the last committed turn, never client input.
   previousSafetyEvaluation: safetyEvaluationSchema.optional(),
 }).strict();

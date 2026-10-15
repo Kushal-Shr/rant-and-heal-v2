@@ -41,12 +41,16 @@ service cloud.firestore {
            request.resource.data.momoPrivacyPreferences.moodTrendAnalyticsEnabled is bool &&
            request.resource.data.momoPrivacyPreferences.outcomeAnalyticsEnabled is bool);
       }
+      function validMoodSummaryPreference() {
+        return !request.resource.data.keys().hasAny(['shareMoodSummaryWithTherapist']) ||
+          request.resource.data.shareMoodSummaryWithTherapist is bool;
+      }
       allow read: if owner(userId);
       allow create: if owner(userId) && request.resource.data.uid == userId &&
-        request.resource.data.role == 'USER' && validMomoPrivacyPreferences();
+        request.resource.data.role == 'USER' && validMomoPrivacyPreferences() && validMoodSummaryPreference();
       allow update: if owner(userId) &&
         request.resource.data.uid == resource.data.uid &&
-        request.resource.data.role == resource.data.role && validMomoPrivacyPreferences();
+        request.resource.data.role == resource.data.role && validMomoPrivacyPreferences() && validMoodSummaryPreference();
       allow delete: if false;
 
       match /sessions/{sessionId} {
@@ -141,22 +145,53 @@ service cloud.firestore {
                'momo', 'nothing-yet', 'other'
              ]));
         }
+        function validEmotion(item) {
+          return item is map && item.keys().hasOnly(['emotion', 'intensity']) &&
+            item.keys().hasAll(['emotion']) &&
+            item.emotion in [
+              'happy', 'sad', 'anxious', 'angry', 'calm', 'tired', 'lonely',
+              'stressed', 'hopeful', 'overwhelmed', 'excited', 'neutral'
+            ] &&
+            (!item.keys().hasAny(['intensity']) ||
+              (item.intensity is number && item.intensity >= 1 && item.intensity <= 10));
+        }
+        function validMoodEmotions() {
+          return !request.resource.data.keys().hasAny(['emotions']) ||
+            (request.resource.data.emotions is list &&
+             request.resource.data.emotions.size() >= 1 && request.resource.data.emotions.size() <= 5 &&
+             validEmotion(request.resource.data.emotions[0]) &&
+             (request.resource.data.emotions.size() < 2 || validEmotion(request.resource.data.emotions[1])) &&
+             (request.resource.data.emotions.size() < 3 || validEmotion(request.resource.data.emotions[2])) &&
+             (request.resource.data.emotions.size() < 4 || validEmotion(request.resource.data.emotions[3])) &&
+             (request.resource.data.emotions.size() < 5 || validEmotion(request.resource.data.emotions[4])));
+        }
         function validV2Mood() {
           return request.resource.data.keys().hasOnly([
               'userId', 'moodScore', 'anxietyScore', 'energyScore', 'stressScore',
               'sleepQualityScore', 'focusScore', 'socialConnectionScore', 'physicalWellbeingScore',
-              'contexts', 'helpfulFactors', 'note', 'timezone', 'localDate', 'schemaVersion', 'createdAt'
+              'emotions', 'contexts', 'helpfulFactors', 'note', 'timezone', 'localDate',
+              'source', 'usefulnessRating', 'conversationId', 'baselineCheckInId',
+              'schemaVersion', 'createdAt'
             ]) &&
             request.resource.data.keys().hasAll([
-              'userId', 'moodScore', 'timezone', 'localDate', 'schemaVersion', 'createdAt'
+              'userId', 'timezone', 'localDate', 'schemaVersion', 'createdAt'
             ]) &&
+            request.resource.data.keys().hasAny(['moodScore', 'emotions']) &&
             request.resource.data.userId == userId && request.resource.data.schemaVersion == 2 &&
             scoreIsValid('moodScore') && scoreIsValid('anxietyScore') && scoreIsValid('energyScore') &&
             scoreIsValid('stressScore') && scoreIsValid('sleepQualityScore') && scoreIsValid('focusScore') &&
             scoreIsValid('socialConnectionScore') && scoreIsValid('physicalWellbeingScore') &&
-            validMoodContexts() && validHelpfulFactors() &&
+            validMoodEmotions() && validMoodContexts() && validHelpfulFactors() &&
             (!request.resource.data.keys().hasAny(['note']) ||
               (request.resource.data.note is string && request.resource.data.note.size() <= 1000)) &&
+            (!request.resource.data.keys().hasAny(['source']) ||
+              request.resource.data.source in ['MANUAL_CHECKIN', 'POST_SESSION']) &&
+            (!request.resource.data.keys().hasAny(['usefulnessRating']) ||
+              (request.resource.data.usefulnessRating is int && request.resource.data.usefulnessRating >= 1 && request.resource.data.usefulnessRating <= 5)) &&
+            (!request.resource.data.keys().hasAny(['conversationId']) ||
+              (request.resource.data.conversationId is string && request.resource.data.conversationId.size() > 0 && request.resource.data.conversationId.size() <= 128)) &&
+            (!request.resource.data.keys().hasAny(['baselineCheckInId']) ||
+              (request.resource.data.baselineCheckInId is string && request.resource.data.baselineCheckInId.size() > 0 && request.resource.data.baselineCheckInId.size() <= 128)) &&
             request.resource.data.timezone is string && request.resource.data.timezone.size() > 0 &&
             request.resource.data.timezone.size() <= 64 &&
             request.resource.data.localDate is string && request.resource.data.localDate.size() == 10 &&

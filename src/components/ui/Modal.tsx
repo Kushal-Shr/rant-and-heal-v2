@@ -30,14 +30,17 @@ export function Modal({
 
   useEffect(() => {
     if (!isOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
     previousFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(
+    const getFocusable = () => dialogRef.current?.querySelectorAll<HTMLElement>(
       'button:not([disabled]), [href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
     );
-    focusable?.[0]?.focus();
+    getFocusable()?.[0]?.focus();
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
+      const focusable = getFocusable();
       if (event.key !== "Tab" || !focusable?.length) return;
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
@@ -53,6 +56,7 @@ export function Modal({
     document.addEventListener("keydown", handleKeyDown);
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
+      document.body.style.overflow = previousOverflow;
       previousFocusRef.current?.focus();
     };
   }, [isOpen, onClose]);
@@ -64,7 +68,7 @@ export function Modal({
       aria-modal="true"
       aria-labelledby={title ? titleId : undefined}
       aria-describedby={description ? descriptionId : undefined}
-      className="fixed inset-0 z-50 flex min-h-screen items-center justify-center bg-[#2c1601]/30 p-6 backdrop-blur-md"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[#2c1601]/30 p-4 backdrop-blur-md sm:p-6"
       role="dialog"
     >
       <button
@@ -75,7 +79,7 @@ export function Modal({
       />
       <section
         ref={dialogRef}
-        className={`relative w-full max-w-lg overflow-hidden rounded-[3rem] bg-white p-8 text-[#2c1601] shadow-[0_40px_80px_-20px_rgba(74,107,94,0.25),0_20px_40px_-10px_rgba(120,87,65,0.18),inset_0_2px_4px_rgba(255,255,255,0.8)] ${className}`}
+        className={`relative max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto overscroll-contain rounded-[2rem] bg-white p-5 text-[#2c1601] shadow-[0_40px_80px_-20px_rgba(74,107,94,0.25),0_20px_40px_-10px_rgba(120,87,65,0.18),inset_0_2px_4px_rgba(255,255,255,0.8)] sm:max-h-[calc(100dvh-3rem)] sm:rounded-[3rem] sm:p-8 ${className}`}
       >
         <div className="absolute -right-10 -top-10 size-36 rounded-full bg-[#c6ebda]/40 blur-2xl" />
         <div className="relative z-10">
@@ -93,7 +97,7 @@ export function Modal({
               ) : null}
             </div>
             <Button aria-label={closeLabel} onClick={onClose} size="icon" variant="ghost">
-              <span aria-hidden="true">x</span>
+              <span aria-hidden="true" className="material-symbols-outlined !text-xl">close</span>
             </Button>
           </div>
           {children}

@@ -60,7 +60,7 @@ function PatientDetail({ patientId, therapistId }: { patientId: string; therapis
         <Link className="inline-flex items-center gap-1 rounded-full bg-white/65 px-3 py-1.5 text-sm font-medium text-[#325347] transition hover:bg-white" href="/patients"><span aria-hidden="true" className="material-symbols-outlined text-base">arrow_back</span> Roster</Link>
         <p className="mt-6 text-xs font-medium uppercase tracking-[0.14em] text-[#2d4d41]/70">Patient profile</p>
         <h1 className="mt-2 text-3xl font-medium tracking-[-0.03em] text-[#325347] sm:text-4xl">{patientName}</h1>
-        <p className="mt-3 text-sm font-light leading-6 text-[#2d4d41]/80">Keep your connection close. Journal entries and mood check-ins are private to this patient.</p>
+        <p className="mt-3 text-sm font-light leading-6 text-[#2d4d41]/80">Keep your connection close. Journal entries and raw mood check-ins stay private; aggregate mood summaries appear only when the patient has enabled sharing.</p>
       </header>
 
       <section className="rounded-[2.5rem] border border-white/80 bg-white/75 p-6 shadow-[0_20px_40px_-20px_rgba(121,88,65,0.2),inset_0_2px_4px_rgba(255,255,255,0.85)] sm:p-8">

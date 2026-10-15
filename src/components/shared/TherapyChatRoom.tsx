@@ -106,18 +106,20 @@ export function TherapyChatRoom({
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!inputValue.trim()) {
+    if (!inputValue.trim() || isSending) {
       return;
     }
 
     setIsSending(true);
     setError(null);
+    const submittedText = inputValue;
+    setInputValue("");
 
     try {
-      await sendTherapyMessage(relationshipId, inputValue, senderRole);
-      setInputValue("");
+      await sendTherapyMessage(relationshipId, submittedText, senderRole);
     } catch (sendError) {
       console.error("Failed to send therapy message:", sendError);
+      setInputValue((draft) => draft.trim() ? `${submittedText}\n\n${draft}` : submittedText);
       setError(sendError instanceof Error ? sendError.message : "Could not send that message.");
     } finally {
       setIsSending(false);
@@ -182,7 +184,7 @@ export function TherapyChatRoom({
   const callActionLabel = callInProgress || callStartedByMe ? "Return to call" : "Join call";
 
   return (
-    <div className="flex h-[calc(100dvh-7rem)] min-h-[36rem] md:h-[calc(100dvh-4rem)] flex-col overflow-hidden rounded-[2.5rem] border border-white/80 bg-white/70 font-['Plus_Jakarta_Sans'] text-[#2c1601] shadow-[0_24px_48px_-24px_rgba(121,88,65,0.24),inset_0_2px_4px_rgba(255,255,255,0.85)]">
+    <div className="flex h-[calc(100dvh-7rem)] min-h-[28rem] sm:min-h-[36rem] md:h-[calc(100dvh-4rem)] flex-col overflow-hidden rounded-[2.5rem] border border-white/80 bg-white/70 font-['Plus_Jakarta_Sans'] text-[#2c1601] shadow-[0_24px_48px_-24px_rgba(121,88,65,0.24),inset_0_2px_4px_rgba(255,255,255,0.85)]">
       <header className="flex shrink-0 flex-wrap items-center justify-between gap-4 border-b border-[#ffeada] bg-[#fff8f5]/80 p-5 sm:p-6">
         <div>
           <Link className="inline-flex items-center gap-1 rounded-full bg-[#fff1e8] px-3 py-1.5 text-sm font-medium text-[#325347] transition hover:bg-[#ffe3cd]" href={backHref}>
@@ -284,7 +286,7 @@ export function TherapyChatRoom({
                       isMine ? "rounded-br-md bg-[#c6ebda]/70 text-[#2d4d41]" : "rounded-bl-md bg-white text-[#2c1601]"
                     }`}
                   >
-                    <p className="whitespace-pre-wrap text-sm leading-6">{message.text}</p>
+                    <p className="whitespace-pre-wrap text-sm leading-6 [overflow-wrap:anywhere]">{message.text}</p>
                     <p className="mt-2 text-xs font-medium text-[#4a6b5e]/75">
                       {isMine ? "You" : message.senderRole === TherapyMessageSenderRole.THERAPIST ? "Therapist" : "Patient"} · {formatMessageTime(message)}
                     </p>
@@ -298,7 +300,7 @@ export function TherapyChatRoom({
       </div>
 
       <form className="shrink-0 border-t border-[#ffeada] bg-white/85 p-4 sm:p-5" onSubmit={handleSubmit}>
-        {error ? <p className="mb-3 rounded-[1rem] bg-[#ffdad6] p-3 text-sm text-[#93000a]">{error}</p> : null}
+        {error ? <p role="alert" className="mb-3 rounded-[1rem] bg-[#ffdad6] p-3 text-sm text-[#93000a]">{error}</p> : null}
         <div className="flex flex-col gap-3 sm:flex-row">
           <Textarea
             aria-label="Message"

@@ -1,4 +1,5 @@
 import { Avatar } from "../ui/Avatar";
+import { MomoPortrait } from "./MomoPortrait";
 
 export interface ChatBubbleProps {
   message: string;
@@ -21,8 +22,8 @@ export function ChatBubble({
 
   return (
     <div className={`flex max-w-[85%] gap-4 ${isSender ? "self-end" : "items-start self-start"}`}>
-      {!isSender ? <Avatar alt={senderName} src={avatarSrc} size="sm" /> : null}
-      <div>
+      {!isSender ? senderName === "Momo" && !avatarSrc ? <MomoPortrait className="size-10" /> : <Avatar alt={senderName} src={avatarSrc} size="sm" /> : null}
+      <div className="min-w-0">
         <div
           className={`rounded-2xl p-4 font-['Plus_Jakarta_Sans'] text-base font-light leading-[1.6] shadow-sm ${
             isSender
@@ -37,7 +38,7 @@ export function ChatBubble({
               <span className="size-2 animate-bounce rounded-full bg-[#325347]/40 [animation-delay:300ms]" />
             </div>
           ) : (
-            <p>{message}</p>
+            <p className="whitespace-pre-wrap [overflow-wrap:anywhere]">{message}</p>
           )}
         </div>
         {timestamp ? (
@@ -49,4 +50,3 @@ export function ChatBubble({
     </div>
   );
 }
-
