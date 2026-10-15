@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
   const conversations = await Promise.all(sessions.docs.map(async (session) => ({
     id: session.id,
     ...session.data(),
-    messages: await documents(session.ref.collection("messages").orderBy("timestamp", "asc")),
+    messages: await documents(session.ref.collection("messages").orderBy("createdAt", "asc")),
   })));
   const relationships = await Promise.all(relationshipSnapshot.docs.map(async (relationship) => ({
     id: relationship.id,
@@ -55,7 +55,10 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: "Please sign in again before deleting your account." }, { status: 401 });
   }
   const db = getAdminDb();
-  const relationshipSnapshot = await db.collection("therapy_relationships").where("userId", "==", token.uid).get();
+  const [relationshipSnapshot, momoKeysSnapshot] = await Promise.all([
+    db.collection("therapy_relationships").where("userId", "==", token.uid).get(),
+    db.collection("momo_conversation_keys").where("userId", "==", token.uid).get(),
+  ]);
   if (relationshipSnapshot.docs.some((item) =>
     [ConnectionStatus.PENDING, ConnectionStatus.ACTIVE].includes(item.data().status)
   )) {
@@ -69,6 +72,7 @@ export async function DELETE(request: NextRequest) {
     db.recursiveDelete(db.collection("users").doc(token.uid)),
     db.collection("patient_profiles").doc(token.uid).delete(),
     db.recursiveDelete(db.collection("connections").doc(token.uid)),
+    ...momoKeysSnapshot.docs.map((item) => item.ref.delete()),
   ]);
   await getAdminAuth().deleteUser(token.uid);
   return NextResponse.json({ ok: true });

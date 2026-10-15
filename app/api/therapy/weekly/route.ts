@@ -20,6 +20,7 @@ import {
   calculateVariability,
 } from "@/src/lib/mood/analytics";
 import type { MoodEntry } from "@/src/types/database";
+import { parseMomoPrivacyPreferences } from "@/src/lib/momo/privacy";
 
 export const runtime = "nodejs";
 const bodySchema = z.object({ relationshipId: z.string().min(1).max(128), weekStart: z.string().datetime() }).strict();
@@ -61,16 +62,26 @@ export async function POST(request: NextRequest) {
     if (token.uid !== rel.patientUid) throw new TherapyAccessError("Only the patient can generate weekly reports", 403);
     await requireAiConsent(relationshipId);
     const notes = await reviewedNotes(rel, relationshipId, start, end);
-    const [moodSnap, momoSnap, journalMetrics] = await Promise.all([
+    const userRef = rel.ref.firestore.collection("users").doc(rel.patientUid);
+    const userProfile = (await userRef.get()).data();
+    const momoPrivacy = parseMomoPrivacyPreferences(userProfile?.momoPrivacyPreferences);
+    const [moodSnap, momoSnap, journalMetrics, inferredMoodSnap, outcomeSnap] = await Promise.all([
       rel.ref.firestore.collection("users").doc(rel.patientUid).collection("health_metrics")
         .where("createdAt", ">=", Timestamp.fromDate(start)).where("createdAt", "<", Timestamp.fromDate(end)).get(),
       rel.ref.firestore.collection("users").doc(rel.patientUid).collection("sessions")
         .where("createdAt", ">=", Timestamp.fromDate(start)).where("createdAt", "<", Timestamp.fromDate(end)).get(),
       aggregateWeeklyJournalMetrics(rel.ref.firestore, rel.patientUid, start, end),
+      momoPrivacy.moodTrendAnalyticsEnabled
+        ? userRef.collection("momo_mood_analytics").where("timestamp", ">=", Timestamp.fromDate(start)).where("timestamp", "<", Timestamp.fromDate(end)).get()
+        : Promise.resolve(null),
+      momoPrivacy.outcomeAnalyticsEnabled
+        ? userRef.collection("momo_outcome_analytics").where("timestamp", ">=", Timestamp.fromDate(start)).where("timestamp", "<", Timestamp.fromDate(end)).get()
+        : Promise.resolve(null),
     ]);
     const moodEntries = moodSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() } as MoodEntry));
     const sources = {
       moodTrackerData: {
+        source: "EXPLICIT_MANUAL_CHECK_INS",
         checkInCount: moodEntries.length,
         averageMood: calculateMetricAverage(moodEntries, "moodScore"),
         averageStress: calculateMetricAverage(moodEntries, "stressScore"),
@@ -81,8 +92,28 @@ export async function POST(request: NextRequest) {
         frequentlyHelpfulFactors: calculateHelpfulFactorPatterns(moodEntries).slice(0, 3),
         timeOfDayPatterns: calculateTimeOfDayPatterns(moodEntries),
         sleepMoodAssociation: calculateMetricAssociation(moodEntries, "sleepQualityScore"),
+        inferredConversationScores: inferredMoodSnap?.docs.map((doc) => {
+          const data = doc.data();
+          return {
+            ...(typeof data.moodScore === "number" ? { moodScore: data.moodScore } : {}),
+            ...(typeof data.stressScore === "number" ? { stressScore: data.stressScore } : {}),
+            ...(typeof data.energyScore === "number" ? { energyScore: data.energyScore } : {}),
+            ...(typeof data.sleepQuality === "number" ? { sleepQuality: data.sleepQuality } : {}),
+            timestamp: data.timestamp,
+          };
+        }) ?? [],
       },
-      momoSessionSummaries: momoSnap.docs.flatMap((doc) => typeof doc.data().summary === "string" ? [doc.data().summary] : []),
+      momoStructuredInsights: {
+        outcomes: outcomeSnap?.docs.map((doc) => {
+          const data = doc.data();
+          return {
+            approach: data.approach,
+            outcome: data.outcome,
+            goal: data.goal,
+            timestamp: data.timestamp,
+          };
+        }) ?? [],
+      },
       therapistReviewedNotes: notes,
       objectiveAppActivity: { momoSessionCount: momoSnap.size, reviewedTherapySessionCount: notes.length },
       journalMetrics,

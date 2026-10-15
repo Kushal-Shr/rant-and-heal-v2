@@ -14,8 +14,19 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
-      - run: npm run check
+          cache-dependency-path: |
+            package-lock.json
+            infra/package-lock.json
+      - name: Install application dependencies
+        run: npm ci
+      - name: Install infrastructure dependencies
+        run: npm ci
+        working-directory: infra
+      - name: Validate application
+        run: npm run check
+      - name: Validate infrastructure
+        run: npm run build
+        working-directory: infra
       # Build validation needs syntactically present public Firebase config.
       # These are inert CI-only values; deployments must provide real values.
       - run: npm run build

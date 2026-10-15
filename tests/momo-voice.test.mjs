@@ -8,6 +8,7 @@ const { emptyConversationContinuityState } = await import("../src/lib/momo/conti
 const { buildMomoBehaviorPolicy } = await import("../src/lib/momo/responder.ts");
 const { buildMomoVoiceInstructions, MOMO_VOICE_DELIVERY_OVERLAY } = await import("../src/lib/momo/live/policy.ts");
 const { isRecoverableLiveModerationStop } = await import("../src/lib/momo/live/errors.ts");
+const { MomoLiveClient } = await import("../src/lib/momo/live/MomoLiveClient.ts");
 const { MOMO_SYSTEM_INSTRUCTION } = await import("../src/server/momo/persona.ts");
 const {
   OPENAI_LIVE_SESSION_ENDPOINT,
@@ -157,6 +158,70 @@ test("a stopped moderated generation is recoverable without ending the Live call
     code: "session_failed",
     message: "The Live session failed.",
   }), false);
+});
+
+test("Live provider error events do not masquerade as connection loss", () => {
+  const providerErrors = [];
+  const moderationNotices = [];
+  const connectionErrors = [];
+  const client = new MomoLiveClient({
+    idToken: "token",
+    conversationId: "conversation-123",
+    history: [],
+    onReady() {},
+    onProviderError(error) { providerErrors.push(error); },
+    onModeration(message) { moderationNotices.push(message); },
+    onConnectionError(error) { connectionErrors.push(error); },
+    onClose() {},
+  });
+
+  client.handleEvent(JSON.stringify({
+    type: "error",
+    error: {
+      type: "invalid_request_error",
+      code: "invalid_event",
+      message: "A client command was rejected.",
+    },
+  }));
+  client.handleEvent(JSON.stringify({
+    type: "error",
+    error: {
+      type: "invalid_request_error",
+      code: "generation_stopped",
+      message: "The generation was stopped due to moderation.",
+    },
+  }));
+
+  assert.equal(providerErrors.length, 1);
+  assert.equal(providerErrors[0].code, "invalid_event");
+  assert.equal(moderationNotices.length, 1);
+  assert.equal(connectionErrors.length, 0);
+});
+
+test("a terminal content moderation close retains its safety reason", () => {
+  const closes = [];
+  const client = new MomoLiveClient({
+    idToken: "token",
+    conversationId: "conversation-123",
+    history: [],
+    onReady() {},
+    onConnectionError() {},
+    onClose(event) { closes.push(event); },
+  });
+
+  client.handleEvent(JSON.stringify({
+    type: "session.closed",
+    reason: "content",
+  }));
+
+  assert.deepEqual(closes, [{ clean: true, reason: "content" }]);
+});
+
+test("a terminal content moderation close renders as safety-paused rather than errored", async () => {
+  const panel = await readFile(new URL("../src/components/momo/MomoVoiceCallPanel.tsx", import.meta.url), "utf8");
+  assert.match(panel, /reason === "content"/);
+  assert.match(panel, /setCallState\("SAFETY_PAUSED"\)/);
+  assert.match(panel, /Voice paused for safety/);
 });
 
 test("provider safety identifier is stable, one-way, and does not expose Firebase UID", () => {

@@ -173,7 +173,7 @@ Configure Firestore TTL for `safety_events.expireAt` before relying on the 30-da
 
 ### Day 4 human safety dashboard
 
-`/safety` and `/safety/[caseId]` provide an internal reviewer queue and auditable case workflow. Access requires the explicit Firebase Auth custom claim `safetyReviewer: true`; being a patient or therapist does not grant access. Existing `admin: true` accounts follow the privileged-access policy. Grant or revoke the reviewer claim from a trusted Admin SDK environment:
+`/safety` and `/safety/[caseId]` provide an internal reviewer queue and auditable case workflow. Access requires either the Firebase Auth custom claim `safetyReviewer: true` or `admin: true`; being a patient or therapist does not grant access. Grant or revoke the dedicated reviewer claim from a trusted Admin SDK environment:
 
 ```bash
 npm run set-safety-reviewer -- <firebase-auth-uid>

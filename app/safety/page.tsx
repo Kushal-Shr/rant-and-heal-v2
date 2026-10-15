@@ -25,7 +25,7 @@ function CaseCard({ item }: { item: SafetyCase }) {
         <Badge variant="clay">{item.status.replaceAll("_", " ")}</Badge>
         <Badge variant="moss">{item.currentState.replaceAll("_", " ")}</Badge>
       </div>
-      <p className="mt-4 line-clamp-2 text-sm leading-6 text-[#414845]">{item.relevantUserText}</p>
+      <p className="mt-4 line-clamp-2 text-sm leading-6 text-[#414845]">{item.trigger.replaceAll("_", " ")} · target {item.safetyTarget.toLowerCase()}</p>
       <div className="mt-4 flex flex-wrap justify-between gap-2 text-xs text-[#596c60]">
         <span>{item.status === "RESOLVED" ? "Resolved case" : elapsed(item.createdAt)}</span>
         <span>{item.assignedReviewerUid ? `Assigned: ${item.assignedReviewerUid}` : "Unassigned"}</span>

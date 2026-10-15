@@ -40,7 +40,9 @@ test("TEST 1 text → voice → text reuses one product conversation", async () 
   assert.match(momoPage, /<MomoVoiceCallPanel/);
   assert.match(momoPage, /onTranscriptDelta=\{handleLiveTranscriptDelta\}/);
   assert.doesNotMatch(momoPage, /href=\{`\/momo\/call\?conversationId=/);
-  assert.match(client, /JSON\.stringify\(\{ conversationId: this\.options\.conversationId, sdp \}\)/);
+  assert.match(client, /conversationId: this\.options\.conversationId/);
+  assert.match(client, /history: this\.options\.history\.slice\(-12\)/);
+  assert.match(client, /continuityState: this\.options\.continuityState/);
   assert.match(chatRoute, /conversationId: z\.string/);
 });
 
@@ -151,8 +153,18 @@ test("TEST 9 ending a call returns to the same chat without resetting continuity
 test("TEST 10 partial transcripts are not persisted as duplicate messages", async () => {
   const sideband = await readFile(new URL("../src/server/momo/liveSideband.ts", import.meta.url), "utf8");
   assert.doesNotMatch(sideband, /persistAssistantTranscript/);
-  assert.equal((sideband.match(/doc\(`\$\{messageId\}-momo`\)/g) ?? []).length, 1);
-  assert.match(sideband, /provenance: "SERVER_LIVE_SIDEBAND"/);
+  assert.match(sideband, /encryptMomoMessageForStorage/);
+  assert.match(sideband, /event\.type === "session\.input_transcript\.delta"/);
+  const inputDeltaBlock = sideband.slice(
+    sideband.indexOf('event.type === "session.input_transcript.delta"'),
+    sideband.indexOf('event.type === "session.output_transcript.delta"')
+  );
+  const outputDeltaBlock = sideband.slice(
+    sideband.indexOf('event.type === "session.output_transcript.delta"'),
+    sideband.indexOf('event.type === "session.delegation.created"')
+  );
+  assert.doesNotMatch(inputDeltaBlock, /collection\("messages"\)|transaction\.set/);
+  assert.doesNotMatch(outputDeltaBlock, /collection\("messages"\)|transaction\.set/);
 });
 
 test("TEST 11 refresh after voice restores the requested conversation", async () => {
@@ -164,15 +176,14 @@ test("TEST 11 refresh after voice restores the requested conversation", async ()
 });
 
 test("TEST 12 mixed text and voice messages share stable chronological ordering", async () => {
-  const textRoute = await readFile(new URL("../app/api/momo/chat/route.ts", import.meta.url), "utf8");
+  const textStorage = await readFile(new URL("../src/services/momoConversationService.ts", import.meta.url), "utf8");
   const sideband = await readFile(new URL("../src/server/momo/liveSideband.ts", import.meta.url), "utf8");
-  const momoPage = await readFile(new URL("../app/(patient)/momo/page.tsx", import.meta.url), "utf8");
-  for (const source of [textRoute, sideband]) {
-    assert.match(source, /order: 0/);
-    assert.match(source, /order: 1/);
-    assert.match(source, /FieldValue\.serverTimestamp\(\)/);
+  for (const source of [textStorage, sideband]) {
+    assert.match(source, /messageSequence: sequence/);
+    assert.match(source, /messageSequence: sequence \+ 1/);
+    assert.match(source, /serverTimestamp\(\)/);
   }
-  assert.match(momoPage, /return time \|\| left\.order - right\.order/);
+  assert.match(textStorage, /time \|\| left\.messageSequence - right\.messageSequence/);
 });
 
 test("bounded completed history resumes the existing topic without replaying it", () => {

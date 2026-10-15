@@ -20,6 +20,12 @@ import {
   buildMomoLiveOpeningInstruction,
   type MomoLiveBootstrap,
 } from "@/src/server/momo/liveSession";
+import {
+  conversationDek,
+  encryptMomoContinuityForStorage,
+  encryptMomoMessageForStorage,
+} from "@/src/server/momo/crypto";
+import { persistPermittedMomoAnalytics } from "@/src/server/momo/analytics";
 
 const SIDEBAND_OPEN_TIMEOUT_MS = 5_000;
 const TRANSCRIPT_SETTLE_MS = 180;
@@ -122,7 +128,9 @@ class MomoLiveSideband {
     this.socket.on("message", (data) => this.onMessage(data.toString()));
     this.socket.on("close", () => void this.failClosed("The safety monitor disconnected."));
     this.socket.on("error", (error) => {
-      console.error("MOMO LIVE SIDEBAND ERROR:", error);
+      console.error("MOMO LIVE SIDEBAND ERROR", {
+        status: error.name || "SOCKET_ERROR",
+      });
       void this.failClosed("The safety monitor failed.");
     });
     await this.writeState({
@@ -207,13 +215,19 @@ class MomoLiveSideband {
       return;
     }
     if (event.type === "error") {
-      console.error("MOMO LIVE PROVIDER EVENT ERROR:", event.error?.message ?? raw);
+      console.error("MOMO LIVE PROVIDER EVENT ERROR", {
+        providerSessionId: this.providerSessionId,
+        status: "PROVIDER_EVENT_ERROR",
+      });
     }
   }
 
   private enqueue(task: () => Promise<void>): void {
     this.work = this.work.then(task, task).catch((error) => {
-      console.error("MOMO LIVE SIDEBAND WORK ERROR:", error);
+      console.error("MOMO LIVE SIDEBAND WORK ERROR", {
+        providerSessionId: this.providerSessionId,
+        status: error instanceof Error ? error.name : "UNKNOWN",
+      });
       return this.failClosed("Trusted voice processing failed.");
     });
   }
@@ -298,37 +312,64 @@ class MomoLiveSideband {
       { role: "MOMO" as const, text: outcome.message },
     ].slice(-12);
     const messageId = crypto.randomUUID();
-    await this.sessionRef.firestore.runTransaction(async (transaction) => {
-      const conversation = await transaction.get(this.sessionRef);
-      if (conversation.data()?.liveVoice?.connectionId !== this.providerSessionId) {
-        throw new Error("This GPT-Live connection was replaced by a newer connection.");
-      }
-      transaction.set(this.sessionRef.collection("messages").doc(`${messageId}-user`), {
-        text: messageText,
-        sender: "USER",
-        source: "VOICE",
-        modality: "VOICE",
-        provenance: "SERVER_LIVE_SIDEBAND",
-        order: 0,
-        timestamp: FieldValue.serverTimestamp(),
+    const dek = await conversationDek(
+      this.sessionRef.firestore,
+      this.bootstrap.userId,
+      this.bootstrap.conversationId
+    );
+    try {
+      const userId = this.bootstrap.userId;
+      const conversationId = this.bootstrap.conversationId;
+      const userMessageId = `${messageId}-user`;
+      const momoMessageId = `${messageId}-momo`;
+      const userEncrypted = encryptMomoMessageForStorage(dek, messageText, {
+        userId, conversationId, messageId: userMessageId, role: "user", modality: "voice",
       });
-      transaction.set(this.sessionRef.collection("messages").doc(`${messageId}-momo`), {
-        text: outcome.message,
-        sender: "MOMO",
-        source: "VOICE",
-        modality: "VOICE",
-        provenance: "SERVER_LIVE_SIDEBAND",
-        order: 1,
-        continuityMetadata: finalized.metadata,
-        timestamp: FieldValue.serverTimestamp(),
+      const momoEncrypted = encryptMomoMessageForStorage(dek, outcome.message, {
+        userId, conversationId, messageId: momoMessageId, role: "assistant", modality: "voice",
       });
-      transaction.set(this.sessionRef, {
-        title: messageText.slice(0, 64),
-        continuityState: finalized.state,
-        safetyEvaluation: outcome.safety,
-        updatedAt: FieldValue.serverTimestamp(),
-      }, { merge: true });
-    });
+      const encryptedContinuity = encryptMomoContinuityForStorage(
+        dek, finalized.state, userId, conversationId
+      );
+      const sequence = Date.now() * 10;
+      await this.sessionRef.firestore.runTransaction(async (transaction) => {
+        const conversation = await transaction.get(this.sessionRef);
+        if (conversation.data()?.liveVoice?.connectionId !== this.providerSessionId) {
+          throw new Error("This GPT-Live connection was replaced by a newer connection.");
+        }
+        transaction.set(this.sessionRef.collection("messages").doc(userMessageId), {
+          userId, conversationId, role: "user", modality: "voice",
+          encryptedContent: userEncrypted,
+          messageSequence: sequence,
+          createdAt: FieldValue.serverTimestamp(),
+        });
+        transaction.set(this.sessionRef.collection("messages").doc(momoMessageId), {
+          userId, conversationId, role: "assistant", modality: "voice",
+          encryptedContent: momoEncrypted,
+          messageSequence: sequence + 1,
+          createdAt: FieldValue.serverTimestamp(),
+        });
+        transaction.set(this.sessionRef, {
+          encryptedContinuity,
+          cryptoVersion: 1,
+          safetyEvaluation: outcome.safety,
+          updatedAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
+      });
+    } finally {
+      dek.fill(0);
+    }
+    await persistPermittedMomoAnalytics({
+      db: this.sessionRef.firestore,
+      userId: this.bootstrap.userId,
+      conversationId: this.bootstrap.conversationId,
+      eventId: messageId,
+      messageText,
+      previousContinuity: input.continuityState,
+      nextContinuity: finalized.state,
+    }).catch((error) => console.error("MOMO LIVE OPTIONAL ANALYTICS ERROR", {
+      status: error instanceof Error ? error.name : "UNKNOWN",
+    }));
     this.send({
       type: "session.commentary.append",
       event_id: eventId("momo_reply"),
@@ -345,7 +386,9 @@ class MomoLiveSideband {
       try {
         this.sendThinkingUpdate(delegationId);
       } catch (error) {
-        console.error("MOMO LIVE THINKING UPDATE ERROR:", error);
+        console.error("MOMO LIVE THINKING UPDATE ERROR", {
+          status: error instanceof Error ? error.name : "UNKNOWN",
+        });
       }
     }, THINKING_UPDATE_DELAY_MS);
     this.progressTimers.set(delegationId, timer);
@@ -390,6 +433,14 @@ class MomoLiveSideband {
     this.clearAllThinkingUpdates();
     if (!isNewSafetyTurn) return;
     this.lastSafetyFingerprint = fingerprint;
+    const safetyContinuity = prepareContinuityState({ messageText: userText }, this.continuityState);
+    this.continuityState = safetyContinuity;
+    this.history = [
+      ...this.history,
+      { role: "USER" as const, text: userText },
+      { role: "MOMO" as const, text: responseText },
+    ].slice(-12);
+    await this.persistEncryptedSafetyTurn(userText, responseText, safetyContinuity);
     this.interruptVersion += 1;
     this.send({
       type: "session.instructions.append",
@@ -413,11 +464,58 @@ class MomoLiveSideband {
         userText,
         source: "VOICE",
         evaluation,
-        responseText,
       });
       if (shouldAttemptSafetySupportNotification(evaluation) && safetySupportNotificationsEnabled()) {
         void this.notifySafetySupport(safetyEventId, evaluation);
       }
+    }
+  }
+
+  private async persistEncryptedSafetyTurn(
+    userText: string,
+    responseText: string,
+    continuityState: MomoLiveBootstrap["continuityState"]
+  ): Promise<void> {
+    const userId = this.bootstrap.userId;
+    const conversationId = this.bootstrap.conversationId;
+    const messageId = crypto.randomUUID();
+    const userMessageId = `${messageId}-user`;
+    const momoMessageId = `${messageId}-momo`;
+    const dek = await conversationDek(this.sessionRef.firestore, userId, conversationId);
+    try {
+      const userEncrypted = encryptMomoMessageForStorage(dek, userText, {
+        userId, conversationId, messageId: userMessageId, role: "user", modality: "voice",
+      });
+      const momoEncrypted = encryptMomoMessageForStorage(dek, responseText, {
+        userId, conversationId, messageId: momoMessageId, role: "assistant", modality: "voice",
+      });
+      const encryptedContinuity = encryptMomoContinuityForStorage(
+        dek, continuityState, userId, conversationId
+      );
+      const sequence = Date.now() * 10;
+      await this.sessionRef.firestore.runTransaction(async (transaction) => {
+        const conversation = await transaction.get(this.sessionRef);
+        if (conversation.data()?.liveVoice?.connectionId !== this.providerSessionId) {
+          throw new Error("This GPT-Live connection was replaced by a newer connection.");
+        }
+        transaction.set(this.sessionRef.collection("messages").doc(userMessageId), {
+          userId, conversationId, role: "user", modality: "voice",
+          encryptedContent: userEncrypted, messageSequence: sequence,
+          createdAt: FieldValue.serverTimestamp(),
+        });
+        transaction.set(this.sessionRef.collection("messages").doc(momoMessageId), {
+          userId, conversationId, role: "assistant", modality: "voice",
+          encryptedContent: momoEncrypted, messageSequence: sequence + 1,
+          createdAt: FieldValue.serverTimestamp(),
+        });
+        transaction.set(this.sessionRef, {
+          encryptedContinuity,
+          cryptoVersion: 1,
+          updatedAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
+      });
+    } finally {
+      dek.fill(0);
     }
   }
 
@@ -447,7 +545,9 @@ class MomoLiveSideband {
         supportNotificationUpdatedAt: FieldValue.serverTimestamp(),
       });
     } catch (error) {
-      console.error("MOMO LIVE SAFETY NOTIFICATION ERROR:", error);
+      console.error("MOMO LIVE SAFETY NOTIFICATION ERROR", {
+        status: error instanceof Error ? error.name : "UNKNOWN",
+      });
       await eventRef.update({
         supportNotificationStatus: "FAILED",
         supportNotificationUpdatedAt: FieldValue.serverTimestamp(),
@@ -496,7 +596,9 @@ class MomoLiveSideband {
         liveVoice: { monitorHeartbeatAt: FieldValue.serverTimestamp() },
       }, { merge: true });
     }).catch((error) => {
-      console.error("MOMO LIVE HEARTBEAT ERROR:", error);
+      console.error("MOMO LIVE HEARTBEAT ERROR", {
+        status: error instanceof Error ? error.name : "UNKNOWN",
+      });
     });
     if (replaced) this.replaceForReconnect();
   }

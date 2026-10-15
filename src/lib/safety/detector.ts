@@ -67,6 +67,7 @@ const AMBIGUOUS_VIOLENCE = new RegExp(
 
 const SUICIDAL_PATTERNS: Array<[string, RegExp, MomoSafetyLanguage?]> = [
   ["suicidal-thoughts", /\b(?:suicidal\s+(?:thoughts?|ideas?|intent)|thinking about (?:suicide|killing myself)|thinking about (?:ending|taking) my life)\b/i],
+  ["suicidal-desire", /\b(?:i\s+)?want\s+to\s+(?:kill myself|end my life)\b/i],
   ["wish-to-die", /\b(?:wish i (?:could|would|were) (?:die|dead)|want (?:to die|my life to end)|would rather be dead|don['’]t want to (?:be alive|live)|do not want to (?:be alive|live)|no longer want to live)\b/i],
   ["life-not-worth-living", /\b(?:my\s+)?life (?:isn['’]t|is not|doesn['’]t feel) worth living\b/i],
   ["not-wake-up", /\b(?:wish|hope) i (?:could )?(?:go to sleep and )?not wake up\b/i],

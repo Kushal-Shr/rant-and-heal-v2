@@ -25,6 +25,10 @@ import {
 import type { SafetyEvaluation } from "@/src/lib/safety/schemas";
 import { safetyReviewerRole } from "@/src/server/auth";
 import { SAFETY_POLICY_VERSION } from "@/src/server/safety/classifier";
+import {
+  decryptSafetyExcerpt,
+  type SafetyExcerptEnvelope,
+} from "@/src/server/momo/crypto";
 
 const CASES = "safety_cases";
 const EPISODES = "safety_case_episodes";
@@ -79,7 +83,12 @@ function serializeAction(id: string, data: DocumentData): SafetyAction {
   };
 }
 
-function serializeCase(id: string, data: DocumentData, actions: SafetyAction[]): SafetyCase {
+function serializeCase(
+  id: string,
+  data: DocumentData,
+  actions: SafetyAction[],
+  relevantUserText?: string
+): SafetyCase {
   return {
     id,
     userId: String(data.userId),
@@ -87,7 +96,7 @@ function serializeCase(id: string, data: DocumentData, actions: SafetyAction[]):
     currentState: data.currentState,
     status: data.status,
     trigger: data.trigger,
-    relevantUserText: String(data.relevantUserText),
+    ...(relevantUserText ? { relevantUserText } : {}),
     safetyTarget: data.safetyTarget,
     reviewUrgency: data.reviewUrgency,
     assessmentStatus: data.assessmentStatus,
@@ -114,7 +123,11 @@ export async function listSafetyCases(db: Firestore): Promise<SafetyCase[]> {
   return snapshot.docs.map((item) => serializeCase(item.id, item.data(), []));
 }
 
-export async function getSafetyCase(db: Firestore, caseId: string): Promise<SafetyCase> {
+export async function getSafetyCase(
+  db: Firestore,
+  caseId: string,
+  includeSensitiveContext = false
+): Promise<SafetyCase> {
   const caseRef = db.collection(CASES).doc(caseId);
   const [caseSnapshot, actionsSnapshot] = await Promise.all([
     caseRef.get(),
@@ -124,10 +137,20 @@ export async function getSafetyCase(db: Firestore, caseId: string): Promise<Safe
     caseRef.collection("actions").limit(500).get(),
   ]);
   if (!caseSnapshot.exists) throw new SafetyCaseError("Safety case not found.", 404);
+  const data = caseSnapshot.data()!;
+  let relevantUserText: string | undefined;
+  if (includeSensitiveContext && data.encryptedSafetyExcerpt && data.wrappedSafetyDek && data.safetyKmsKeyName) {
+    relevantUserText = await decryptSafetyExcerpt({
+      encryptedSafetyExcerpt: data.encryptedSafetyExcerpt,
+      wrappedSafetyDek: data.wrappedSafetyDek,
+      safetyKmsKeyName: data.safetyKmsKeyName,
+    }, String(data.safetyExcerptEventId ?? data.sourceEventId));
+  }
   return serializeCase(
     caseSnapshot.id,
-    caseSnapshot.data()!,
-    sortSafetyActions(actionsSnapshot.docs.map((item) => serializeAction(item.id, item.data())))
+    data,
+    sortSafetyActions(actionsSnapshot.docs.map((item) => serializeAction(item.id, item.data()))),
+    relevantUserText
   );
 }
 
@@ -135,7 +158,7 @@ async function getCommittedSafetyCase(db: Firestore, caseId: string): Promise<Sa
   let lastError: unknown;
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     try {
-      return await getSafetyCase(db, caseId);
+      return await getSafetyCase(db, caseId, true);
     } catch (error) {
       if (error instanceof SafetyCaseError) throw error;
       lastError = error;
@@ -160,9 +183,9 @@ interface CaseFromSafetyEventOptions {
   eventId: string;
   userId: string;
   sessionId: string;
-  userText: string;
   source: "TEXT" | "VOICE";
   evaluation: SafetyEvaluation;
+  safetyExcerpt: SafetyExcerptEnvelope | null;
 }
 
 /**
@@ -176,9 +199,9 @@ export async function createOrUpdateSafetyCaseInTransaction({
   eventId,
   userId,
   sessionId,
-  userText,
   source,
   evaluation,
+  safetyExcerpt,
 }: CaseFromSafetyEventOptions): Promise<string | null> {
   if (safetyCasePersistenceDecision(evaluation.requiresHumanReview) === "NONE") return null;
 
@@ -199,6 +222,7 @@ export async function createOrUpdateSafetyCaseInTransaction({
       assessmentStatus: evaluation.resolution,
       assessmentStep: evaluation.assessmentStep,
       latestSafetyEventId: eventId,
+      ...(safetyExcerpt ? { ...safetyExcerpt, safetyExcerptEventId: eventId } : {}),
       updatedAt: FieldValue.serverTimestamp(),
     });
     transaction.create(actionRef, {
@@ -218,7 +242,8 @@ export async function createOrUpdateSafetyCaseInTransaction({
     currentState: evaluation.state,
     status: "OPEN",
     trigger: evaluation.triggerType,
-    relevantUserText: userText,
+    ...(safetyExcerpt ?? {}),
+    ...(safetyExcerpt ? { safetyExcerptEventId: eventId } : {}),
     safetyTarget: evaluation.safetyTarget,
     reviewUrgency: evaluation.reviewUrgency,
     assessmentStatus: evaluation.resolution,

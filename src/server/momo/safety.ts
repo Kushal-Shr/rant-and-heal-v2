@@ -4,6 +4,7 @@ import { combineSafetyAssessments } from "@/src/lib/safety/detector";
 import { safetyResponseFor } from "@/src/lib/safety/responses";
 import type { SafetyEvaluation } from "@/src/lib/safety/schemas";
 import { createOrUpdateSafetyCaseInTransaction } from "@/src/server/safety/cases";
+import { encryptSafetyExcerpt, type SafetyExcerptEnvelope } from "@/src/server/momo/crypto";
 import type { MomoSafetyAssessment } from "./safetyAssessment";
 export { assessMomoSafety } from "./safetyAssessment";
 export type { MomoSafetyAssessment, MomoSafetyCategory, MomoSafetyLanguage } from "./safetyAssessment";
@@ -19,7 +20,6 @@ interface RecordMomoSafetyEventOptions {
   userText: string;
   source: "TEXT" | "VOICE";
   evaluation: SafetyEvaluation;
-  responseText: string;
 }
 
 // Store a minimal, server-only audit event. Review-required evaluations also
@@ -32,12 +32,23 @@ export async function recordMomoSafetyEvent({
   userText,
   source,
   evaluation,
-  responseText,
 }: RecordMomoSafetyEventOptions): Promise<string> {
   const userRef = db.collection("users").doc(userId);
   const sessionRef = userRef.collection("sessions").doc(sessionId);
-  const messagesRef = sessionRef.collection("messages");
   const safetyEventRef = userRef.collection("safety_events").doc();
+  let safetyExcerpt: SafetyExcerptEnvelope | null = null;
+  if (evaluation.requiresHumanReview) {
+    try {
+      safetyExcerpt = await encryptSafetyExcerpt(userText, safetyEventRef.id);
+    } catch (error) {
+      // Mandatory structured safety state must survive an excerpt-encryption
+      // outage. Fail closed on content: never substitute plaintext.
+      console.error("SAFETY EXCERPT ENCRYPTION FAILED", {
+        eventId: safetyEventRef.id,
+        status: error instanceof Error ? error.name : "UNKNOWN",
+      });
+    }
+  }
   let safetyCaseId: string | null = null;
   await db.runTransaction(async (transaction) => {
     safetyCaseId = await createOrUpdateSafetyCaseInTransaction({
@@ -46,32 +57,13 @@ export async function recordMomoSafetyEvent({
       eventId: safetyEventRef.id,
       userId,
       sessionId,
-      userText,
       source,
       evaluation,
-    });
-    transaction.set(messagesRef.doc(), {
-      text: userText,
-      sender: "USER",
-      source,
-      modality: source,
-      provenance: "SERVER",
-      order: 0,
-      timestamp: FieldValue.serverTimestamp(),
-    });
-    transaction.set(messagesRef.doc(), {
-      text: responseText,
-      sender: "MOMO",
-      source: "SAFETY",
-      modality: source,
-      provenance: "SERVER",
-      order: 1,
-      timestamp: FieldValue.serverTimestamp(),
+      safetyExcerpt,
     });
     transaction.set(
       sessionRef,
       {
-        title: userText.slice(0, 64),
         updatedAt: FieldValue.serverTimestamp(),
       },
       { merge: true }
@@ -90,6 +82,7 @@ export async function recordMomoSafetyEvent({
       matchedSignals: evaluation.deterministic.matchedSignals,
       source,
       sessionId,
+      classifierSource: "AUTHORITATIVE_MOMO_SAFETY_PIPELINE",
       status: evaluation.escalationStatus,
       policyVersion: SAFETY_POLICY_VERSION,
       ...(safetyCaseId ? { safetyCaseId } : {}),

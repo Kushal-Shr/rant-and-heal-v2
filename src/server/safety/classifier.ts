@@ -82,7 +82,9 @@ export async function classifySafetyRisk(text: string): Promise<ModelRiskAssessm
       evidence: parsed.data.evidence,
     };
   } catch (error) {
-    console.warn("MOMO SAFETY CLASSIFIER UNAVAILABLE:", error);
+    console.warn("MOMO SAFETY CLASSIFIER UNAVAILABLE", {
+      status: error instanceof Error ? error.name : "UNKNOWN",
+    });
     return null;
   }
 }

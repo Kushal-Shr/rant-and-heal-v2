@@ -39,7 +39,7 @@ function caseFromData(id: string, data: DocumentData, actions: SafetyAction[] = 
     currentState: data.currentState,
     status: data.status,
     trigger: data.trigger,
-    relevantUserText: String(data.relevantUserText),
+    ...(typeof data.relevantUserText === "string" ? { relevantUserText: data.relevantUserText } : {}),
     safetyTarget: data.safetyTarget,
     reviewUrgency: data.reviewUrgency,
     assessmentStatus: data.assessmentStatus,

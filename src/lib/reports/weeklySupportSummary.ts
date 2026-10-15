@@ -11,7 +11,7 @@ Do not imply access to private journal text. Return the required structured JSON
 
 export interface WeeklyReportSources {
   moodTrackerData: unknown;
-  momoSessionSummaries: unknown;
+  momoStructuredInsights: unknown;
   therapistReviewedNotes: unknown;
   objectiveAppActivity: unknown;
   journalMetrics: WeeklyJournalMetrics;

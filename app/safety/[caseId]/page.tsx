@@ -73,7 +73,10 @@ export default function SafetyCaseDetailPage() {
       setSafetyCase(initial);
       setLoading(false);
       unsubscribe = observeSafetyCase(caseId, (item) => {
-        setSafetyCase(item);
+        setSafetyCase((current) => item ? {
+          ...item,
+          ...(current?.relevantUserText ? { relevantUserText: current.relevantUserText } : {}),
+        } : null);
         setError(item ? null : "This safety case no longer exists.");
       }, () => setError("Live updates are unavailable. Refresh before taking another action."));
     }).catch((reason) => {
@@ -147,7 +150,7 @@ export default function SafetyCaseDetailPage() {
       <section aria-labelledby="context" className="clay-card p-6 md:p-8">
         <h2 id="context" className="text-xl font-medium text-[#325347]">Relevant safety context</h2>
         <p className="mt-2 text-sm text-[#596c60]">Only the triggering user text and structured safety assessment are included. No journal or unrelated transcript is loaded.</p>
-        <blockquote className="mt-5 whitespace-pre-wrap rounded-[1.75rem] bg-[#fff1e8] p-5 text-sm leading-7 text-[#2c1601]">{safetyCase.relevantUserText}</blockquote>
+        <blockquote className="mt-5 whitespace-pre-wrap rounded-[1.75rem] bg-[#fff1e8] p-5 text-sm leading-7 text-[#2c1601]">{safetyCase.relevantUserText ?? "Encrypted safety context is available only through an authorized reviewer request."}</blockquote>
         <dl className="mt-5 grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-3">
           <div><dt className="text-[#596c60]">Trigger</dt><dd className="mt-1 font-medium">{label(safetyCase.trigger)}</dd></div>
           <div><dt className="text-[#596c60]">Safety target</dt><dd className="mt-1 font-medium">{label(safetyCase.safetyTarget)}</dd></div>

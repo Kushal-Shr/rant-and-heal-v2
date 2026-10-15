@@ -6,9 +6,11 @@ import { useEffect, useRef, useState } from "react";
 import { MomoPortrait } from "@/src/components/shared/MomoPortrait";
 import { Spinner } from "@/src/components/ui/Spinner";
 import { useAuth } from "@/src/context/AuthContext";
+import { LIVE_PROVIDER_ERROR_NOTICE } from "@/src/lib/momo/live/errors";
 import { MomoLiveClient } from "@/src/lib/momo/live/MomoLiveClient";
+import type { ConversationContinuityState, ConversationTurn } from "@/src/lib/momo/schemas";
 
-type CallState = "IDLE" | "CONNECTING" | "CONNECTED" | "DISCONNECTED" | "ERROR";
+type CallState = "IDLE" | "CONNECTING" | "CONNECTED" | "DISCONNECTED" | "SAFETY_PAUSED" | "ERROR";
 type LiveStatus = "idle" | "connecting" | "ready" | "listening" | "speaking";
 type PermissionState = "prompt" | "granted" | "denied";
 
@@ -26,15 +28,21 @@ interface MomoVoiceCallPanelProps {
   conversationId?: string | null;
   onCallActiveChange?: (active: boolean) => void;
   onTranscriptDelta?: (sender: "USER" | "MOMO", delta: string) => void;
+  history?: ConversationTurn[];
+  continuityState?: ConversationContinuityState;
 }
 
 const MAX_CAPTION_CHARS = 260;
+const SAFETY_VOICE_PAUSED_NOTICE =
+  "Voice paused for safety. Your conversation is saved—you can open crisis support or reconnect to continue.";
 
 export function MomoVoiceCallPanel({
   embedded = false,
   conversationId,
   onCallActiveChange,
   onTranscriptDelta,
+  history = [],
+  continuityState,
 }: MomoVoiceCallPanelProps) {
   const { user, loading } = useAuth();
   const router = useRouter();
@@ -118,26 +126,48 @@ export function MomoVoiceCallPanel({
     onCallActiveChange?.(false);
   }
 
+  function pauseForSafety() {
+    intentionalCloseRef.current = true;
+    clearTimers();
+    const client = liveClientRef.current;
+    liveClientRef.current = null;
+    client?.forceClose();
+    setCallState("SAFETY_PAUSED");
+    updateLiveStatus("idle");
+    setMuted(false);
+    setErrorMessage(null);
+    setCallNotice(SAFETY_VOICE_PAUSED_NOTICE);
+    setSafetyState((current) => current === "NORMAL" ? "SAFETY_FILTER" : current);
+    onCallActiveChange?.(false);
+  }
+
+  async function fetchMonitorStatus(): Promise<MonitorStatus | null> {
+    if (!user || !conversationId) return null;
+    const idToken = await user.getIdToken();
+    const response = await fetch(
+      `/api/momo/live-session/status?conversationId=${encodeURIComponent(conversationId)}`,
+      { headers: { Authorization: `Bearer ${idToken}` } }
+    );
+    const status = (await response.json().catch(() => null)) as MonitorStatus | null;
+    return response.ok ? status : null;
+  }
+
   function beginMonitorPolling(generation: number) {
     monitorTimerRef.current = window.setInterval(async () => {
       if (!user || !conversationId || generationRef.current !== generation) return;
       try {
-        const idToken = await user.getIdToken();
-        const response = await fetch(
-          `/api/momo/live-session/status?conversationId=${encodeURIComponent(conversationId)}`,
-          { headers: { Authorization: `Bearer ${idToken}` } }
-        );
-        const status = (await response.json().catch(() => null)) as MonitorStatus | null;
-        if (!response.ok || !status || status.monitorStatus === "FAILED" ||
+        const status = await fetchMonitorStatus();
+        if (!status || status.monitorStatus === "FAILED" ||
             (typeof status.heartbeatAgeMs === "number" && status.heartbeatAgeMs > 15_000)) {
           await failClosed("Momo voice paused because trusted safety monitoring became unavailable.");
           return;
         }
+        setSafetyState(status.safetyState ?? "NORMAL");
         if (status.monitorStatus === "CLOSED" && !intentionalCloseRef.current) {
-          await failClosed("The monitored voice session ended.");
+          if (status.safetyBlocked || (status.safetyState && status.safetyState !== "NORMAL")) pauseForSafety();
+          else await failClosed("The monitored voice session ended.");
           return;
         }
-        setSafetyState(status.safetyState ?? "NORMAL");
         const version = status.interruptVersion ?? 0;
         if (version > interruptVersionRef.current) {
           interruptVersionRef.current = version;
@@ -172,6 +202,8 @@ export function MomoVoiceCallPanel({
       const client = new MomoLiveClient({
         idToken,
         conversationId,
+        history: history.slice(-12),
+        continuityState,
         onReady: () => {
           if (generationRef.current !== generation) return;
           if (setupTimeoutRef.current !== null) window.clearTimeout(setupTimeoutRef.current);
@@ -207,13 +239,36 @@ export function MomoVoiceCallPanel({
           setCallNotice(message);
           updateLiveStatus("listening");
         },
-        onError: (error) => {
+        onProviderError: (error) => {
           if (generationRef.current !== generation) return;
-          console.error("GPT-Live error:", error);
-          void failClosed("The GPT-Live connection was lost.");
+          console.warn("GPT-Live provider event", {
+            status: error.code ?? error.type ?? "PROVIDER_EVENT_ERROR",
+          });
+          setCallNotice((current) => current ?? LIVE_PROVIDER_ERROR_NOTICE);
+          updateLiveStatus("listening");
         },
-        onClose: (clean) => {
+        onConnectionError: (error) => {
           if (generationRef.current !== generation) return;
+          void (async () => {
+            const status = await fetchMonitorStatus().catch(() => null);
+            if (generationRef.current !== generation) return;
+            if (status?.safetyBlocked || (status?.safetyState && status.safetyState !== "NORMAL")) {
+              setSafetyState(status.safetyState ?? "SAFETY_FILTER");
+              pauseForSafety();
+              return;
+            }
+            console.error("GPT-Live connection error", {
+              status: error instanceof Error ? error.name : "UNKNOWN",
+            });
+            await failClosed("The GPT-Live connection was lost.");
+          })();
+        },
+        onClose: ({ clean, reason }) => {
+          if (generationRef.current !== generation) return;
+          if (reason === "content") {
+            pauseForSafety();
+            return;
+          }
           releaseResources();
           if (intentionalCloseRef.current || clean) {
             setCallState("DISCONNECTED");
@@ -235,7 +290,9 @@ export function MomoVoiceCallPanel({
       if (error instanceof DOMException && error.name === "NotAllowedError") {
         setPermissionState("denied");
       }
-      console.error("MOMO VOICE START ERROR:", error);
+      console.error("MOMO VOICE START ERROR", {
+        status: error instanceof Error ? error.name : "UNKNOWN",
+      });
       await failClosed(error instanceof Error ? error.message : "Could not access the microphone.");
     }
   }
@@ -261,6 +318,7 @@ export function MomoVoiceCallPanel({
           : callState === "CONNECTED" && liveStatus === "listening" ? "Listening..."
             : callState === "CONNECTED" ? "Connected"
               : callState === "DISCONNECTED" ? "Call ended."
+                : callState === "SAFETY_PAUSED" ? "Voice paused for safety."
                 : errorMessage ?? "Something went wrong.";
   const active = callState === "CONNECTING" || callState === "CONNECTED";
 
@@ -282,7 +340,7 @@ export function MomoVoiceCallPanel({
             <h2 className={embedded ? "mt-1 font-['Plus_Jakarta_Sans'] text-lg font-medium text-[#325347]" : "mb-3 mt-2 text-center text-3xl font-medium tracking-[-0.03em] text-[#325347]"}>Talk to Momo</h2>
             <p aria-live="polite" className={`font-['Plus_Jakarta_Sans'] text-sm ${callState === "ERROR" ? "text-[#ba1a1a]" : "text-[#414845]"}`}>{statusText}</p>
             {embedded && active ? <p className="mt-1 text-xs text-[#596c60]">Live captions appear in the conversation below.</p> : null}
-            {callNotice && callState === "CONNECTED" && <p role="status" className="mt-2 rounded-xl bg-[#fff8e8] px-3 py-2 text-xs text-[#654f18]">{callNotice}</p>}
+            {callNotice && (callState === "CONNECTED" || callState === "SAFETY_PAUSED") && <p role="status" className="mt-2 rounded-xl bg-[#fff8e8] px-3 py-2 text-xs text-[#654f18]">{callNotice}</p>}
             {permissionState === "denied" && <p className="mt-2 text-xs text-[#93000a]">Microphone permission was denied. Enable it in browser settings to try again.</p>}
             {safetyState !== "NORMAL" && <p className="mt-2 rounded-xl bg-[#fff1e8] px-3 py-2 text-xs text-[#6f3b16]">Momo is focused on immediate safety. <Link className="underline" href="/crisis?source=momo-voice">Open crisis support</Link></p>}
             {!embedded && active && (userCaption || momoCaption) && (

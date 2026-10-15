@@ -44,7 +44,9 @@ export function GlobalSidebar() {
     let active = true;
     if (!user) return;
     user.getIdTokenResult().then((result) => {
-      if (active) setSafetyAccess(result.claims.safetyReviewer === true || result.claims.admin === true);
+      if (active) setSafetyAccess(
+        result.claims.safetyReviewer === true || result.claims.admin === true
+      );
     }).catch(() => { if (active) setSafetyAccess(false); });
     return () => { active = false; };
   }, [user]);

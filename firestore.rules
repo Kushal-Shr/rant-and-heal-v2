@@ -29,27 +29,85 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
+      function validMomoPrivacyPreferences() {
+        return !request.resource.data.keys().hasAny(['momoPrivacyPreferences']) ||
+          (request.resource.data.momoPrivacyPreferences is map &&
+           request.resource.data.momoPrivacyPreferences.keys().hasOnly([
+             'moodTrendAnalyticsEnabled', 'outcomeAnalyticsEnabled'
+           ]) &&
+           request.resource.data.momoPrivacyPreferences.keys().hasAll([
+             'moodTrendAnalyticsEnabled', 'outcomeAnalyticsEnabled'
+           ]) &&
+           request.resource.data.momoPrivacyPreferences.moodTrendAnalyticsEnabled is bool &&
+           request.resource.data.momoPrivacyPreferences.outcomeAnalyticsEnabled is bool);
+      }
       allow read: if owner(userId);
-      allow create: if owner(userId) && request.resource.data.uid == userId && request.resource.data.role == 'USER';
+      allow create: if owner(userId) && request.resource.data.uid == userId &&
+        request.resource.data.role == 'USER' && validMomoPrivacyPreferences();
       allow update: if owner(userId) &&
         request.resource.data.uid == resource.data.uid &&
-        request.resource.data.role == resource.data.role;
+        request.resource.data.role == resource.data.role && validMomoPrivacyPreferences();
       allow delete: if false;
 
       match /sessions/{sessionId} {
+        function validEncryptedContent(content) {
+          return content is map &&
+            content.keys().hasOnly(['ciphertext', 'iv', 'algorithm', 'cryptoVersion']) &&
+            content.keys().hasAll(['ciphertext', 'iv', 'algorithm', 'cryptoVersion']) &&
+            content.ciphertext is string && content.ciphertext.size() > 0 && content.ciphertext.size() <= 50000 &&
+            content.iv is string && content.iv.size() == 16 &&
+            content.algorithm == 'AES-256-GCM' && content.cryptoVersion == 1;
+        }
         allow read, delete: if owner(userId);
         allow create: if owner(userId) &&
-          !request.resource.data.keys().hasAny(['continuityState', 'safetyEvaluation']);
+          request.resource.data.keys().hasOnly(['title', 'createdAt']) &&
+          request.resource.data.title is string && request.resource.data.title.size() <= 80 &&
+          request.resource.data.createdAt == request.time;
         allow update: if owner(userId) &&
-          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['continuityState', 'safetyEvaluation']);
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'encryptedContinuity', 'cryptoVersion', 'updatedAt'
+          ]) &&
+          validEncryptedContent(request.resource.data.encryptedContinuity) &&
+          request.resource.data.cryptoVersion == 1 && request.resource.data.updatedAt == request.time;
         match /messages/{messageId} {
           allow read: if owner(userId);
-          allow write: if false;
+          function validEncryptedMessage() {
+            return request.resource.data.keys().hasOnly([
+                'userId', 'conversationId', 'role', 'modality', 'encryptedContent',
+                'messageSequence', 'createdAt'
+              ]) &&
+              request.resource.data.keys().hasAll([
+                'userId', 'conversationId', 'role', 'modality', 'encryptedContent',
+                'messageSequence', 'createdAt'
+              ]) &&
+              request.resource.data.userId == userId &&
+              request.resource.data.conversationId == sessionId &&
+              request.resource.data.role in ['user', 'assistant'] &&
+              request.resource.data.modality in ['text', 'voice'] &&
+              validEncryptedContent(request.resource.data.encryptedContent) &&
+              request.resource.data.messageSequence is int &&
+              request.resource.data.createdAt == request.time;
+          }
+          allow create: if owner(userId) && validEncryptedMessage();
+          allow update: if owner(userId) && validEncryptedMessage() &&
+            request.resource.data.userId == resource.data.userId &&
+            request.resource.data.conversationId == resource.data.conversationId &&
+            request.resource.data.role == resource.data.role &&
+            request.resource.data.modality == resource.data.modality;
+          allow delete: if owner(userId);
         }
         match /requests/{requestId} { allow read, write: if false; }
       }
       match /usage/{usageId} { allow read, write: if false; }
       match /safety_events/{eventId} { allow read, write: if false; }
+      match /momo_mood_analytics/{entryId} {
+        allow read: if owner(userId);
+        allow write: if false;
+      }
+      match /momo_outcome_analytics/{entryId} {
+        allow read: if owner(userId);
+        allow write: if false;
+      }
 
       match /health_metrics/{entryId} {
         allow read: if owner(userId);
@@ -218,6 +276,10 @@ service cloud.firestore {
     }
 
     match /safety_case_episodes/{episodeId} {
+      allow read, write: if false;
+    }
+
+    match /momo_conversation_keys/{keyId} {
       allow read, write: if false;
     }
 

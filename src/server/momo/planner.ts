@@ -65,6 +65,8 @@ export async function planMomoResponseWithInference(
     input,
     safetyState,
     inferMomoRouting,
-    (error) => console.warn("MOMO BEHAVIORAL PLANNER UNAVAILABLE:", error)
+    (error) => console.warn("MOMO BEHAVIORAL PLANNER UNAVAILABLE", {
+      status: error instanceof Error ? error.name : "UNKNOWN",
+    })
   );
 }
