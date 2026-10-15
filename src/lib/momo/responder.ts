@@ -1,5 +1,5 @@
 import type { MomoDecision } from "./schemas.ts";
-import type { ConversationContinuityState, ConversationParticipant } from "./schemas.ts";
+import type { ConversationContinuityState, ConversationParticipant, MoodCheckInContext } from "./schemas.ts";
 import { continuityInstruction } from "./continuity.ts";
 import { MOMO_CONVERSATION_CONTRACT } from "./prompts/conversationContract.ts";
 import { MOMO_GROUNDING_CONTRACT } from "./prompts/groundingContract.ts";
@@ -55,6 +55,7 @@ export function buildMomoBehaviorPolicy(
     continuityState?: ConversationContinuityState;
     participant?: ConversationParticipant;
     userMessageText?: string;
+    moodCheckInContext?: MoodCheckInContext;
   } = {}
 ): string {
   const style = naturalConversationStyle({
@@ -65,7 +66,10 @@ export function buildMomoBehaviorPolicy(
   const principles = selectedExamplePrinciples(exampleSelectionFor({
     messageText: options.userMessageText ?? "", history: [], continuityState: options.continuityState,
   }, decision));
-  return `${MOMO_GROUNDING_CONTRACT}\n\n${MOMO_CONVERSATION_CONTRACT}\n\n${baseInstruction}\n\n${style}\n\n${continuityInstruction(options.continuityState)}\n\n${languageStyleInstruction(options.userMessageText ?? "")}\n\n${userFacingSystemLanguageInstruction(options.userMessageText)}\n\n${momoDecisionInstruction(decision)}\n\n${principles}`;
+  const checkInInstruction = options.moodCheckInContext
+    ? `Private structured check-in background (do not quote or announce it): ${JSON.stringify(options.moodCheckInContext)}. Use this only to choose a fitting tone and avoid redundant intake questions. Do not state, paraphrase, or calculate from the check-in unless the user explicitly asks about their check-in data. Never treat it as a diagnosis, cause, or safety signal.`
+    : "No structured mood check-in was supplied for this turn.";
+  return `${MOMO_GROUNDING_CONTRACT}\n\n${MOMO_CONVERSATION_CONTRACT}\n\n${baseInstruction}\n\n${style}\n\n${continuityInstruction(options.continuityState)}\n\n${checkInInstruction}\n\n${languageStyleInstruction(options.userMessageText ?? "")}\n\n${userFacingSystemLanguageInstruction(options.userMessageText)}\n\n${momoDecisionInstruction(decision)}\n\n${principles}`;
 }
 
 // Compatibility export for existing tests and callers. It is an alias, not a

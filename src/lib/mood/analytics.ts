@@ -1,4 +1,5 @@
 import type { MoodEntry } from "@/src/types/database";
+import type { MoodEmotion } from "./schema.ts";
 
 export const MOOD_ANALYTICS_MINIMUMS = {
   trendComparison: 4,
@@ -6,6 +7,9 @@ export const MOOD_ANALYTICS_MINIMUMS = {
   timeBucket: 3,
   weeklyComparison: 4,
   metricAssociation: 4,
+  emotionFrequency: 3,
+  emotionIntensity: 2,
+  beforeAfter: 3,
 } as const;
 
 export type MoodMetricKey =
@@ -119,11 +123,12 @@ export function calculateWeeklySnapshot(entries: MoodEntry[], now = new Date()) 
   const dated = current
     .map((entry) => ({ entry, date: moodEntryDate(entry) }))
     .filter((item): item is { entry: MoodEntry; date: Date } => Boolean(item.date) && validScore(item.entry.moodScore));
-  const highest = dated.length ? dated.reduce((best, item) => item.entry.moodScore > best.entry.moodScore ? item : best) : null;
-  const lowest = dated.length ? dated.reduce((best, item) => item.entry.moodScore < best.entry.moodScore ? item : best) : null;
+  const previousMoodEntries = previous.filter((entry) => validScore(entry.moodScore));
+  const highest = dated.length ? dated.reduce((best, item) => item.entry.moodScore! > best.entry.moodScore! ? item : best) : null;
+  const lowest = dated.length ? dated.reduce((best, item) => item.entry.moodScore! < best.entry.moodScore! ? item : best) : null;
   const averageMood = calculateMetricAverage(current, "moodScore");
   const previousAverageMood = calculateMetricAverage(previous, "moodScore");
-  const comparison = current.length >= MOOD_ANALYTICS_MINIMUMS.weeklyComparison && previous.length >= MOOD_ANALYTICS_MINIMUMS.weeklyComparison && averageMood !== null && previousAverageMood !== null
+  const comparison = dated.length >= MOOD_ANALYTICS_MINIMUMS.weeklyComparison && previousMoodEntries.length >= MOOD_ANALYTICS_MINIMUMS.weeklyComparison && averageMood !== null && previousAverageMood !== null
     ? averageMood - previousAverageMood
     : null;
   return {
@@ -149,14 +154,17 @@ function calculateTagPatterns(entries: MoodEntry[], field: TagField, minimum: nu
     for (const tag of entry[field] ?? []) grouped.set(tag, [...(grouped.get(tag) ?? []), entry]);
   }
   return [...grouped.entries()]
-    .map(([tag, taggedEntries]) => ({
-      tag,
-      count: taggedEntries.length,
-      averageMood: calculateMetricAverage(taggedEntries, "moodScore")!,
-      differenceFromOverall: overall === null ? 0 : Math.round((calculateMetricAverage(taggedEntries, "moodScore")! - overall) * 10) / 10,
-    }))
+    .map(([tag, taggedEntries]) => {
+      const averageMood = calculateMetricAverage(taggedEntries, "moodScore");
+      return {
+        tag,
+        count: taggedEntries.length,
+        averageMood,
+        differenceFromOverall: overall === null || averageMood === null ? null : Math.round((averageMood - overall) * 10) / 10,
+      };
+    })
     .filter((pattern) => pattern.count >= minimum)
-    .sort((a, b) => b.count - a.count || b.averageMood - a.averageMood);
+    .sort((a, b) => b.count - a.count || (b.averageMood ?? -1) - (a.averageMood ?? -1));
 }
 
 export function calculateContextPatterns(entries: MoodEntry[], minimum?: number) {
@@ -164,7 +172,7 @@ export function calculateContextPatterns(entries: MoodEntry[], minimum?: number)
 }
 
 export function calculateHelpfulFactorPatterns(entries: MoodEntry[], minimum?: number) {
-  return calculateTagPatterns(entries, "helpfulFactors", minimum).sort((a, b) => b.averageMood - a.averageMood || b.count - a.count);
+  return calculateTagPatterns(entries, "helpfulFactors", minimum).sort((a, b) => (b.averageMood ?? -1) - (a.averageMood ?? -1) || b.count - a.count);
 }
 
 function hourInTimezone(date: Date, timezone?: string) {
@@ -191,6 +199,7 @@ export function timeOfDayForEntry(entry: MoodEntry): TimeOfDay | null {
 export function calculateTimeOfDayPatterns(entries: MoodEntry[], minimum: number = MOOD_ANALYTICS_MINIMUMS.timeBucket) {
   const buckets = new Map<TimeOfDay, MoodEntry[]>();
   for (const entry of entries) {
+    if (!validScore(entry.moodScore)) continue;
     const bucket = timeOfDayForEntry(entry);
     if (bucket) buckets.set(bucket, [...(buckets.get(bucket) ?? []), entry]);
   }
@@ -221,4 +230,128 @@ export function weeklyComparisonText(change: number | null) {
   return change > 0
     ? "Your mood check-ins were a little higher this week than last week."
     : "Your mood check-ins were a little lower this week than last week.";
+}
+
+export function calculateEmotionFrequency(
+  entries: MoodEntry[],
+  minimumCheckIns: number = MOOD_ANALYTICS_MINIMUMS.emotionFrequency
+) {
+  const reported = entries.filter((entry) => entry.emotions?.length);
+  if (reported.length < minimumCheckIns) return [];
+  const counts = new Map<MoodEmotion, number>();
+  for (const entry of reported) {
+    for (const emotion of new Set(entry.emotions!.map((item) => item.emotion))) {
+      counts.set(emotion, (counts.get(emotion) ?? 0) + 1);
+    }
+  }
+  return [...counts.entries()].map(([emotion, count]) => ({
+    emotion,
+    count,
+    checkInCount: reported.length,
+    percentage: Math.round((count / reported.length) * 100),
+  })).sort((a, b) => b.count - a.count || a.emotion.localeCompare(b.emotion));
+}
+
+export function calculateEmotionAverageIntensity(
+  entries: MoodEntry[],
+  minimumObservations: number = MOOD_ANALYTICS_MINIMUMS.emotionIntensity
+) {
+  const values = new Map<MoodEmotion, number[]>();
+  for (const entry of entries) {
+    for (const item of entry.emotions ?? []) {
+      if (!validScore(item.intensity)) continue;
+      values.set(item.emotion, [...(values.get(item.emotion) ?? []), item.intensity]);
+    }
+  }
+  return [...values.entries()].map(([emotion, intensities]) => ({
+    emotion,
+    observations: intensities.length,
+    averageIntensity: Math.round((intensities.reduce((sum, value) => sum + value, 0) / intensities.length) * 10) / 10,
+  })).filter((item) => item.observations >= minimumObservations)
+    .sort((a, b) => b.averageIntensity - a.averageIntensity || b.observations - a.observations);
+}
+
+export function calculateContextFrequency(entries: MoodEntry[], minimum = 1) {
+  const relevant = entries.filter((entry) => entry.contexts?.length);
+  const counts = new Map<string, number>();
+  for (const entry of relevant) {
+    for (const context of new Set(entry.contexts ?? [])) {
+      counts.set(context, (counts.get(context) ?? 0) + 1);
+    }
+  }
+  return [...counts.entries()].map(([context, count]) => ({
+    context,
+    count,
+    checkInCount: relevant.length,
+    percentage: relevant.length ? Math.round((count / relevant.length) * 100) : 0,
+  })).filter((item) => item.count >= minimum)
+    .sort((a, b) => b.count - a.count || a.context.localeCompare(b.context));
+}
+
+export function calculateDailyMoodHistory(entries: MoodEntry[], limit = 30) {
+  return entries.map((entry) => ({ entry, date: moodEntryDate(entry) }))
+    .filter((item): item is { entry: MoodEntry; date: Date } => Boolean(item.date))
+    .sort((a, b) => b.date.getTime() - a.date.getTime())
+    .slice(0, limit)
+    .map(({ entry, date }) => ({
+      id: entry.id ?? `${date.getTime()}`,
+      date,
+      moodScore: validScore(entry.moodScore) ? entry.moodScore : null,
+      emotions: entry.emotions ?? [],
+      contexts: entry.contexts ?? [],
+      source: entry.source ?? "MANUAL_CHECKIN",
+    }));
+}
+
+export function calculateWeeklyMoodSummary(entries: MoodEntry[], now = new Date()) {
+  const relevant = entriesWithinDays(entries, 7, now);
+  return {
+    dateRange: {
+      start: new Date(now.getTime() - 7 * DAY_MS),
+      end: now,
+    },
+    ...calculateWeeklySnapshot(entries, now),
+    emotionFrequency: calculateEmotionFrequency(relevant),
+    emotionAverages: calculateEmotionAverageIntensity(relevant),
+    contextFrequency: calculateContextFrequency(relevant, MOOD_ANALYTICS_MINIMUMS.tagPattern),
+    history: calculateDailyMoodHistory(relevant),
+  };
+}
+
+export function calculatePersonalMoodInsights(entries: MoodEntry[], now = new Date()) {
+  const recent = entriesWithinDays(entries, 30, now);
+  const insights: string[] = [];
+  const emotion = calculateEmotionFrequency(recent)[0];
+  if (emotion) {
+    insights.push(`${emotion.emotion.charAt(0).toUpperCase()}${emotion.emotion.slice(1)} appeared in ${emotion.count} of your ${emotion.checkInCount} emotion check-ins.`);
+  }
+  const time = calculateTimeOfDayPatterns(recent);
+  if (time.length >= 2 && time[0].averageMood - time.at(-1)!.averageMood >= 0.5) {
+    insights.push(`Your ${time[0].period} check-ins tended to be higher than your ${time.at(-1)!.period} check-ins.`);
+  }
+  const context = calculateContextFrequency(recent, MOOD_ANALYTICS_MINIMUMS.tagPattern)[0];
+  if (context) {
+    insights.push(`${context.context.split("-").join(" ")} appeared in ${context.count} recent check-ins.`);
+  }
+  return insights;
+}
+
+export function compareBeforeAfterCheckIn(entries: MoodEntry[]) {
+  const byId = new Map(entries.flatMap((entry) => entry.id ? [[entry.id, entry] as const] : []));
+  const comparisons: number[] = [];
+  for (const after of entries) {
+    if (after.source !== "POST_SESSION" || !after.baselineCheckInId) continue;
+    const before = byId.get(after.baselineCheckInId);
+    if (!before) continue;
+    const beforeByEmotion = new Map((before.emotions ?? []).flatMap((item) => validScore(item.intensity) ? [[item.emotion, item.intensity] as const] : []));
+    for (const item of after.emotions ?? []) {
+      const previous = beforeByEmotion.get(item.emotion);
+      if (previous !== undefined && validScore(item.intensity)) comparisons.push(item.intensity - previous);
+    }
+  }
+  if (comparisons.length < MOOD_ANALYTICS_MINIMUMS.beforeAfter) return null;
+  return {
+    comparisons: comparisons.length,
+    averageIntensityChange: Math.round((comparisons.reduce((sum, value) => sum + value, 0) / comparisons.length) * 10) / 10,
+  };
 }

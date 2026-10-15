@@ -200,6 +200,7 @@ export async function generateMomoResponseWithGenerator(
     continuityState: input.continuityState,
     participant: input.participant,
     userMessageText: input.messageText,
+    moodCheckInContext: input.moodCheckInContext,
   });
   let retryInstruction = "";
   let lastViolations: string[] = [];

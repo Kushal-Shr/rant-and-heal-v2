@@ -17,6 +17,9 @@ before(async () => {
   environment = await initializeTestEnvironment({ projectId, firestore: { rules } });
   await environment.withSecurityRulesDisabled(async (context) => {
     const db = context.firestore();
+    await setDoc(doc(db, "users/patient-1"), {
+      uid: "patient-1", role: "USER", displayName: "Patient", createdAt: Timestamp.now(),
+    });
     await setDoc(doc(db, "users/patient-1/journals/entry-1"), {
       userId: "patient-1",
       ciphertext: "encrypted-value",
@@ -258,6 +261,31 @@ test("mood V2 writes are owner-only, optional, and schema validated", async () =
     userId: "patient-1", moodScore: 8, stressScore: 11, contexts: ["unapproved-tag"],
     timezone: "UTC", localDate: "2026-10-13", schemaVersion: 2, createdAt: serverTimestamp(),
   }));
+});
+
+test("emotion check-ins and post-session outcomes are owner-only and validated", async () => {
+  const patientDb = environment.authenticatedContext("patient-1").firestore();
+  const otherDb = environment.authenticatedContext("patient-2").firestore();
+  const payload = {
+    userId: "patient-1",
+    emotions: [{ emotion: "anxious", intensity: 8 }, { emotion: "tired" }],
+    contexts: ["academics", "sleep"], source: "POST_SESSION", usefulnessRating: 4,
+    conversationId: "conversation-1", baselineCheckInId: "before-1",
+    timezone: "America/Chicago", localDate: "2026-10-15", schemaVersion: 2,
+    createdAt: serverTimestamp(),
+  };
+  await assertSucceeds(setDoc(doc(patientDb, "users/patient-1/health_metrics/emotion-entry"), payload));
+  await assertFails(setDoc(doc(otherDb, "users/patient-1/health_metrics/cross-user"), payload));
+  await assertFails(setDoc(doc(patientDb, "users/patient-1/health_metrics/bad-emotion"), { ...payload, emotions: [{ emotion: "diagnosed", intensity: 8 }] }));
+  await assertFails(setDoc(doc(patientDb, "users/patient-1/health_metrics/bad-intensity"), { ...payload, emotions: [{ emotion: "anxious", intensity: 11 }] }));
+});
+
+test("patient controls therapist mood-summary consent and another user cannot change it", async () => {
+  const patientDb = environment.authenticatedContext("patient-1").firestore();
+  const otherDb = environment.authenticatedContext("patient-2").firestore();
+  await assertSucceeds(setDoc(doc(patientDb, "users/patient-1"), { shareMoodSummaryWithTherapist: true }, { merge: true }));
+  await assertSucceeds(setDoc(doc(patientDb, "users/patient-1"), { shareMoodSummaryWithTherapist: false }, { merge: true }));
+  await assertFails(setDoc(doc(otherDb, "users/patient-1"), { shareMoodSummaryWithTherapist: true }, { merge: true }));
 });
 
 test("legacy mood writes remain accepted for backwards-compatible clients", async () => {

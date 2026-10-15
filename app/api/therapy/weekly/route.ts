@@ -13,6 +13,9 @@ import { generateWeeklyReport } from "@/src/server/reports/generateWeeklyReport"
 import { FEATURE_FLAGS } from "@/src/config/features";
 import {
   calculateContextPatterns,
+  calculateContextFrequency,
+  calculateEmotionAverageIntensity,
+  calculateEmotionFrequency,
   calculateHelpfulFactorPatterns,
   calculateMetricAssociation,
   calculateMetricAverage,
@@ -65,23 +68,27 @@ export async function POST(request: NextRequest) {
     const userRef = rel.ref.firestore.collection("users").doc(rel.patientUid);
     const userProfile = (await userRef.get()).data();
     const momoPrivacy = parseMomoPrivacyPreferences(userProfile?.momoPrivacyPreferences);
+    const moodSummarySharing = userProfile?.shareMoodSummaryWithTherapist === true;
     const [moodSnap, momoSnap, journalMetrics, inferredMoodSnap, outcomeSnap] = await Promise.all([
-      rel.ref.firestore.collection("users").doc(rel.patientUid).collection("health_metrics")
-        .where("createdAt", ">=", Timestamp.fromDate(start)).where("createdAt", "<", Timestamp.fromDate(end)).get(),
+      moodSummarySharing
+        ? rel.ref.firestore.collection("users").doc(rel.patientUid).collection("health_metrics")
+            .where("createdAt", ">=", Timestamp.fromDate(start)).where("createdAt", "<", Timestamp.fromDate(end)).get()
+        : Promise.resolve(null),
       rel.ref.firestore.collection("users").doc(rel.patientUid).collection("sessions")
         .where("createdAt", ">=", Timestamp.fromDate(start)).where("createdAt", "<", Timestamp.fromDate(end)).get(),
       aggregateWeeklyJournalMetrics(rel.ref.firestore, rel.patientUid, start, end),
-      momoPrivacy.moodTrendAnalyticsEnabled
+      moodSummarySharing && momoPrivacy.moodTrendAnalyticsEnabled
         ? userRef.collection("momo_mood_analytics").where("timestamp", ">=", Timestamp.fromDate(start)).where("timestamp", "<", Timestamp.fromDate(end)).get()
         : Promise.resolve(null),
       momoPrivacy.outcomeAnalyticsEnabled
         ? userRef.collection("momo_outcome_analytics").where("timestamp", ">=", Timestamp.fromDate(start)).where("timestamp", "<", Timestamp.fromDate(end)).get()
         : Promise.resolve(null),
     ]);
-    const moodEntries = moodSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() } as MoodEntry));
+    const moodEntries = moodSnap?.docs.map((doc) => ({ id: doc.id, ...doc.data() } as MoodEntry)) ?? [];
     const sources = {
       moodTrackerData: {
         source: "EXPLICIT_MANUAL_CHECK_INS",
+        sharingEnabled: moodSummarySharing,
         checkInCount: moodEntries.length,
         averageMood: calculateMetricAverage(moodEntries, "moodScore"),
         averageStress: calculateMetricAverage(moodEntries, "stressScore"),
@@ -89,6 +96,9 @@ export async function POST(request: NextRequest) {
         averageSleepQuality: calculateMetricAverage(moodEntries, "sleepQualityScore"),
         moodVariability: calculateVariability(moodEntries),
         commonContexts: calculateContextPatterns(moodEntries).slice(0, 3),
+        contextFrequency: calculateContextFrequency(moodEntries, 3).slice(0, 5),
+        emotionFrequency: calculateEmotionFrequency(moodEntries).slice(0, 5),
+        emotionAverageIntensity: calculateEmotionAverageIntensity(moodEntries).slice(0, 5),
         frequentlyHelpfulFactors: calculateHelpfulFactorPatterns(moodEntries).slice(0, 3),
         timeOfDayPatterns: calculateTimeOfDayPatterns(moodEntries),
         sleepMoodAssociation: calculateMetricAssociation(moodEntries, "sleepQualityScore"),
@@ -128,7 +138,8 @@ export async function POST(request: NextRequest) {
         if (relSnap.data()?.status !== "ACTIVE" || pointerSnap.data()?.relationshipId !== relationshipId || pointerSnap.data()?.status !== "ACTIVE") throw new TherapyAccessError("Relationship unavailable", 403);
         tx.set(rel.ref.collection("weekly_therapy_summaries").doc(weekId), {
           relationshipId, weekStart: Timestamp.fromDate(start), weekEnd: Timestamp.fromDate(end),
-          reviewedNoteCount: notes.length, ...therapyEncrypted, generatedAt: Timestamp.now(),
+          reviewedNoteCount: notes.length, moodSummaryIncluded: moodSummarySharing,
+          ...therapyEncrypted, generatedAt: Timestamp.now(),
         });
         tx.set(rel.ref.collection("weekly_reflections").doc(weekId), {
           relationshipId, patientUid: rel.patientUid, weekStart: Timestamp.fromDate(start), weekEnd: Timestamp.fromDate(end),
@@ -136,7 +147,7 @@ export async function POST(request: NextRequest) {
         });
       });
     } finally { dek.fill(0); }
-    return NextResponse.json({ therapy, reflection }, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json({ therapy, reflection, moodSummarySharing }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) { return fail(error); }
 }
 
@@ -148,13 +159,19 @@ export async function GET(request: NextRequest) {
   const weekStart = request.nextUrl.searchParams.get("weekStart") ?? "";
   try {
     const { rel, weekId } = await context(token, relationshipId, weekStart);
-    const therapySnap = await rel.ref.collection("weekly_therapy_summaries").doc(weekId).get();
+    const [therapySnap, patientSnap] = await Promise.all([
+      rel.ref.collection("weekly_therapy_summaries").doc(weekId).get(),
+      rel.ref.firestore.collection("users").doc(rel.patientUid).get(),
+    ]);
     const reflectionSnap = token.uid === rel.patientUid ? await rel.ref.collection("weekly_reflections").doc(weekId).get() : null;
+    const moodSummarySharing = patientSnap.data()?.shareMoodSummaryWithTherapist === true;
+    const therapistCanReadStoredSummary = token.uid === rel.patientUid ||
+      therapySnap.data()?.moodSummaryIncluded === false || moodSummarySharing;
     const dek = await relationshipDek(relationshipId);
     try {
-      const therapy = therapySnap.exists ? weeklyTherapySchema.parse(JSON.parse(decryptText(dek, therapySnap.data() as EncryptedPayload, `${relationshipId}:weekly:therapy:${weekId}`))) : null;
+      const therapy = therapySnap.exists && therapistCanReadStoredSummary ? weeklyTherapySchema.parse(JSON.parse(decryptText(dek, therapySnap.data() as EncryptedPayload, `${relationshipId}:weekly:therapy:${weekId}`))) : null;
       const reflection = reflectionSnap?.exists ? weeklyReflectionSchema.parse(JSON.parse(decryptText(dek, reflectionSnap.data() as EncryptedPayload, `${relationshipId}:weekly:reflection:${weekId}`))) : null;
-      return NextResponse.json({ therapy, reflection }, { headers: { "Cache-Control": "no-store" } });
+      return NextResponse.json({ therapy, reflection, moodSummarySharing, moodSummaryWithheld: therapySnap.exists && !therapistCanReadStoredSummary }, { headers: { "Cache-Control": "no-store" } });
     } finally { dek.fill(0); }
   } catch (error) { return fail(error); }
 }

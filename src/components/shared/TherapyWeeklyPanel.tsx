@@ -4,7 +4,9 @@ import { useCallback, useEffect, useState } from "react";
 import { auth } from "@/src/config/firebase";
 
 type Weekly = { therapy: { sessions: string[]; topicsDiscussed: string[]; userReportedConcerns: string[]; strategiesDiscussed: string[]; goalsAgreed: string[]; followUpItems: string[] } | null;
-  reflection: { observations: string[]; supportiveReflection: string; suggestedNextSteps: string[] } | null };
+  reflection: { observations: string[]; supportiveReflection: string; suggestedNextSteps: string[] } | null;
+  moodSummarySharing: boolean;
+  moodSummaryWithheld?: boolean };
 function mondayUtc() {
   const now = new Date();
   const day = now.getUTCDay();
@@ -40,6 +42,7 @@ export function TherapyWeeklyPanel({ relationshipId, isTherapist }: { relationsh
   useEffect(() => { queueMicrotask(() => void request(false)); }, [request]);
   return <section className="rounded-2xl border border-[#c6ebda] bg-white/85 p-4 text-sm text-[#325347]">
     <h2 className="font-semibold">Weekly therapy summary and reflection</h2>
+    <p className={`mt-2 w-fit rounded-full px-3 py-1 text-xs ${data?.moodSummarySharing ? "bg-[#c6ebda] text-[#002117]" : "bg-[#eee8db] text-[#795841]"}`}>Mood summary sharing: {data ? data.moodSummarySharing ? "ON · Client consent active" : "OFF" : "Checking…"}</p>
     <div className="mt-2 flex flex-wrap items-center gap-2">
       <label>Week of <input className="rounded-lg border p-1" type="date" value={weekStart.slice(0, 10)} onChange={(event) => setWeekStart(weekForDate(event.target.value))} /></label>
       {!isTherapist ? <button className="rounded-full bg-[#325347] px-4 py-2 text-white disabled:opacity-50" disabled={busy} onClick={() => void request(true)}>Generate weekly reports</button> : null}
@@ -47,7 +50,7 @@ export function TherapyWeeklyPanel({ relationshipId, isTherapist }: { relationsh
     {error ? <p role="alert" className="mt-2 text-red-700">{error}</p> : null}
     {data?.therapy ? <div className="mt-3"><h3 className="font-medium">Weekly Therapy Summary</h3>
       {Object.entries(data.therapy).map(([key, values]) => values.length ? <p className="mt-1" key={key}><strong>{key.replaceAll(/([A-Z])/g, " $1")}:</strong> {values.join("; ")}</p> : null)}
-    </div> : <p className="mt-2">No weekly therapy summary for this week.</p>}
+    </div> : <p className="mt-2">{data?.moodSummaryWithheld ? "This earlier summary is hidden because mood summary sharing is off." : "No weekly therapy summary for this week."}</p>}
     {!isTherapist && data?.reflection ? <div className="mt-3"><h3 className="font-medium">Your Week</h3><p>{data.reflection.supportiveReflection}</p>
       {data.reflection.observations.map((item, index) => <p className="mt-1" key={index}>• {item}</p>)}
       {data.reflection.suggestedNextSteps.map((item, index) => <p className="mt-1" key={index}>Something to reflect on: {item}</p>)}

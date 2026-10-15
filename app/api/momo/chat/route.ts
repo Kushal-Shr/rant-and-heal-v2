@@ -13,6 +13,7 @@ import { orchestrateMomoTurn } from "@/src/lib/momo/orchestrator";
 import {
   conversationContinuityStateSchema,
   conversationTurnSchema,
+  moodCheckInContextSchema,
 } from "@/src/lib/momo/schemas";
 import {
   finalizeContinuityState,
@@ -38,6 +39,7 @@ const schema = z.object({
   messageText: z.string().trim().min(1).max(4000),
   history: z.array(conversationTurnSchema).max(HISTORY_LIMIT),
   continuityState: conversationContinuityStateSchema.optional(),
+  moodCheckInId: z.string().trim().min(1).max(128).optional(),
 }).strict();
 
 export async function POST(request: NextRequest) {
@@ -53,6 +55,17 @@ export async function POST(request: NextRequest) {
 
     const db = getAdminDb();
     const sessionRef = await requireOwnedConversation(db, userId, conversationId);
+    const moodCheckInContext = parsed.data.moodCheckInId
+      ? await db.collection("users").doc(userId).collection("health_metrics").doc(parsed.data.moodCheckInId).get().then((snapshot) => {
+          if (!snapshot.exists) throw new MomoAccessError("Check-in unavailable.", 404);
+          const data = snapshot.data()!;
+          return moodCheckInContextSchema.parse({
+            emotions: data.emotions,
+            contexts: Array.isArray(data.contexts) ? data.contexts : [],
+            source: data.source ?? "MANUAL_CHECKIN",
+          });
+        })
+      : undefined;
     await consumeQuota({ db, userId, key: "momo_chat_minute", limit: 20, windowMs: 60_000 });
     const requestRef = sessionRef.collection("requests").doc(requestId);
     const userRef = db.collection("users").doc(userId);
@@ -119,7 +132,7 @@ export async function POST(request: NextRequest) {
     });
     const outcome = await orchestrateMomoTurn(
       {
-        messageText, history: recentHistory, continuityState, participant,
+        messageText, history: recentHistory, continuityState, participant, moodCheckInContext,
         previousSafetyEvaluation: safetyEvaluationSchema.safeParse(storedSafetyEvaluation).data,
       },
       {

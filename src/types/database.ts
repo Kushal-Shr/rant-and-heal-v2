@@ -1,4 +1,5 @@
 import { Timestamp, FieldValue } from "firebase/firestore";
+import type { MoodEmotionRating, MoodSource } from "../lib/mood/schema";
 
 // Helper type to handle Firebase's dual nature of timestamps
 // Write operations use FieldValue (serverTimestamp()), Read operations return Timestamp
@@ -24,6 +25,7 @@ export interface UserProfile {
     moodTrendAnalyticsEnabled: boolean;
     outcomeAnalyticsEnabled: boolean;
   };
+  shareMoodSummaryWithTherapist?: boolean;
 }
 
 export interface TherapistProfile {
@@ -136,7 +138,8 @@ export interface TherapyCallSignal {
 
 export interface MoodEntry {
   id?: string;
-  moodScore: number;
+  moodScore?: number;
+  emotions?: MoodEmotionRating[];
   anxietyScore?: number;
   energyScore?: number;
   stressScore?: number;
@@ -147,6 +150,10 @@ export interface MoodEntry {
   contexts?: string[];
   helpfulFactors?: string[];
   note?: string;
+  source?: MoodSource;
+  usefulnessRating?: number;
+  conversationId?: string;
+  baselineCheckInId?: string;
   userId?: string;
   timezone?: string;
   localDate?: string;
