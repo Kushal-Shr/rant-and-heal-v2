@@ -90,7 +90,7 @@ export const safetyCaseSchema = z.object({
   currentState: safetyStateSchema,
   status: safetyCaseStatusSchema,
   trigger: safetyTriggerTypeSchema,
-  relevantUserText: z.string().min(1).max(4000),
+  relevantUserText: z.string().min(1).max(4000).optional(),
   safetyTarget: safetyTargetSchema,
   reviewUrgency: reviewUrgencySchema.exclude(["NONE"]),
   assessmentStatus: safetyResolutionSchema,

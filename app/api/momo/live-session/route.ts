@@ -1,9 +1,8 @@
-import { Timestamp } from "firebase-admin/firestore";
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { FEATURE_FLAGS } from "@/src/config/features";
 import { conversationParticipantFromProfile } from "@/src/lib/momo/identity";
-import type { ConversationTurn } from "@/src/lib/momo/schemas";
+import { conversationContinuityStateSchema, conversationTurnSchema } from "@/src/lib/momo/schemas";
 import { verifyFirebaseBearerToken } from "@/src/server/auth";
 import { getErrorMessage } from "@/src/server/errors";
 import { getAdminDb } from "@/src/server/firebaseAdmin";
@@ -24,33 +23,9 @@ const HISTORY_LIMIT = 12;
 const schema = z.object({
   conversationId: z.string().trim().min(1).max(128),
   sdp: momoLiveOfferSchema,
+  history: z.array(conversationTurnSchema).max(HISTORY_LIMIT),
+  continuityState: conversationContinuityStateSchema.optional(),
 }).strict();
-
-interface StoredMessage {
-  sender?: "USER" | "MOMO";
-  text?: string;
-  provenance?: string;
-  timestamp?: Timestamp | null;
-  order?: number;
-}
-
-function history(messages: StoredMessage[]): ConversationTurn[] {
-  return messages
-    .filter((item) =>
-      typeof item.text === "string" &&
-      item.text.trim().length > 0 &&
-      !(item.sender === "MOMO" && item.provenance === "CLIENT_LIVE_TRANSCRIPT")
-    )
-    .sort((a, b) => {
-      const time = (a.timestamp?.toMillis?.() ?? 0) - (b.timestamp?.toMillis?.() ?? 0);
-      return time || (a.order ?? 0) - (b.order ?? 0);
-    })
-    .slice(-HISTORY_LIMIT)
-    .map((item) => ({
-      role: item.sender === "MOMO" ? "MOMO" as const : "USER" as const,
-      text: item.text!.trim(),
-    }));
-}
 
 export async function POST(request: NextRequest) {
   try {
@@ -76,18 +51,17 @@ export async function POST(request: NextRequest) {
       limit: 5,
       windowMs: 10 * 60_000,
     });
-    const [sessionSnapshot, userSnapshot, messagesSnapshot] = await Promise.all([
+    const [sessionSnapshot, userSnapshot] = await Promise.all([
       conversationRef.get(),
       db.collection("users").doc(token.uid).get(),
-      conversationRef.collection("messages").orderBy("timestamp", "asc").limitToLast(HISTORY_LIMIT).get(),
     ]);
     const session = sessionSnapshot.data();
     const profile = userSnapshot.data();
     const bootstrap = parseLiveBootstrapState({
       userId: token.uid,
       conversationId: parsed.data.conversationId,
-      history: history(messagesSnapshot.docs.map((doc) => doc.data() as StoredMessage)),
-      continuityState: session?.continuityState,
+      history: parsed.data.history.slice(-HISTORY_LIMIT),
+      continuityState: parsed.data.continuityState,
       safetyEvaluation: session?.safetyEvaluation,
       participant: conversationParticipantFromProfile({
         displayName: profile?.displayName,
@@ -126,7 +100,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: error.status });
     }
     const detail = getErrorMessage(error);
-    console.error("MOMO LIVE SESSION ERROR:", detail);
+    console.error("MOMO LIVE SESSION ERROR", {
+      status: process.env.NODE_ENV === "production" ? "SESSION_CREATION_FAILED" : detail,
+    });
     return NextResponse.json({
       error: process.env.NODE_ENV === "production"
         ? "Momo voice could not start with safety monitoring."

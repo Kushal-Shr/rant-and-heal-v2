@@ -33,7 +33,9 @@ export async function GET(request: NextRequest) {
     if (error instanceof MomoAccessError) {
       return NextResponse.json({ error: error.message }, { status: error.status });
     }
-    console.error("MOMO LIVE STATUS ERROR:", getErrorMessage(error));
+    console.error("MOMO LIVE STATUS ERROR", {
+      status: process.env.NODE_ENV === "production" ? "STATUS_UNAVAILABLE" : getErrorMessage(error),
+    });
     return NextResponse.json({ error: "Voice safety monitoring is unavailable." }, { status: 503 });
   }
 }

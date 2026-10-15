@@ -9,6 +9,9 @@ export interface LiveErrorDetails {
 export const LIVE_MODERATION_NOTICE =
   "Momo paused that response because it could not be generated safely. The call is still connected—you can keep talking.";
 
+export const LIVE_PROVIDER_ERROR_NOTICE =
+  "Momo could not complete that response. The call is still connected—you can keep talking.";
+
 export function isRecoverableLiveModerationStop(error?: LiveErrorDetails): boolean {
   if (!error) return false;
   const code = error.code?.toLowerCase() ?? "";

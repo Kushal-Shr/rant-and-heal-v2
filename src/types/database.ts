@@ -20,6 +20,10 @@ export interface UserProfile {
   isIncognito?: boolean;
   mfaEnabled: boolean;
   createdAt: ServerTime;
+  momoPrivacyPreferences?: {
+    moodTrendAnalyticsEnabled: boolean;
+    outcomeAnalyticsEnabled: boolean;
+  };
 }
 
 export interface TherapistProfile {
@@ -148,4 +152,25 @@ export interface MoodEntry {
   localDate?: string;
   schemaVersion?: 1 | 2;
   createdAt: ServerTime;
+}
+
+export interface EncryptedMomoMessage {
+  id?: string;
+  conversationId: string;
+  userId: string;
+  role: "user" | "assistant";
+  modality: "text" | "voice";
+  encryptedContent: {
+    ciphertext: string;
+    iv: string;
+    algorithm: "AES-256-GCM";
+    cryptoVersion: 1;
+  };
+  createdAt: ServerTime;
+  messageSequence?: number;
+}
+
+export interface MomoPrivacyPreferences {
+  moodTrendAnalyticsEnabled: boolean;
+  outcomeAnalyticsEnabled: boolean;
 }

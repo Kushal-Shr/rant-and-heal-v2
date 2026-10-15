@@ -4,18 +4,27 @@ import {
   type LiveErrorDetails,
 } from "./errors";
 import { createUuid } from "@/src/lib/ids/uuid";
+import type { ConversationContinuityState, ConversationTurn } from "@/src/lib/momo/schemas";
 
 interface MomoLiveClientOptions {
   idToken: string;
   conversationId: string;
+  history: ConversationTurn[];
+  continuityState?: ConversationContinuityState;
   onReady: () => void;
   onTranscriptDelta?: (sender: "USER" | "MOMO", delta: string) => void;
   onListening?: () => void;
   onSpeaking?: () => void;
   onInterrupted?: () => void;
   onModeration?: (message: string) => void;
-  onError: (error: unknown) => void;
-  onClose: (clean: boolean) => void;
+  onProviderError?: (error: LiveErrorDetails) => void;
+  onConnectionError: (error: unknown) => void;
+  onClose: (event: LiveCloseEvent) => void;
+}
+
+export interface LiveCloseEvent {
+  clean: boolean;
+  reason?: string;
 }
 
 interface LiveSessionResponse {
@@ -29,21 +38,27 @@ interface LiveServerEvent {
   type?: string;
   delta?: string;
   error?: LiveErrorDetails;
+  reason?: string;
 }
 
 export class MomoLiveClient {
+  private readonly options: MomoLiveClientOptions;
   private peer: RTCPeerConnection | null = null;
   private events: RTCDataChannel | null = null;
   private microphone: MediaStream | null = null;
   private remoteStream: MediaStream | null = null;
   private audio: HTMLAudioElement | null = null;
   private closeTimer: number | null = null;
+  private disconnectTimer: number | null = null;
   private readonly listenerAbort = new AbortController();
   private ready = false;
   private finalized = false;
   private closing = false;
+  private connectionErrorReported = false;
 
-  constructor(private readonly options: MomoLiveClientOptions) {}
+  constructor(options: MomoLiveClientOptions) {
+    this.options = options;
+  }
 
   async connect(): Promise<void> {
     const peer = new RTCPeerConnection();
@@ -60,8 +75,21 @@ export class MomoLiveClient {
       void audio.play().catch(() => undefined);
     }, { signal: this.listenerAbort.signal });
     peer.addEventListener("connectionstatechange", () => {
-      if (["failed", "disconnected"].includes(peer.connectionState) && !this.closing) {
-        this.options.onError(new Error("The GPT-Live WebRTC connection was lost."));
+      if (peer.connectionState === "connected") {
+        this.clearDisconnectTimer();
+        return;
+      }
+      if (peer.connectionState === "failed") {
+        this.reportConnectionError();
+        return;
+      }
+      if (peer.connectionState === "disconnected" && !this.closing && this.disconnectTimer === null) {
+        // A transient disconnect can recover, and moderation may send a
+        // terminal session.closed reason immediately after the transport dips.
+        this.disconnectTimer = window.setTimeout(() => {
+          this.disconnectTimer = null;
+          if (peer.connectionState === "disconnected") this.reportConnectionError();
+        }, 1_500);
       }
     }, { signal: this.listenerAbort.signal });
 
@@ -76,7 +104,7 @@ export class MomoLiveClient {
       signal: this.listenerAbort.signal,
     });
     events.addEventListener("close", () => {
-      if (!this.finalized && !this.closing) this.options.onClose(false);
+      if (!this.finalized && !this.closing) this.options.onClose({ clean: false });
     }, { signal: this.listenerAbort.signal });
 
     const offer = await peer.createOffer();
@@ -91,7 +119,12 @@ export class MomoLiveClient {
         Authorization: `Bearer ${this.options.idToken}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ conversationId: this.options.conversationId, sdp }),
+      body: JSON.stringify({
+        conversationId: this.options.conversationId,
+        sdp,
+        history: this.options.history.slice(-12),
+        ...(this.options.continuityState ? { continuityState: this.options.continuityState } : {}),
+      }),
     });
     const payload = (await response.json().catch(() => null)) as LiveSessionResponse | null;
     if (!response.ok || payload?.model !== "gpt-live-1" || !payload.liveConnection?.id || !payload.transport?.sdp) {
@@ -166,7 +199,8 @@ export class MomoLiveClient {
         break;
       case "session.closed":
         this.finalized = true;
-        this.options.onClose(true);
+        this.closing = true;
+        this.options.onClose({ clean: true, reason: event.reason });
         this.cleanup();
         break;
       case "error":
@@ -174,7 +208,10 @@ export class MomoLiveClient {
           this.options.onModeration?.(LIVE_MODERATION_NOTICE);
           break;
         }
-        this.options.onError(new Error(event.error?.message ?? "GPT-Live reported an error."));
+        // Live provider error events can describe a rejected command or a
+        // response-level failure while the WebRTC session remains usable.
+        // Transport loss and terminal session closure are handled separately.
+        this.options.onProviderError?.(event.error ?? {});
         break;
     }
   }
@@ -183,8 +220,23 @@ export class MomoLiveClient {
     if (this.events?.readyState === "open") this.events.send(JSON.stringify(payload));
   }
 
+  private clearDisconnectTimer(): void {
+    if (this.disconnectTimer !== null) {
+      window.clearTimeout(this.disconnectTimer);
+      this.disconnectTimer = null;
+    }
+  }
+
+  private reportConnectionError(): void {
+    if (this.closing || this.finalized || this.connectionErrorReported) return;
+    this.connectionErrorReported = true;
+    this.clearDisconnectTimer();
+    this.options.onConnectionError(new Error("The GPT-Live WebRTC connection was lost."));
+  }
+
   private cleanup(): void {
     this.listenerAbort.abort();
+    this.clearDisconnectTimer();
     if (this.closeTimer !== null) {
       window.clearTimeout(this.closeTimer);
       this.closeTimer = null;

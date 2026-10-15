@@ -119,6 +119,8 @@ export class RantAndHealStack extends Stack {
       ENABLE_MOMO_VOICE: "true",
       MOMO_DEBUG_ROUTING: "false",
       THERAPY_KMS_KEY_NAME: environment("THERAPY_KMS_KEY_NAME"),
+      MOMO_CONVERSATION_KMS_KEY_NAME: environment("MOMO_CONVERSATION_KMS_KEY_NAME"),
+      MOMO_SAFETY_KMS_KEY_NAME: environment("MOMO_SAFETY_KMS_KEY_NAME"),
       TURN_URLS: environment("TURN_URLS"),
       SAFETY_SUPPORT_NOTIFICATIONS_ENABLED: environment("SAFETY_SUPPORT_NOTIFICATIONS_ENABLED", "false"),
       SAFETY_ALERT_FROM_EMAIL: environment("SAFETY_ALERT_FROM_EMAIL"),

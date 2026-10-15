@@ -7,9 +7,9 @@ import { getAdminDb } from "@/src/server/firebaseAdmin";
 import { MomoAccessError, consumeQuota, requireOwnedConversation } from "@/src/server/momo/access";
 import { assessMomoSafety, recordMomoSafetyEvent } from "@/src/server/momo/safety";
 import { combineSafetyAssessments } from "@/src/lib/safety/detector";
-import { safetyResponseFor } from "@/src/lib/safety/responses";
 import { shouldAttemptSafetySupportNotification } from "@/src/lib/safety/policy";
 import { notifySafetySupport, safetySupportNotificationsEnabled } from "@/src/server/safety/notifications";
+import { conversationDek, encryptMomoMessageForStorage } from "@/src/server/momo/crypto";
 
 export const runtime = "nodejs";
 const schema = z.object({
@@ -34,14 +34,40 @@ export async function POST(request: NextRequest) {
     const sessionRef = await requireOwnedConversation(db, userId, conversationId);
     await consumeQuota({ db, userId, key: "momo_transcript_minute", limit: 60, windowMs: 60_000 });
     const safety = sender === "USER" ? assessMomoSafety(text) : assessMomoSafety("");
+    const evaluation = combineSafetyAssessments(safety);
 
-    if (safety.level === "IMMINENT") {
-      const evaluation = combineSafetyAssessments(safety);
-      const responseText = safetyResponseFor(evaluation, { messageText: text, language: safety.language });
+    const dek = await conversationDek(db, userId, conversationId);
+    try {
+      const role = sender === "USER" ? "user" as const : "assistant" as const;
+      const encryptedContent = encryptMomoMessageForStorage(dek, text, {
+        userId,
+        conversationId,
+        messageId: requestId,
+        role,
+        modality: "voice",
+      });
+      await sessionRef.collection("messages").doc(requestId).set({
+        userId,
+        conversationId,
+        role,
+        modality: "voice",
+        encryptedContent,
+        messageSequence: Date.now() * 10,
+        createdAt: FieldValue.serverTimestamp(),
+      });
+    } finally {
+      dek.fill(0);
+    }
+
+    if (sender === "USER" && evaluation.state !== "NORMAL") {
+      await sessionRef.set({
+        safetyEvaluation: evaluation,
+        updatedAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
       after(async () => {
         try {
           const eventId = await recordMomoSafetyEvent({
-            db, userId, sessionId, userText: text, source: "VOICE", evaluation, responseText,
+            db, userId, sessionId, userText: text, source: "VOICE", evaluation,
           });
           if (shouldAttemptSafetySupportNotification(evaluation) && safetySupportNotificationsEnabled()) {
             const eventRef = db.collection("users").doc(userId).collection("safety_events").doc(eventId);
@@ -62,27 +88,24 @@ export async function POST(request: NextRequest) {
       });
       return NextResponse.json({
         ok: true,
-        safety: { level: "IMMINENT", category: safety.category, safetyTarget: evaluation.safetyTarget },
+        safety: {
+          level: safety.level,
+          state: evaluation.state,
+          category: safety.category,
+          safetyTarget: evaluation.safetyTarget,
+          requiresHumanReview: evaluation.requiresHumanReview,
+        },
       });
     }
 
-    const batch = db.batch();
-    const messageRef = sessionRef.collection("messages").doc(requestId);
-    batch.set(messageRef, {
-      text,
-      sender,
-      source: "VOICE",
-      modality: "VOICE",
-      provenance: "CLIENT_LIVE_TRANSCRIPT",
-      timestamp: FieldValue.serverTimestamp(),
-    });
-    batch.set(sessionRef, { updatedAt: FieldValue.serverTimestamp() }, { merge: true });
-    await batch.commit();
-    return NextResponse.json({ ok: true, messageId: messageRef.id });
+    await sessionRef.set({ updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+    return NextResponse.json({ ok: true, messageId: requestId });
   } catch (error) {
     if (error instanceof MomoAccessError) return NextResponse.json({ error: error.message }, { status: error.status });
     const detail = getErrorMessage(error);
-    console.error("MOMO TRANSCRIPT API ERROR:", detail);
+    console.error("MOMO TRANSCRIPT API ERROR", {
+      status: process.env.NODE_ENV === "production" ? "TRANSCRIPT_PROCESSING_FAILED" : detail,
+    });
     return NextResponse.json({ error: process.env.NODE_ENV === "production" ? "Failed to save transcript" : detail }, { status: 500 });
   }
 }

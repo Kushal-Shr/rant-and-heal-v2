@@ -10,7 +10,10 @@ import { recordMomoSafetyEvent } from "@/src/server/momo/safety";
 import { assessMomoTurnSafety } from "@/src/server/momo/turnSafety";
 import { notifySafetySupport, safetySupportNotificationsEnabled } from "@/src/server/safety/notifications";
 import { orchestrateMomoTurn } from "@/src/lib/momo/orchestrator";
-import type { ConversationContinuityState, ConversationTurn } from "@/src/lib/momo/schemas";
+import {
+  conversationContinuityStateSchema,
+  conversationTurnSchema,
+} from "@/src/lib/momo/schemas";
 import {
   finalizeContinuityState,
   parseConversationContinuityState,
@@ -23,6 +26,7 @@ import { shouldAttemptSafetySupportNotification } from "@/src/lib/safety/policy"
 import { planMomoResponseWithInference } from "@/src/server/momo/planner";
 import { generateMomoResponse } from "@/src/server/momo/responder";
 import { logMomoRoutingDecision, logMomoSafetyBypass } from "@/src/server/momo/routingDebug";
+import { persistPermittedMomoAnalytics } from "@/src/server/momo/analytics";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -32,32 +36,9 @@ const schema = z.object({
   conversationId: z.string().trim().min(1).max(128),
   requestId: z.string().uuid(),
   messageText: z.string().trim().min(1).max(4000),
+  history: z.array(conversationTurnSchema).max(HISTORY_LIMIT),
+  continuityState: conversationContinuityStateSchema.optional(),
 }).strict();
-
-interface StoredMessage {
-  sender?: "USER" | "MOMO";
-  text?: string;
-  timestamp?: Timestamp | null;
-  order?: number;
-  provenance?: string;
-}
-
-function history(messages: StoredMessage[]): ConversationTurn[] {
-  return messages
-    .filter((item) =>
-      typeof item.text === "string" &&
-      item.text.trim().length > 0 &&
-      !(item.sender === "MOMO" && item.provenance === "CLIENT_LIVE_TRANSCRIPT")
-    )
-    .sort((a, b) => {
-      const time = (a.timestamp?.toMillis?.() ?? 0) - (b.timestamp?.toMillis?.() ?? 0);
-      return time || (a.order ?? 0) - (b.order ?? 0);
-    })
-    .map((item) => ({
-      role: item.sender === "MOMO" ? "MOMO" as const : "USER" as const,
-      text: item.text!.trim(),
-    }));
-}
 
 export async function POST(request: NextRequest) {
   let release: (() => Promise<void>) | null = null;
@@ -73,16 +54,11 @@ export async function POST(request: NextRequest) {
     const db = getAdminDb();
     const sessionRef = await requireOwnedConversation(db, userId, conversationId);
     await consumeQuota({ db, userId, key: "momo_chat_minute", limit: 20, windowMs: 60_000 });
-    const messagesRef = sessionRef.collection("messages");
     const requestRef = sessionRef.collection("requests").doc(requestId);
     const userRef = db.collection("users").doc(userId);
-    let cachedReply: string | null = null;
-    let cachedSafety: Record<string, unknown> | null = null;
-    let storedContinuityState: unknown;
     let storedSafetyEvaluation: unknown;
     let storedDisplayName: unknown;
     let storedIncognito: unknown;
-    let preparedContinuity: ConversationContinuityState | undefined = undefined;
 
     await db.runTransaction(async (transaction) => {
       const [sessionSnap, requestSnap, userSnap] = await Promise.all([
@@ -91,28 +67,23 @@ export async function POST(request: NextRequest) {
         transaction.get(userRef),
       ]);
       const currentRequest = requestSnap.data();
-      if (currentRequest?.status === "COMPLETED" && typeof currentRequest.reply === "string") {
-        cachedReply = currentRequest.reply;
-        cachedSafety = currentRequest.safety && typeof currentRequest.safety === "object"
-          ? currentRequest.safety as Record<string, unknown>
-          : null;
-        return;
-      }
       const session = sessionSnap.data();
       const userProfile = userSnap.data();
-      storedContinuityState = session?.continuityState;
       storedSafetyEvaluation = session?.safetyEvaluation;
       storedDisplayName = userProfile?.displayName;
       storedIncognito = userProfile?.isIncognito;
       const activeAge = session?.activeRequestAt instanceof Timestamp
         ? Date.now() - session.activeRequestAt.toMillis()
         : Number.POSITIVE_INFINITY;
+      if (currentRequest?.status === "PROCESSING" && activeAge < 60_000) {
+        throw new MomoAccessError("This message is already being processed.", 409);
+      }
       if (session?.activeRequestId && session.activeRequestId !== requestId && activeAge < 60_000) {
         throw new MomoAccessError("Another response is still being generated for this conversation.", 409);
       }
       transaction.set(requestRef, {
         status: "PROCESSING",
-        messageText,
+        requestKind: "MOMO_TEXT",
         updatedAt: FieldValue.serverTimestamp(),
       });
       transaction.set(sessionRef, {
@@ -122,15 +93,11 @@ export async function POST(request: NextRequest) {
       }, { merge: true });
     });
 
-    if (cachedReply) {
-      return NextResponse.json({ message: cachedReply, cached: true, ...(cachedSafety ? { safety: cachedSafety } : {}) });
-    }
     release = async () => {
       await db.runTransaction(async (transaction) => {
         const sessionSnap = await transaction.get(sessionRef);
         if (sessionSnap.data()?.activeRequestId === requestId) {
           transaction.set(sessionRef, {
-            ...(preparedContinuity ? { continuityState: preparedContinuity } : {}),
             activeRequestId: FieldValue.delete(),
             activeRequestAt: FieldValue.delete(),
           }, { merge: true });
@@ -139,13 +106,12 @@ export async function POST(request: NextRequest) {
       });
     };
 
-    const snapshot = await messagesRef.orderBy("timestamp", "asc").limitToLast(HISTORY_LIMIT).get();
-    const recentHistory = history(snapshot.docs.map((item) => item.data() as StoredMessage));
+    const recentHistory = parsed.data.history.slice(-HISTORY_LIMIT);
+    const previousContinuity = parsed.data.continuityState;
     const continuityState = prepareContinuityState(
       { messageText },
-      parseConversationContinuityState(storedContinuityState)
+      parseConversationContinuityState(previousContinuity)
     );
-    preparedContinuity = continuityState;
     const participant = conversationParticipantFromProfile({
       displayName: storedDisplayName,
       isIncognito: storedIncognito,
@@ -188,7 +154,7 @@ export async function POST(request: NextRequest) {
         if (sessionSnap.data()?.activeRequestId !== requestId) {
           throw new MomoAccessError("This response was superseded by a newer request.", 409);
         }
-        transaction.set(requestRef, { status: "COMPLETED", reply, safety: safetyPayload, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+        transaction.set(requestRef, { status: "COMPLETED", responseKind: "SAFETY_RESPONSE", updatedAt: FieldValue.serverTimestamp() }, { merge: true });
         transaction.set(sessionRef, {
           safetyEvaluation: outcome.safety,
           activeRequestId: FieldValue.delete(),
@@ -200,7 +166,7 @@ export async function POST(request: NextRequest) {
         try {
           const eventId = await recordMomoSafetyEvent({
             db, userId, sessionId, userText: messageText, source: "TEXT",
-            evaluation: outcome.safety, responseText: reply,
+            evaluation: outcome.safety,
           });
           if (shouldAttemptSafetySupportNotification(outcome.safety) && safetySupportNotificationsEnabled()) {
             const eventRef = db.collection("users").doc(userId).collection("safety_events").doc(eventId);
@@ -219,7 +185,9 @@ export async function POST(request: NextRequest) {
           console.error("MOMO SAFETY FOLLOW-UP ERROR:", getErrorMessage(error));
         }
       });
-      return NextResponse.json({ message: reply, safety: safetyPayload });
+      return NextResponse.json({ message: reply, continuityState, safety: safetyPayload }, {
+        headers: { "Cache-Control": "no-store" },
+      });
     }
 
     const finalizedContinuity = finalizeContinuityState(
@@ -232,23 +200,8 @@ export async function POST(request: NextRequest) {
       if (sessionSnap.data()?.activeRequestId !== requestId) {
         throw new MomoAccessError("This response was superseded by a newer request.", 409);
       }
-      transaction.set(messagesRef.doc(`${requestId}-user`), {
-        text: messageText, sender: "USER", source: "TEXT", modality: "TEXT", provenance: "SERVER", order: 0, timestamp: FieldValue.serverTimestamp(),
-      });
-      transaction.set(messagesRef.doc(`${requestId}-momo`), {
-        text: reply,
-        sender: "MOMO",
-        source: "TEXT",
-        modality: "TEXT",
-        provenance: "SERVER",
-        order: 1,
-        continuityMetadata: finalizedContinuity.metadata,
-        timestamp: FieldValue.serverTimestamp(),
-      });
-      transaction.set(requestRef, { status: "COMPLETED", reply, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+      transaction.set(requestRef, { status: "COMPLETED", responseKind: "MOMO_RESPONSE", updatedAt: FieldValue.serverTimestamp() }, { merge: true });
       transaction.set(sessionRef, {
-        title: messageText.slice(0, 64),
-        continuityState: finalizedContinuity.state,
         safetyEvaluation: outcome.safety,
         activeRequestId: FieldValue.delete(),
         activeRequestAt: FieldValue.delete(),
@@ -256,19 +209,34 @@ export async function POST(request: NextRequest) {
       }, { merge: true });
     });
     release = null;
-    return NextResponse.json({ message: reply });
+    after(async () => {
+      await persistPermittedMomoAnalytics({
+        db,
+        userId,
+        conversationId,
+        eventId: requestId,
+        messageText,
+        previousContinuity,
+        nextContinuity: finalizedContinuity.state,
+      }).catch((error) => console.error("MOMO OPTIONAL ANALYTICS ERROR:", getErrorMessage(error)));
+    });
+    return NextResponse.json({ message: reply, continuityState: finalizedContinuity.state }, {
+      headers: { "Cache-Control": "no-store" },
+    });
   } catch (error) {
     if (release) await release().catch(() => undefined);
     if (error instanceof MomoAccessError) return NextResponse.json({ error: error.message }, { status: error.status });
     const detail = getErrorMessage(error);
     if (isGeminiBillingError(error)) {
-      console.error("MOMO GEMINI BILLING ERROR:", detail);
+      console.error("MOMO AI BILLING ERROR", { status: "AI_BILLING_REQUIRED" });
       return NextResponse.json({
         error: "Momo is temporarily unavailable. Please try again later.",
         code: "AI_BILLING_REQUIRED",
       }, { status: 503 });
     }
-    console.error("MOMO CHAT API ERROR:", detail);
+    console.error("MOMO CHAT API ERROR", {
+      status: process.env.NODE_ENV === "production" ? "PROCESSING_FAILED" : detail,
+    });
     return NextResponse.json({ error: process.env.NODE_ENV === "production" ? "Failed to process message" : detail }, { status: 500 });
   }
 }

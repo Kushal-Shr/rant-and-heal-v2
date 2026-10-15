@@ -80,7 +80,7 @@ test("clients cannot access backend encrypted communication, drafts, reports or 
   }
 });
 
-test("only explicit safety reviewer or admin claims can read safety cases", async () => {
+test("safety-reviewer and admin claims can read safety cases", async () => {
   const patientDb = environment.authenticatedContext("patient-1", { role: "USER" }).firestore();
   const therapistDb = environment.authenticatedContext("therapist-1", { role: "THERAPIST" }).firestore();
   const reviewerDb = environment.authenticatedContext("reviewer-1", { safetyReviewer: true }).firestore();
@@ -91,6 +91,7 @@ test("only explicit safety reviewer or admin claims can read safety cases", asyn
   await assertSucceeds(getDoc(doc(reviewerDb, path)));
   await assertSucceeds(getDoc(doc(adminDb, path)));
   await assertSucceeds(getDoc(doc(reviewerDb, `${path}/actions/action-1`)));
+  await assertSucceeds(getDoc(doc(adminDb, `${path}/actions/action-1`)));
 });
 
 test("direct safety case and audit mutations are rejected even for reviewers", async () => {
@@ -141,14 +142,25 @@ test("two reviewer assignment transactions produce one owner and one audit entry
   });
 });
 
-test("Momo continuity state is server-owned while session shells remain owner-managed", async () => {
+test("Momo content and continuity must use the encrypted owner schema", async () => {
   const patientDb = environment.authenticatedContext("patient-1").firestore();
+  const otherDb = environment.authenticatedContext("patient-2").firestore();
   const sessionRef = doc(patientDb, "users/patient-1/sessions/continuity-test");
   await assertSucceeds(setDoc(sessionRef, {
     title: "New Conversation",
     createdAt: serverTimestamp(),
   }));
-  await assertSucceeds(setDoc(sessionRef, { title: "Renamed" }, { merge: true }));
+  const encryptedContinuity = {
+    ciphertext: "encrypted-continuity",
+    iv: "AAAAAAAAAAAAAAAA",
+    algorithm: "AES-256-GCM",
+    cryptoVersion: 1,
+  };
+  await assertSucceeds(setDoc(sessionRef, {
+    encryptedContinuity,
+    cryptoVersion: 1,
+    updatedAt: serverTimestamp(),
+  }, { merge: true }));
   await assertFails(setDoc(sessionRef, {
     continuityState: { version: 1, currentGoal: "PRACTICAL_HELP" },
   }, { merge: true }));
@@ -167,7 +179,28 @@ test("Momo continuity state is server-owned while session shells remain owner-ma
     }, { merge: true });
   });
   await assertFails(setDoc(sessionRef, { title: "Remove safety state" }));
-  await assertSucceeds(setDoc(sessionRef, { title: "Keep safety state" }, { merge: true }));
+  const messageRef = doc(patientDb, "users/patient-1/sessions/continuity-test/messages/message-1");
+  await assertFails(setDoc(messageRef, {
+    userId: "patient-1", conversationId: "continuity-test", role: "user", modality: "text",
+    text: "plaintext", messageSequence: 1, createdAt: serverTimestamp(),
+  }));
+  await assertSucceeds(setDoc(messageRef, {
+    userId: "patient-1", conversationId: "continuity-test", role: "user", modality: "text",
+    encryptedContent: {
+      ciphertext: "encrypted-message", iv: "AAAAAAAAAAAAAAAA",
+      algorithm: "AES-256-GCM", cryptoVersion: 1,
+    },
+    messageSequence: 1,
+    createdAt: serverTimestamp(),
+  }));
+  await assertSucceeds(getDoc(messageRef));
+  await assertFails(getDoc(doc(otherDb, "users/patient-1/sessions/continuity-test")));
+  await assertFails(getDoc(doc(otherDb, "users/patient-1/sessions/continuity-test/messages/message-1")));
+  await assertFails(getDoc(doc(patientDb, "momo_conversation_keys/forbidden")));
+  await assertFails(setDoc(doc(patientDb, "users/patient-1/momo_mood_analytics/forged"), {
+    userId: "patient-1", conversationId: "continuity-test", moodScore: 3,
+    source: "MOMO_INFERRED", schemaVersion: 1, timestamp: serverTimestamp(),
+  }));
 });
 
 test("call access ends when the current relationship pointer changes", async () => {

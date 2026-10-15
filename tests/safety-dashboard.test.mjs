@@ -55,12 +55,13 @@ test("workflow transitions are explicit and separate from SafetyState", () => {
   assert.equal(parsed.status, "OPEN");
 });
 
-test("authorization requires an explicit safety reviewer or admin claim", () => {
+test("authorization permits safety-reviewer and admin claims", () => {
   assert.equal(safetyReviewerRoleFromClaims({}), null);
   assert.equal(safetyReviewerRoleFromClaims({ role: "USER" }), null);
   assert.equal(safetyReviewerRoleFromClaims({ role: "THERAPIST" }), null);
   assert.equal(safetyReviewerRoleFromClaims({ safetyReviewer: true }), "SAFETY_REVIEWER");
   assert.equal(safetyReviewerRoleFromClaims({ admin: true }), "ADMIN");
+  assert.equal(safetyReviewerRoleFromClaims({ admin: true, safetyReviewer: true }), "ADMIN");
 });
 
 test("review-required events create or update one active session case", () => {

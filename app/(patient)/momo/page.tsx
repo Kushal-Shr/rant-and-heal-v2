@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import {
   addDoc,
@@ -22,6 +22,14 @@ import { MomoVoiceCallPanel } from "@/src/components/momo/MomoVoiceCallPanel";
 import { db } from "@/src/config/firebase";
 import { useAuth } from "@/src/context/AuthContext";
 import { createUuid } from "@/src/lib/ids/uuid";
+import type { ConversationContinuityState } from "@/src/lib/momo/schemas";
+import type { EncryptedMomoContent } from "@/src/lib/momo/storageCrypto";
+import {
+  decryptMomoDocuments,
+  decryptStoredMomoContinuity,
+  getMomoConversationKey,
+  persistEncryptedMomoTurn,
+} from "@/src/services/momoConversationService";
 
 const momoVoiceEnabled = process.env.NEXT_PUBLIC_MOMO_VOICE_ENABLED === "true";
 
@@ -35,20 +43,15 @@ interface MomoMessage {
   order: number;
 }
 
-interface FirestoreMomoMessage {
-  sender?: MessageSender;
-  text?: string;
-  timestamp?: Timestamp | null;
-  order?: number;
-}
-
 interface ChatSession {
   id: string;
   title: string;
+  encryptedContinuity?: EncryptedMomoContent;
 }
 
 interface FirestoreSession {
   title?: string;
+  encryptedContinuity?: EncryptedMomoContent;
 }
 
 interface LiveTranscriptTurn {
@@ -70,10 +73,12 @@ export default function MomoPage() {
   const [inputValue, setInputValue] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
+  const [continuityState, setContinuityState] = useState<ConversationContinuityState | undefined>();
   const [voicePanelOpen, setVoicePanelOpen] = useState(false);
   const [voiceCallActive, setVoiceCallActive] = useState(false);
   const [liveTranscriptTurns, setLiveTranscriptTurns] = useState<LiveTranscriptTurn[]>([]);
   const messagesRef = useRef<HTMLDivElement | null>(null);
+  const conversationKeysRef = useRef(new Map<string, CryptoKey>());
   const liveTranscriptIdsRef = useRef<Record<MessageSender, string | null>>({
     USER: null,
     MOMO: null,
@@ -138,7 +143,19 @@ export default function MomoPage() {
     setVoiceCallActive(false);
     resetLiveTranscript();
     setConversationId(nextConversationId);
+    setContinuityState(undefined);
+    setMessages([]);
   }
+
+  const conversationKey = useCallback(async (nextConversationId: string): Promise<CryptoKey> => {
+    if (!user) throw new Error("Sign in is required.");
+    const cacheId = `${user.uid}:${nextConversationId}`;
+    const cached = conversationKeysRef.current.get(cacheId);
+    if (cached) return cached;
+    const key = await getMomoConversationKey(await user.getIdToken(), nextConversationId);
+    conversationKeysRef.current.set(cacheId, key);
+    return key;
+  }, [user]);
 
   useEffect(() => {
     if (loading) {
@@ -167,6 +184,7 @@ export default function MomoPage() {
           return {
             id: sessionDoc.id,
             title: typeof data.title === "string" && data.title.trim() ? data.title : "New Conversation",
+            ...(data.encryptedContinuity ? { encryptedContinuity: data.encryptedContinuity } : {}),
           };
         });
 
@@ -180,7 +198,9 @@ export default function MomoPage() {
             });
             setConversationId(newSessionRef.id);
           } catch (error) {
-            console.error("FIRESTORE SESSION INIT ERROR:", error);
+            console.error("FIRESTORE SESSION INIT ERROR", {
+              status: error instanceof Error ? error.name : "UNKNOWN",
+            });
           }
           return;
         }
@@ -198,7 +218,7 @@ export default function MomoPage() {
         });
       },
       (error) => {
-        console.error("FIRESTORE SESSION INIT ERROR:", error);
+        console.error("FIRESTORE SESSION INIT ERROR", { status: error.code });
       }
     );
 
@@ -210,33 +230,43 @@ export default function MomoPage() {
       return;
     }
 
-    const messagesRef = collection(db, "users", user.uid, "sessions", conversationId, "messages");
-    const messagesQuery = query(messagesRef, orderBy("timestamp", "desc"), limit(100));
+    const firestoreMessagesRef = collection(db, "users", user.uid, "sessions", conversationId, "messages");
+    const messagesQuery = query(firestoreMessagesRef, orderBy("createdAt", "desc"), limit(100));
 
+    let active = true;
     const unsubscribe = onSnapshot(messagesQuery, (snapshot) => {
-      const nextMessages = snapshot.docs.map((messageDoc) => {
-        const data = messageDoc.data() as FirestoreMomoMessage;
-
-        return {
-          id: messageDoc.id,
-          sender: (data.sender === "USER" ? "USER" : "MOMO") as MessageSender,
-          text: typeof data.text === "string" ? data.text : "",
-          timestamp: data.timestamp ?? null,
-          order: typeof data.order === "number" ? data.order : 0,
-        };
-      }).sort((left, right) => {
-        const time = (left.timestamp?.toMillis() ?? 0) - (right.timestamp?.toMillis() ?? 0);
-        return time || left.order - right.order;
+      void conversationKey(conversationId).then(async (key) => {
+        const [nextMessages, nextContinuity] = await Promise.all([
+          decryptMomoDocuments(key, user.uid, conversationId, snapshot.docs),
+          decryptStoredMomoContinuity(
+            key,
+            sessions.find((item) => item.id === conversationId)?.encryptedContinuity,
+            user.uid,
+            conversationId
+          ),
+        ]);
+        if (!active) return;
+        setMessages(nextMessages.map((message) => ({
+          id: message.id,
+          sender: message.sender,
+          text: message.text,
+          timestamp: message.createdAt,
+          order: message.messageSequence,
+        })));
+        setContinuityState(nextContinuity);
+        setSendError(null);
+      }).catch(() => {
+        if (!active) return;
+        setMessages([]);
+        setSendError("This encrypted conversation could not be opened. Your stored history was not changed.");
       });
-
-      setMessages(nextMessages);
     }, (error) => {
       console.error("FIRESTORE MESSAGE LISTENER ERROR:", error.code);
       setSendError("Could not load this conversation. Check your connection and reload the page.");
     });
 
-    return () => unsubscribe();
-  }, [conversationId, user?.uid]);
+    return () => { active = false; unsubscribe(); };
+  }, [conversationId, conversationKey, sessions, user?.uid]);
 
   useEffect(() => {
     const container = messagesRef.current;
@@ -270,6 +300,10 @@ export default function MomoPage() {
       setInputValue("");
 
       const idToken = await user.getIdToken();
+      // Confirm encrypted persistence is available before sending plaintext to
+      // the processing API. There is deliberately no plaintext fallback.
+      const key = await conversationKey(conversationId);
+      const requestId = createUuid();
       const response = await fetch("/api/momo/chat", {
         method: "POST",
         headers: {
@@ -279,30 +313,50 @@ export default function MomoPage() {
         body: JSON.stringify({
           userId: user.uid,
           conversationId,
-          requestId: createUuid(),
+          requestId,
           messageText: userMessageText,
+          history: messages.slice(-12).map((message) => ({
+            role: message.sender === "USER" ? "USER" : "MOMO",
+            text: message.text,
+          })),
+          ...(continuityState ? { continuityState } : {}),
         }),
       });
 
       const responsePayload = (await response.json().catch(() => null)) as {
         error?: string;
         code?: string;
+        message?: string;
+        continuityState?: ConversationContinuityState;
         safety?: { level?: string };
       } | null;
 
       if (!response.ok) {
         const message = responsePayload?.error ?? "Failed to generate Momo response.";
         if (responsePayload?.code !== "AI_BILLING_REQUIRED") {
-          console.error("MOMO API ERROR:", response.status, message);
+          console.error("MOMO API ERROR", { status: response.status, code: responsePayload?.code ?? "REQUEST_FAILED" });
         }
         setInputValue(userMessageText);
         setSendError(message);
-      } else if (responsePayload?.safety?.level === "IMMINENT") {
-        router.push("/crisis?source=momo");
+      } else if (!responsePayload?.message || !responsePayload.continuityState) {
+        throw new Error("Momo returned an incomplete encrypted-storage response.");
+      } else {
+        await persistEncryptedMomoTurn({
+          key,
+          userId: user.uid,
+          conversationId,
+          requestId,
+          userText: userMessageText,
+          momoText: responsePayload.message,
+          modality: "text",
+          continuityState: responsePayload.continuityState,
+        });
+        setContinuityState(responsePayload.continuityState);
+        if (responsePayload.safety?.level === "IMMINENT") router.push("/crisis?source=momo");
       }
     } catch (error) {
       const appError = error as FirestoreError;
-      console.error("MOMO SEND ERROR:", appError.code, appError.message);
+      console.error("MOMO SEND ERROR", { status: appError.code ?? appError.name ?? "UNKNOWN" });
       setInputValue(nextMessage);
       setSendError(appError.message ?? "Could not send your message.");
     } finally {
@@ -323,7 +377,7 @@ export default function MomoPage() {
       chooseConversation(newSessionRef.id);
     } catch (error) {
       const firestoreError = error as FirestoreError;
-      console.error("FIRESTORE SESSION INIT ERROR:", firestoreError.code, firestoreError.message);
+      console.error("FIRESTORE SESSION INIT ERROR", { status: firestoreError.code ?? "UNKNOWN" });
     }
   }
 
@@ -394,6 +448,11 @@ export default function MomoPage() {
               conversationId={conversationId}
               onCallActiveChange={handleVoiceCallActiveChange}
               onTranscriptDelta={handleLiveTranscriptDelta}
+              history={messages.slice(-12).map((message) => ({
+                role: message.sender === "USER" ? "USER" : "MOMO",
+                text: message.text,
+              }))}
+              continuityState={continuityState}
             />
           ) : null}
 

@@ -21,7 +21,9 @@ export async function GET(
     if (!caseId || caseId.length > 128) {
       return NextResponse.json({ error: "Invalid safety case ID." }, { status: 400 });
     }
-    return NextResponse.json({ case: await getSafetyCase(getAdminDb(), caseId) });
+    return NextResponse.json({ case: await getSafetyCase(getAdminDb(), caseId, true) }, {
+      headers: { "Cache-Control": "no-store" },
+    });
   } catch (error) {
     if (error instanceof SafetyCaseError) {
       return NextResponse.json({ error: error.message }, { status: error.status });
